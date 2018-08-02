@@ -13,6 +13,9 @@ documentation = "https://docs.rs/lmdb-rkv"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database"]
 
+[lib]
+name = "lmdb"
+
 [badges]
 travis-ci = { repository = "mozilla/lmdb-rs" }
 appveyor = { repository = "mozilla/lmdb-rs" }
