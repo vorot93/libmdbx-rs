@@ -9,6 +9,13 @@ use ffi;
 use flags::WriteFlags;
 use transaction::Transaction;
 
+// A type alias to a boxed trait object representing an Iterator over
+// key/pair results.  The Iter struct implements this trait, and we return
+// the trait object instead of the Iter itself from Cursor.iter*() methods
+// to delay returning an error until the consumer actually iterates
+// or collects the Iter.
+type BoxedIter<'txn> = Box<Iterator<Item=Result<(&'txn [u8], &'txn [u8])>>>;
+
 /// An LMDB cursor.
 pub trait Cursor<'txn> {
 
@@ -57,7 +64,7 @@ pub trait Cursor<'txn> {
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    fn iter_from<K>(&mut self, key: K) -> Box<Iterator<Item=Result<(&'txn [u8], &'txn [u8])>>> where K: AsRef<[u8]> {
+    fn iter_from<K>(&mut self, key: K) -> BoxedIter where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET_RANGE) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => return Box::new(iter::once(Err(error))),
@@ -80,16 +87,16 @@ pub trait Cursor<'txn> {
 
     /// Iterate over duplicate items in the database starting from the given
     /// key. Each item will be returned as an iterator of its duplicates.
-    fn iter_dup_from<K>(&mut self, key: &K) -> Result<IterDup<'txn>> where K: AsRef<[u8]> {
+    fn iter_dup_from<K>(&mut self, key: &K) -> Box<Iterator<Item=BoxedIter>> where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET_RANGE) {
             Ok(_) | Err(Error::NotFound) => (),
-            Err(error) => return Err(error),
+            Err(error) => return Box::new(iter::once::<BoxedIter>(Box::new(iter::once(Err(error))))),
         };
-        Ok(IterDup::new(self.cursor(), ffi::MDB_GET_CURRENT))
+        Box::new(IterDup::new(self.cursor(), ffi::MDB_GET_CURRENT))
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
-    fn iter_dup_of<K>(&mut self, key: &K) -> Box<Iterator<Item=Result<(&'txn [u8], &'txn [u8])>>> where K: AsRef<[u8]> {
+    fn iter_dup_of<K>(&mut self, key: &K) -> BoxedIter where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => return Box::new(iter::once(Err(error))),
@@ -282,9 +289,9 @@ impl <'txn> fmt::Debug for IterDup<'txn> {
 
 impl <'txn> Iterator for IterDup<'txn> {
 
-    type Item = Iter<'txn>;
+    type Item = BoxedIter<'txn>;
 
-    fn next(&mut self) -> Option<Iter<'txn>> {
+    fn next(&mut self) -> Option<BoxedIter<'txn>> {
         let mut key = ffi::MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
         let mut data = ffi::MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
         let op = mem::replace(&mut self.op, ffi::MDB_NEXT_NODUP);
@@ -293,7 +300,7 @@ impl <'txn> Iterator for IterDup<'txn> {
         };
 
         if err_code == ffi::MDB_SUCCESS {
-            Some(Iter::new(self.cursor, ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP))
+            Some(Box::new(Iter::new(self.cursor, ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP)))
         } else {
             None
         }
@@ -495,7 +502,7 @@ mod test {
         assert_eq!(0, cursor.iter_from(b"foo").count());
         assert_eq!(0, cursor.iter_dup().count());
         assert_eq!(0, cursor.iter_dup_start().count());
-        assert_eq!(0, cursor.iter_dup_from(b"foo").unwrap().count());
+        assert_eq!(0, cursor.iter_dup_from(b"foo").count());
         assert_eq!(0, cursor.iter_dup_of(b"foo").count());
     }
 
@@ -538,16 +545,16 @@ mod test {
                    cursor.iter_dup_start().flat_map(|x| x).collect::<Result<Vec<(&[u8], &[u8])>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(3).collect::<Vec<(&[u8], &[u8])>>(),
-                   cursor.iter_dup_from(b"b").unwrap().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_dup_from(b"b").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(3).collect::<Vec<(&[u8], &[u8])>>(),
-                   cursor.iter_dup_from(b"ab").unwrap().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_dup_from(b"ab").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(9).collect::<Vec<(&[u8], &[u8])>>(),
-                   cursor.iter_dup_from(b"d").unwrap().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_dup_from(b"d").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(vec!().into_iter().collect::<Vec<(&[u8], &[u8])>>(),
-                   cursor.iter_dup_from(b"f").unwrap().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_dup_from(b"f").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(3).take(3).collect::<Vec<(&[u8], &[u8])>>(),
                    cursor.iter_dup_of(b"b").collect::<Result<Vec<_>>>().unwrap());
