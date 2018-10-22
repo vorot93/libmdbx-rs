@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use std::{fmt, mem, ptr, result, slice};
+use std::{fmt, iter, mem, ptr, result, slice};
 
 use libc::{EINVAL, c_void, size_t, c_uint};
 
@@ -57,12 +57,12 @@ pub trait Cursor<'txn> {
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    fn iter_from<K>(&mut self, key: K) -> Result<Iter<'txn>> where K: AsRef<[u8]> {
+    fn iter_from<K>(&mut self, key: K) -> Box<Iterator<Item=Result<(&'txn [u8], &'txn [u8])>>> where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET_RANGE) {
             Ok(_) | Err(Error::NotFound) => (),
-            Err(error) => return Err(error),
+            Err(error) => return Box::new(iter::once(Err(error))),
         };
-        Ok(Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_NEXT))
+        Box::new(Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_NEXT))
     }
 
     /// Iterate over duplicate database items. The iterator will begin with the
@@ -89,12 +89,12 @@ pub trait Cursor<'txn> {
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
-    fn iter_dup_of<K>(&mut self, key: &K) -> Result<Iter<'txn>> where K: AsRef<[u8]> {
+    fn iter_dup_of<K>(&mut self, key: &K) -> Box<Iterator<Item=Result<(&'txn [u8], &'txn [u8])>>> where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET) {
             Ok(_) | Err(Error::NotFound) => (),
-            Err(error) => return Err(error),
+            Err(error) => return Box::new(iter::once(Err(error))),
         };
-        Ok(Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP))
+        Box::new(Iter::new(self.cursor(), ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP))
     }
 }
 
@@ -450,18 +450,18 @@ mod test {
         assert_eq!(items, cursor.iter_start().collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(1).collect::<Vec<_>>(),
-                   cursor.iter_from(b"key2").unwrap().collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_from(b"key2").collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(3).collect::<Vec<_>>(),
-                   cursor.iter_from(b"key4").unwrap().collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_from(b"key4").collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(vec!().into_iter().collect::<Vec<(&[u8], &[u8])>>(),
-                   cursor.iter_from(b"key6").unwrap().collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_from(b"key6").collect::<Result<Vec<_>>>().unwrap());
 
         // Demonstrate how a function that returns a result can use the "?"
         // operator to propagate an error returned by Cursor::iter*() methods.
         fn iterate<'a>(cursor: &mut RoCursor) -> Result<()> {
-            match cursor.iter_from("a")?.collect::<Result<Vec<_>>>() {
+            match cursor.iter_from("a").collect::<Result<Vec<_>>>() {
                 Ok(_) => Ok(()),
                 Err(error) => Err(error),
             }
@@ -479,7 +479,7 @@ mod test {
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
-        assert_eq!(0, cursor.iter_from(b"foo").unwrap().count());
+        assert_eq!(0, cursor.iter_from(b"foo").count());
     }
 
     #[test]
@@ -492,11 +492,11 @@ mod test {
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
-        assert_eq!(0, cursor.iter_from(b"foo").unwrap().count());
+        assert_eq!(0, cursor.iter_from(b"foo").count());
         assert_eq!(0, cursor.iter_dup().count());
         assert_eq!(0, cursor.iter_dup_start().count());
         assert_eq!(0, cursor.iter_dup_from(b"foo").unwrap().count());
-        assert_eq!(0, cursor.iter_dup_of(b"foo").unwrap().count());
+        assert_eq!(0, cursor.iter_dup_of(b"foo").count());
     }
 
     #[test]
@@ -550,9 +550,9 @@ mod test {
                    cursor.iter_dup_from(b"f").unwrap().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(items.clone().into_iter().skip(3).take(3).collect::<Vec<(&[u8], &[u8])>>(),
-                   cursor.iter_dup_of(b"b").unwrap().collect::<Result<Vec<_>>>().unwrap());
+                   cursor.iter_dup_of(b"b").collect::<Result<Vec<_>>>().unwrap());
 
-        assert_eq!(0, cursor.iter_dup_of(b"foo").unwrap().count());
+        assert_eq!(0, cursor.iter_dup_of(b"foo").count());
     }
 
     #[test]
