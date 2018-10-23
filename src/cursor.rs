@@ -464,16 +464,6 @@ mod test {
 
         assert_eq!(vec!().into_iter().collect::<Vec<(&[u8], &[u8])>>(),
                    cursor.iter_from(b"key6").collect::<Result<Vec<_>>>().unwrap());
-
-        // Demonstrate how a function that returns a result can use the "?"
-        // operator to propagate an error returned by Cursor::iter*() methods.
-        fn iterate<'a>(cursor: &mut RoCursor) -> Result<()> {
-            match cursor.iter_from("a").collect::<Result<Vec<_>>>() {
-                Ok(_) => Ok(()),
-                Err(error) => Err(error),
-            }
-        }
-        iterate(&mut cursor).unwrap();
     }
 
     #[test]
