@@ -1,21 +1,24 @@
 [package]
 
-name = "lmdb"
+name = "lmdb-rkv"
 # NB: When modifying, also modify html_root_url in lib.rs
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Dan Burkert <dan@danburkert.com>"]
 license = "Apache-2.0"
 
 description = "Idiomatic and safe LMDB wrapper."
-repository = "https://github.com/danburkert/lmdb-rs.git"
+repository = "https://github.com/mozilla/lmdb-rs.git"
 readme = "README.md"
-documentation = "https://docs.rs/lmdb"
+documentation = "https://docs.rs/lmdb-rkv"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database"]
 
+[lib]
+name = "lmdb"
+
 [badges]
-travis-ci = { repository = "danburkert/lmdb-rs" }
-appveyor = { repository = "danburkert/lmdb-rs" }
+travis-ci = { repository = "mozilla/lmdb-rs" }
+appveyor = { repository = "mozilla/lmdb-rs" }
 
 [workspace]
 members = [
@@ -25,7 +28,7 @@ members = [
 [dependencies]
 bitflags = "1"
 libc = "0.2"
-lmdb-sys = { version = "0.8.0", path = "lmdb-sys" }
+lmdb-sys = "0.8.0"
 
 [dev-dependencies]
 rand = "0.4"
