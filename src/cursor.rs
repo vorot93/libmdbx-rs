@@ -262,12 +262,12 @@ impl <'txn> Iterator for Iter<'txn> {
 
     fn next(&mut self) -> Option<Result<(&'txn [u8], &'txn [u8])>> {
         match self {
-            Iter::Ok { cursor, ref mut op, next_op, _marker } => {
+            &mut Iter::Ok { cursor, ref mut op, next_op, _marker } => {
                 let mut key = ffi::MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
                 let mut data = ffi::MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
-                let op = mem::replace(op, *next_op);
+                let op = mem::replace(op, next_op);
                 unsafe {
-                    match ffi::mdb_cursor_get(*cursor, &mut key, &mut data, op) {
+                    match ffi::mdb_cursor_get(cursor, &mut key, &mut data, op) {
                         ffi::MDB_SUCCESS => Some(Ok((val_to_slice(key), val_to_slice(data)))),
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
@@ -276,7 +276,7 @@ impl <'txn> Iterator for Iter<'txn> {
                     }
                 }
             },
-            Iter::Err(err) => Some(Err(*err)),
+            &mut Iter::Err(err) => Some(Err(err)),
         }
     }
 }
@@ -329,21 +329,21 @@ impl <'txn> Iterator for IterDup<'txn> {
 
     fn next(&mut self) -> Option<Iter<'txn>> {
         match self {
-            IterDup::Ok { cursor, ref mut op, _marker } => {
+            &mut IterDup::Ok { cursor, ref mut op, _marker } => {
                 let mut key = ffi::MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
                 let mut data = ffi::MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
                 let op = mem::replace(op, ffi::MDB_NEXT_NODUP);
                 let err_code = unsafe {
-                    ffi::mdb_cursor_get(*cursor, &mut key, &mut data, op)
+                    ffi::mdb_cursor_get(cursor, &mut key, &mut data, op)
                 };
 
                 if err_code == ffi::MDB_SUCCESS {
-                    Some(Iter::new(*cursor, ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP))
+                    Some(Iter::new(cursor, ffi::MDB_GET_CURRENT, ffi::MDB_NEXT_DUP))
                 } else {
                     None
                 }
             },
-            IterDup::Err(err) => Some(Iter::Err(*err)),
+            &mut IterDup::Err(err) => Some(Iter::Err(err)),
         }
     }
 }
