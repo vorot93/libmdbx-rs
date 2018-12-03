@@ -275,11 +275,6 @@ impl <'env> RwTransaction<'env> {
                                                        mv_data: key.as_ptr() as *mut c_void };
         let mut data_val: ffi::MDB_val = ffi::MDB_val { mv_size: data.len() as size_t,
                                                         mv_data: data.as_ptr() as *mut c_void };
-        /*
-        unsafe { println!("put {:?} {:?}",
-                          std::slice::from_raw_parts(key_val.mv_data as *const u8, key_val.mv_size),
-                          std::slice::from_raw_parts(data_val.mv_data as *const u8, data_val.mv_size)) };
-        */
         unsafe {
             lmdb_result(ffi::mdb_put(self.txn(),
                                      database.dbi(),
@@ -338,18 +333,21 @@ impl <'env> RwTransaction<'env> {
             data.map(|data| ffi::MDB_val { mv_size: data.len() as size_t,
                                            mv_data: data.as_ptr() as *mut c_void });
 
-        /*
-        data_val.as_ref().map(|v| unsafe { 
-            println!("del {:?} {:?}",
-                     std::slice::from_raw_parts(key_val.mv_data as *const u8, key_val.mv_size),
-                     std::slice::from_raw_parts(v.mv_data as *const u8, v.mv_size)) });
-        */
-        unsafe {
-            lmdb_result(ffi::mdb_del(self.txn(),
-                                     database.dbi(),
-                                     &mut key_val,
-                                     data_val.map(|mut data_val| &mut data_val as *mut _)
-                                             .unwrap_or(ptr::null_mut())))
+        if let Some(mut d) = data_val {
+            unsafe {
+                lmdb_result(ffi::mdb_del(self.txn(),
+                                         database.dbi(),
+                                         &mut key_val,
+                                         &mut d))
+
+            }
+        } else {
+            unsafe {
+                lmdb_result(ffi::mdb_del(self.txn(),
+                                         database.dbi(),
+                                         &mut key_val,
+                                         ptr::null_mut()))
+            }
         }
     }
 
@@ -432,7 +430,7 @@ mod test {
     fn test_put_get_del_multi() {
         let dir = TempDir::new("test").unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.create_db(Some("putgetdel"), DatabaseFlags::DUP_SORT).unwrap();
+        let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
         txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
