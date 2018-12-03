@@ -80,7 +80,7 @@ pub trait Cursor<'txn> {
 
     /// Iterate over duplicate items in the database starting from the given
     /// key. Each item will be returned as an iterator of its duplicates.
-    fn iter_dup_from<K>(&mut self, key: &K) -> IterDup<'txn> where K: AsRef<[u8]> {
+    fn iter_dup_from<K>(&mut self, key: K) -> IterDup<'txn> where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET_RANGE) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => panic!("mdb_cursor_get returned an unexpected error: {}", error),
@@ -89,7 +89,7 @@ pub trait Cursor<'txn> {
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
-    fn iter_dup_of<K>(&mut self, key: &K) -> Iter<'txn> where K: AsRef<[u8]> {
+    fn iter_dup_of<K>(&mut self, key: K) -> Iter<'txn> where K: AsRef<[u8]> {
         match self.get(Some(key.as_ref()), None, ffi::MDB_SET) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => panic!("mdb_cursor_get returned an unexpected error: {}", error),
