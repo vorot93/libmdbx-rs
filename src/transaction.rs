@@ -456,6 +456,7 @@ mod test {
 
         let mut txn = env.begin_rw_txn().unwrap();
         txn.del(db, b"key1", Some(b"val2")).unwrap();
+        txn.del(db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
@@ -464,6 +465,9 @@ mod test {
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|(_,x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1", b"val3"]);
+
+            let iter = cur.iter_dup_of(b"key2");
+            assert_eq!(0, iter.count());
         }
         txn.commit().unwrap();
     }
