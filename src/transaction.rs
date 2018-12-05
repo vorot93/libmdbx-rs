@@ -425,7 +425,7 @@ mod test {
         txn.del(db, b"key1", None).unwrap();
         assert_eq!(txn.get(db, b"key1"), Err(Error::NotFound));
     }
-    
+
     #[test]
     fn test_put_get_del_multi() {
         let dir = TempDir::new("test").unwrap();
@@ -445,7 +445,7 @@ mod test {
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        { 
+        {
             let mut cur = txn.open_ro_cursor(db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|(_,x)| x).collect::<Vec<_>>();
