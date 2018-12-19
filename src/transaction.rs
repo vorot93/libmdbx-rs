@@ -448,7 +448,7 @@ mod test {
         {
             let mut cur = txn.open_ro_cursor(db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
-            let vals = iter.map(|(_,x)| x).collect::<Vec<_>>();
+            let vals = iter.filter_map(Result::ok).map(|(_,x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1", b"val2", b"val3"]);
 
         }
@@ -463,7 +463,7 @@ mod test {
         {
             let mut cur = txn.open_ro_cursor(db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
-            let vals = iter.map(|(_,x)| x).collect::<Vec<_>>();
+            let vals = iter.filter_map(Result::ok).map(|(_,x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1", b"val3"]);
 
             let iter = cur.iter_dup_of(b"key2");
