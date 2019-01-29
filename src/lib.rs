@@ -6,7 +6,7 @@
 #![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.11.1")]
 
 extern crate libc;
-extern crate lmdb_sys as ffi;
+extern crate lmdb_rkv_sys as ffi;
 
 #[cfg(test)] extern crate rand;
 #[cfg(test)] extern crate tempdir;
