@@ -28,7 +28,7 @@ members = [
 [dependencies]
 bitflags = "1"
 libc = "0.2"
-lmdb-sys = "0.8.0"
+lmdb-rkv-sys = "0.8.1"
 
 [dev-dependencies]
 rand = "0.4"
