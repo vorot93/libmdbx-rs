@@ -1,8 +1,8 @@
 [package]
 
-name = "lmdb-sys"
+name = "lmdb-rkv-sys"
 # NB: When modifying, also modify html_root_url in lib.rs
-version = "0.8.0"
+version = "0.8.1"
 authors = ["Dan Burkert <dan@danburkert.com>"]
 license = "Apache-2.0"
 
