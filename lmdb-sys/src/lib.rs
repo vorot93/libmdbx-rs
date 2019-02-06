@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types)]
 #![deny(warnings)]
-#![doc(html_root_url = "https://docs.rs/lmdb-rkv-sys/0.8.1")]
+#![doc(html_root_url = "https://docs.rs/lmdb-rkv-sys/0.8.2")]
 
 extern crate libc;
 
