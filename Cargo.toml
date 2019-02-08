@@ -13,6 +13,14 @@ documentation = "https://docs.rs/lmdb-rkv"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database"]
 
+exclude = [
+  # Exclude CI config files from package.
+  "/.appveyor.yml",
+  "/.travis.yml",
+  "/azure-pipelines-template.yml",
+  "/azure-pipelines.yml",
+]
+
 [lib]
 name = "lmdb"
 
