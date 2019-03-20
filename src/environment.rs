@@ -163,6 +163,37 @@ impl Environment {
             Ok(stat)
         }
     }
+
+    /// Retrieves info about this environment.
+    pub fn info(&self) -> Result<Info> {
+        unsafe {
+            let mut info = Info(mem::zeroed());
+            lmdb_try!(ffi::mdb_env_info(self.env(), &mut info.0));
+            Ok(info)
+        }
+    }
+
+    /// Sets the size of the memory map to use for the environment.
+    ///
+    /// This could be used to resize the map when the environment is already open.
+    ///
+    /// Note:
+    ///
+    /// * No active transactions allowed when performing resizing in this process.
+    ///
+    /// * The size should be a multiple of the OS page size. Any attempt to set
+    ///   a size smaller than the space already consumed by the environment will
+    ///   be silently changed to the current size of the used space.
+    ///
+    /// * In the multi-process case, once a process resizes the map, other
+    ///   processes need to either re-open the environment, or call set_map_size
+    ///   with size 0 to update the environment. Otherwise, new transaction creation
+    ///   will fail with `Error::MapResized`.
+    pub fn set_map_size(&self, size: size_t) -> Result<()> {
+        unsafe {
+            lmdb_result(ffi::mdb_env_set_mapsize(self.env(), size))
+        }
+    }
 }
 
 /// Environment statistics.
@@ -205,6 +236,43 @@ impl Stat {
     #[inline]
     pub fn entries(&self) -> usize {
         self.0.ms_entries
+    }
+}
+
+/// Environment information.
+///
+/// Contains environment information about the map size, readers, last txn id etc.
+pub struct Info(ffi::MDB_envinfo);
+
+impl Info {
+    /// Size of memory map.
+    #[inline]
+    pub fn map_size(&self) -> usize {
+        self.0.me_mapsize
+    }
+
+    /// Last used page number
+    #[inline]
+    pub fn last_pgno(&self) -> usize {
+        self.0.me_last_pgno
+    }
+
+    /// Last transaction ID
+    #[inline]
+    pub fn last_txnid(&self) -> usize {
+        self.0.me_last_txnid
+    }
+
+    /// Max reader slots in the environment
+    #[inline]
+    pub fn max_readers(&self) -> u32 {
+        self.0.me_maxreaders
+    }
+
+    /// Max reader slots used in the environment
+    #[inline]
+    pub fn num_readers(&self) -> u32 {
+        self.0.me_numreaders
     }
 }
 
@@ -461,5 +529,50 @@ mod test {
         assert_eq!(stat.leaf_pages(), 1);
         assert_eq!(stat.overflow_pages(), 0);
         assert_eq!(stat.entries(), 64);
+    }
+
+    #[test]
+    fn test_info() {
+        let map_size = 1024 * 1024;
+        let dir = TempDir::new("test").unwrap();
+        let env = Environment::new()
+            .set_map_size(map_size)
+            .open(dir.path())
+            .unwrap();
+
+        let info = env.info().unwrap();
+        assert_eq!(info.map_size(), map_size);
+        assert_eq!(info.last_pgno(), 1);
+        assert_eq!(info.last_txnid(), 0);
+        // The default max readers is 126.
+        assert_eq!(info.max_readers(), 126);
+        assert_eq!(info.num_readers(), 0);
+    }
+
+    #[test]
+    fn test_set_map_size() {
+        let dir = TempDir::new("test").unwrap();
+        let env = Environment::new().open(dir.path()).unwrap();
+
+        let mut info = env.info().unwrap();
+        let default_size = info.map_size();
+
+        // Resizing to 0 merely reloads the map size
+        env.set_map_size(0).unwrap();
+        info = env.info().unwrap();
+        assert_eq!(info.map_size(), default_size);
+
+        env.set_map_size(2 * default_size).unwrap();
+        info = env.info().unwrap();
+        assert_eq!(info.map_size(), 2 * default_size);
+
+        env.set_map_size(4 * default_size).unwrap();
+        info = env.info().unwrap();
+        assert_eq!(info.map_size(), 4 * default_size);
+
+        // Decreasing is also fine if the space hasn't been consumed.
+        env.set_map_size(2 * default_size).unwrap();
+        info = env.info().unwrap();
+        assert_eq!(info.map_size(), 2 * default_size);
     }
 }

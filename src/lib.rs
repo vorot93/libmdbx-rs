@@ -21,7 +21,12 @@ pub use cursor::{
     IterDup,
 };
 pub use database::Database;
-pub use environment::{Environment, Stat, EnvironmentBuilder};
+pub use environment::{
+    Environment,
+    EnvironmentBuilder,
+    Info,
+    Stat,
+};
 pub use error::{Error, Result};
 pub use flags::*;
 pub use transaction::{
