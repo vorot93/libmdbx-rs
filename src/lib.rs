@@ -3,7 +3,7 @@
 
 #![cfg_attr(test, feature(test))]
 #![deny(missing_docs)]
-#![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.11.2")]
+#![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.11.3")]
 
 extern crate libc;
 extern crate lmdb_rkv_sys as ffi;
