@@ -7,6 +7,7 @@
 
 extern crate libc;
 extern crate lmdb_rkv_sys as ffi;
+extern crate byteorder;
 
 #[cfg(test)] extern crate rand;
 #[cfg(test)] extern crate tempdir;
@@ -67,9 +68,7 @@ mod transaction;
 #[cfg(test)]
 mod test_utils {
 
-    extern crate byteorder;
-
-    use self::byteorder::{ByteOrder, LittleEndian};
+    use byteorder::{ByteOrder, LittleEndian};
     use tempdir::TempDir;
 
     use super::*;

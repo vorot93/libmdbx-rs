@@ -10,7 +10,10 @@ use std::sync::Mutex;
 
 use ffi;
 
-use error::{Result, lmdb_result};
+use byteorder::{ByteOrder, NativeEndian};
+
+use cursor::Cursor;
+use error::{Error, Result, lmdb_result};
 use database::Database;
 use transaction::{RoTransaction, RwTransaction, Transaction};
 use flags::{DatabaseFlags, EnvironmentFlags};
@@ -171,6 +174,52 @@ impl Environment {
             lmdb_try!(ffi::mdb_env_info(self.env(), &mut info.0));
             Ok(info)
         }
+    }
+
+    /// Retrieves the total number of pages on the freelist.
+    ///
+    /// Along with `Environment::info()`, this can be used to calculate the exact number
+    /// of used pages as well as free pages in this environment.
+    ///
+    /// ```ignore
+    /// let env = Environment::new().open("/tmp/test").unwrap();
+    /// let info = env.info().unwrap();
+    /// let stat = env.stat().unwrap();
+    /// let freelist = env.freelist().unwrap();
+    /// let last_pgno = info.last_pgno() + 1; // pgno is 0 based.
+    /// let total_pgs = info.map_size() / stat.page_size() as usize;
+    /// let pgs_in_use = last_pgno - freelist;
+    /// let pgs_free = total_pgs - pgs_in_use;
+    /// ```
+    ///
+    /// Note:
+    ///
+    /// * LMDB stores all the freelists in the designated database 0 in each environment,
+    ///   and the freelist count is stored at the beginning of the value as `libc::size_t`
+    ///   in the native byte order.
+    ///
+    /// * It will create a read transaction to traverse the freelist database.
+    pub fn freelist(&self) -> Result<size_t> {
+        let mut freelist: size_t = 0;
+        let db = Database::freelist_db();
+        let txn = self.begin_ro_txn()?;
+        let mut cursor = txn.open_ro_cursor(db)?;
+
+        for result in cursor.iter() {
+            let (_key, value) = result?;
+            if value.len() < mem::size_of::<size_t>() {
+                return Err(Error::Corrupted);
+            }
+
+            let s = &value[..mem::size_of::<size_t>()];
+            if cfg!(target_pointer_width = "64") {
+                freelist += NativeEndian::read_u64(s) as size_t;
+            } else {
+                freelist += NativeEndian::read_u32(s) as size_t;
+            }
+        }
+
+        Ok(freelist)
     }
 
     /// Sets the size of the memory map to use for the environment.
@@ -547,6 +596,32 @@ mod test {
         // The default max readers is 126.
         assert_eq!(info.max_readers(), 126);
         assert_eq!(info.num_readers(), 0);
+    }
+
+    #[test]
+    fn test_freelist() {
+        let dir = TempDir::new("test").unwrap();
+        let env = Environment::new().open(dir.path()).unwrap();
+
+        let db = env.open_db(None).unwrap();
+        let mut freelist = env.freelist().unwrap();
+        assert_eq!(freelist, 0);
+
+        // Write a few small values.
+        for i in 0..64 {
+            let mut value = [0u8; 8];
+            LittleEndian::write_u64(&mut value, i);
+            let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+            tx.put(db, &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.commit().expect("tx.commit")
+        }
+        let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+        tx.clear_db(db).expect("clear");
+        tx.commit().expect("tx.commit");
+
+        // Freelist should not be empty after clear_db.
+        freelist = env.freelist().unwrap();
+        assert!(freelist > 0);
     }
 
     #[test]
