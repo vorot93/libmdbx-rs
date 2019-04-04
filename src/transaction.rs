@@ -107,7 +107,7 @@ pub trait Transaction : Sized {
     fn stat(&self, db: Database) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            lmdb_try!(ffi::mdb_stat(self.txn(), db.dbi(), &mut stat.0));
+            lmdb_try!(ffi::mdb_stat(self.txn(), db.dbi(), stat.mdb_stat()));
             Ok(stat)
         }
     }
