@@ -161,7 +161,7 @@ impl Environment {
     /// Retrieves statistics about this environment.
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
-            let mut stat = Stat(mem::zeroed());
+            let mut stat = Stat::new();
             lmdb_try!(ffi::mdb_env_stat(self.env(), &mut stat.0));
             Ok(stat)
         }
@@ -248,7 +248,16 @@ impl Environment {
 /// Environment statistics.
 ///
 /// Contains information about the size and layout of an LMDB environment.
-pub struct Stat(ffi::MDB_stat);
+pub struct Stat(pub(crate) ffi::MDB_stat);
+
+impl Stat {
+    /// Create a new Stat with zero'd inner struct `ffi::MDB_stat`.
+    pub fn new() -> Stat {
+        unsafe {
+            Stat(mem::zeroed())
+        }
+    }
+}
 
 impl Stat {
     /// Size of a database page. This is the same for all databases in the environment.
