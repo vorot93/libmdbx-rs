@@ -2,7 +2,7 @@
 
 name = "lmdb-rkv"
 # NB: When modifying, also modify html_root_url in lib.rs
-version = "0.11.3"
+version = "0.11.4"
 authors = ["Dan Burkert <dan@danburkert.com>"]
 license = "Apache-2.0"
 
@@ -37,7 +37,7 @@ members = [
 bitflags = "1"
 byteorder = "1.0"
 libc = "0.2"
-lmdb-rkv-sys = "0.8.2"
+lmdb-rkv-sys = "0.8.3"
 
 [dev-dependencies]
 rand = "0.4"
