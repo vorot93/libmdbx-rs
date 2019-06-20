@@ -11,11 +11,14 @@ os:
 rust:
 - 1.30.0
 - stable
+- beta
 - nightly
 
 script:
   - cargo build --verbose
+  - export RUST_BACKTRACE=1
+  - cargo test --all --verbose
+  - cargo test --release --all --verbose
   - if [[ $TRAVIS_RUST_VERSION = nightly* ]]; then
-      env RUST_BACKTRACE=1 cargo test --all -v;
-      env RUST_BACKTRACE=1 cargo test --all -v --release;
+      cargo bench --all --verbose;
     fi

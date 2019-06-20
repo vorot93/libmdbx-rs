@@ -32,18 +32,27 @@ jobs:
     displayName: Query rust and cargo versions
   - script: cargo build
     displayName: Build
+  - script: |
+        cargo test --all --verbose
+        cargo test --release --all --verbose
+    displayName: Test
   # Linux and macOS w/nightly toolchain.
   # Ideally we'd only run the script for the nightly toolchain, but I can't
   # figure out how to determine that within the Azure Pipelines conditional.
   - ${{ if ne(parameters.name, 'Windows') }}:
     - script: |
-        if [ "$RUSTUP_TOOLCHAIN" = 'nightly' ]
-          then cargo test
+        export RUST_BACKTRACE=1
+        if [ "$RUSTUP_TOOLCHAIN" = "nightly" ]
+          then cargo bench --all --verbose;
         fi
-      displayName: Test
+      displayName: Bench
   # Windows w/nightly toolchain.
   # Ideally we'd only run the script for the nightly toolchain, but I can't
   # figure out how to determine that within the Azure Pipelines conditional.
   - ${{ if eq(parameters.name, 'Windows') }}:
-    - script: if "%RUSTUP_TOOLCHAIN%" == "nightly" cargo test
-      displayName: Test
+    - script: |
+        SET RUST_BACKTRACE=1
+        if "%RUSTUP_TOOLCHAIN%" == "nightly" (
+          cargo bench --all --verbose
+        )
+      displayName: Bench
