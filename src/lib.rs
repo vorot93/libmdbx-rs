@@ -1,7 +1,6 @@
 //! Idiomatic and safe APIs for interacting with the
 //! [Lightning Memory-mapped Database (LMDB)](https://symas.com/lmdb).
 
-#![cfg_attr(test, feature(test))]
 #![deny(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.11.4")]
 
@@ -9,9 +8,7 @@ extern crate libc;
 extern crate lmdb_rkv_sys as ffi;
 extern crate byteorder;
 
-#[cfg(test)] extern crate rand;
 #[cfg(test)] extern crate tempdir;
-#[cfg(test)] extern crate test;
 #[macro_use] extern crate bitflags;
 
 pub use cursor::{
@@ -72,29 +69,6 @@ mod test_utils {
     use tempdir::TempDir;
 
     use super::*;
-
-    pub fn get_key(n: u32) -> String {
-        format!("key{}", n)
-    }
-
-    pub fn get_data(n: u32) -> String {
-        format!("data{}", n)
-    }
-
-    pub fn setup_bench_db<'a>(num_rows: u32) -> (TempDir, Environment) {
-        let dir = TempDir::new("test").unwrap();
-        let env = Environment::new().open(dir.path()).unwrap();
-
-        {
-            let db = env.open_db(None).unwrap();
-            let mut txn = env.begin_rw_txn().unwrap();
-            for i in 0..num_rows {
-                txn.put(db, &get_key(i), &get_data(i), WriteFlags::empty()).unwrap();
-            }
-            txn.commit().unwrap();
-        }
-        (dir, env)
-    }
 
     /// Regression test for https://github.com/danburkert/lmdb-rs/issues/21.
     /// This test reliably segfaults when run against lmbdb compiled with opt level -O3 and newer
