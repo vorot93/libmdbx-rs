@@ -79,8 +79,6 @@ fn main() {
             .define("MDB_IDL_LOGN", Some(MDB_IDL_LOGN.to_string().as_str()))
             .file(lmdb.join("mdb.c"))
             .file(lmdb.join("midl.c"))
-            // https://github.com/LMDB/lmdb/blob/LMDB_0.9.21/libraries/liblmdb/Makefile#L25
-            .opt_level(2)
             .compile("liblmdb.a")
     }
 
