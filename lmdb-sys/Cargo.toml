@@ -3,7 +3,7 @@
 name = "lmdb-rkv-sys"
 # NB: When modifying, also modify html_root_url in lib.rs
 version = "0.8.6"
-authors = ["Dan Burkert <dan@danburkert.com>"]
+authors = ["Dan Burkert <dan@danburkert.com>", "Victor Porof <vporof@mozilla.com>"]
 license = "Apache-2.0"
 
 description = "Rust bindings for liblmdb."
@@ -21,6 +21,7 @@ libc = "0.2"
 [build-dependencies]
 pkg-config = "0.3.2"
 cc = "1"
+bindgen = "0.50"
 
 [features]
 default = []
