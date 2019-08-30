@@ -79,6 +79,7 @@ fn main() {
             .define("MDB_IDL_LOGN", Some(MDB_IDL_LOGN.to_string().as_str()))
             .file(lmdb.join("mdb.c"))
             .file(lmdb.join("midl.c"))
+            .flag("-Wno-unused-parameter")
             .compile("liblmdb.a")
     }
 
