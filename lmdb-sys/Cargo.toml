@@ -16,12 +16,12 @@ categories = ["database", "external-ffi-bindings"]
 build = "build.rs"
 
 [dependencies]
-libc = "0.2"
+libc = "0.2.62"
 
 [build-dependencies]
-pkg-config = "0.3.2"
-cc = "1"
-bindgen = "0.50"
+pkg-config = "0.3.15"
+cc = "1.0.41"
+bindgen = "0.51.0"
 
 [features]
 default = []
