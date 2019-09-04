@@ -11,4 +11,4 @@ pub type mode_t = ::libc::mode_t;
 #[allow(non_camel_case_types)]
 pub type mode_t = ::libc::c_int;
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+include!("bindings.rs");

@@ -13,6 +13,8 @@ documentation = "https://docs.rs/lmdb-rkv-sys"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database", "external-ffi-bindings"]
 
+# NB: When generating bindings, change to "bindgen.rs" or use something
+# like `cargo-script` instead.
 build = "build.rs"
 
 [dependencies]
