@@ -19,6 +19,7 @@ install:
   - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
   - choco install make -y
   - choco install mingw -y
+  - refreshenv
   - rustc -Vv
   - cargo -V
   - make -v
