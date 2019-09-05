@@ -2,8 +2,8 @@
 
 name = "lmdb-rkv"
 # NB: When modifying, also modify html_root_url in lib.rs
-version = "0.11.4"
-authors = ["Dan Burkert <dan@danburkert.com>"]
+version = "0.12.0"
+authors = ["Dan Burkert <dan@danburkert.com>", "Victor Porof <vporof@mozilla.com>"]
 license = "Apache-2.0"
 
 description = "Idiomatic and safe LMDB wrapper."

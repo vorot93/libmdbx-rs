@@ -2,7 +2,7 @@
 //! [Lightning Memory-mapped Database (LMDB)](https://symas.com/lmdb).
 
 #![deny(missing_docs)]
-#![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.11.4")]
+#![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.12.0")]
 
 extern crate libc;
 extern crate lmdb_rkv_sys as ffi;
