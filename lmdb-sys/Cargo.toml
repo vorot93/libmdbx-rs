@@ -2,8 +2,8 @@
 
 name = "lmdb-rkv-sys"
 # NB: When modifying, also modify html_root_url in lib.rs
-version = "0.8.6"
-authors = ["Dan Burkert <dan@danburkert.com>"]
+version = "0.9.0"
+authors = ["Dan Burkert <dan@danburkert.com>", "Victor Porof <vporof@mozilla.com>"]
 license = "Apache-2.0"
 
 description = "Rust bindings for liblmdb."
@@ -13,14 +13,17 @@ documentation = "https://docs.rs/lmdb-rkv-sys"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database", "external-ffi-bindings"]
 
+# NB: When generating bindings, change to "bindgen.rs" or use something
+# like `cargo-script` instead.
 build = "build.rs"
 
 [dependencies]
-libc = "0.2"
+libc = "0.2.62"
 
 [build-dependencies]
-pkg-config = "0.3.2"
-cc = "1"
+pkg-config = "0.3.15"
+cc = "1.0.41"
+bindgen = "0.51.0"
 
 [features]
 default = []

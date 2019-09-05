@@ -1,5 +1,5 @@
-extern crate pkg_config;
 extern crate cc;
+extern crate pkg_config;
 
 use std::env;
 use std::path::PathBuf;
@@ -33,18 +33,17 @@ const MDB_IDL_LOGN: u8 = 15;
 const MDB_IDL_LOGN: u8 = 16;
 
 fn main() {
-    let mut lmdb: PathBuf = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
+    let mut lmdb = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     lmdb.push("lmdb");
     lmdb.push("libraries");
     lmdb.push("liblmdb");
 
     if !pkg_config::find_library("liblmdb").is_ok() {
         cc::Build::new()
-                    .define("MDB_IDL_LOGN", Some(MDB_IDL_LOGN.to_string().as_str()))
-                    .file(lmdb.join("mdb.c"))
-                    .file(lmdb.join("midl.c"))
-                    // https://github.com/LMDB/lmdb/blob/LMDB_0.9.21/libraries/liblmdb/Makefile#L25
-                    .opt_level(2)
-                    .compile("liblmdb.a")
+            .define("MDB_IDL_LOGN", Some(MDB_IDL_LOGN.to_string().as_str()))
+            .file(lmdb.join("mdb.c"))
+            .file(lmdb.join("midl.c"))
+            .flag_if_supported("-Wno-unused-parameter")
+            .compile("liblmdb.a")
     }
 }
