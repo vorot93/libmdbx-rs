@@ -7,9 +7,17 @@ extern crate test;
 mod utils;
 
 use ffi::*;
-use lmdb::{Cursor, Result, RoCursor, Transaction};
+use lmdb::{
+    Cursor,
+    Result,
+    RoCursor,
+    Transaction,
+};
 use std::ptr;
-use test::{Bencher, black_box};
+use test::{
+    black_box,
+    Bencher,
+};
 use utils::*;
 
 /// Benchmark of iterator sequential read performance.
@@ -85,8 +93,14 @@ fn bench_get_seq_raw(b: &mut Bencher) {
     let _txn = env.begin_ro_txn().unwrap();
     let txn = _txn.txn();
 
-    let mut key = MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
-    let mut data = MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
+    let mut key = MDB_val {
+        mv_size: 0,
+        mv_data: ptr::null_mut(),
+    };
+    let mut data = MDB_val {
+        mv_size: 0,
+        mv_data: ptr::null_mut(),
+    };
     let mut cursor: *mut MDB_cursor = ptr::null_mut();
 
     b.iter(|| unsafe {
@@ -97,7 +111,7 @@ fn bench_get_seq_raw(b: &mut Bencher) {
         while mdb_cursor_get(cursor, &mut key, &mut data, MDB_NEXT) == 0 {
             i += key.mv_size + data.mv_size;
             count += 1;
-        };
+        }
 
         black_box(i);
         assert_eq!(count, n);
