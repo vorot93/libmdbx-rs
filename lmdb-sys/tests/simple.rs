@@ -23,6 +23,18 @@ macro_rules! str {
 }
 
 #[test]
+#[cfg(all(target_os = "windows", target_arch = "x86"))]
+#[should_panic(expected = "Failed with code -30793")]
+fn test_simple_win_32() {
+    test_simple()
+}
+
+#[test]
+#[cfg(not(all(target_os = "windows", target_arch = "x86")))]
+fn test_simple_other() {
+    test_simple()
+}
+
 fn test_simple() {
     let mut env: *mut MDB_env = ptr::null_mut();
     let mut dbi: MDB_dbi = 0;
