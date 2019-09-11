@@ -162,7 +162,7 @@ impl<'env> RoTransaction<'env> {
         unsafe {
             lmdb_result(ffi::mdb_txn_begin(env.env(), ptr::null_mut(), ffi::MDB_RDONLY, &mut txn))?;
             Ok(RoTransaction {
-                txn: txn,
+                txn,
                 _marker: PhantomData,
             })
         }
@@ -187,7 +187,7 @@ impl<'env> RoTransaction<'env> {
             ffi::mdb_txn_reset(txn)
         };
         InactiveTransaction {
-            txn: txn,
+            txn,
             _marker: PhantomData,
         }
     }
@@ -230,7 +230,7 @@ impl<'env> InactiveTransaction<'env> {
             lmdb_result(ffi::mdb_txn_renew(txn))?
         };
         Ok(RoTransaction {
-            txn: txn,
+            txn,
             _marker: PhantomData,
         })
     }
@@ -262,7 +262,7 @@ impl<'env> RwTransaction<'env> {
         unsafe {
             lmdb_result(ffi::mdb_txn_begin(env.env(), ptr::null_mut(), EnvironmentFlags::empty().bits(), &mut txn))?;
             Ok(RwTransaction {
-                txn: txn,
+                txn,
                 _marker: PhantomData,
             })
         }

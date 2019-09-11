@@ -161,7 +161,7 @@ impl<'txn> RoCursor<'txn> {
             lmdb_result(ffi::mdb_cursor_open(txn.txn(), db.dbi(), &mut cursor))?;
         }
         Ok(RoCursor {
-            cursor: cursor,
+            cursor,
             _marker: PhantomData,
         })
     }
@@ -203,7 +203,7 @@ impl<'txn> RwCursor<'txn> {
             lmdb_result(ffi::mdb_cursor_open(txn.txn(), db.dbi(), &mut cursor))?;
         }
         Ok(RwCursor {
-            cursor: cursor,
+            cursor,
             _marker: PhantomData,
         })
     }
@@ -288,9 +288,9 @@ impl<'txn> Iter<'txn> {
     /// Creates a new iterator backed by the given cursor.
     fn new<'t>(cursor: *mut ffi::MDB_cursor, op: c_uint, next_op: c_uint) -> Iter<'t> {
         Iter::Ok {
-            cursor: cursor,
-            op: op,
-            next_op: next_op,
+            cursor,
+            op,
+            next_op,
             _marker: PhantomData,
         }
     }
@@ -369,8 +369,8 @@ impl<'txn> IterDup<'txn> {
     /// Creates a new iterator backed by the given cursor.
     fn new<'t>(cursor: *mut ffi::MDB_cursor, op: c_uint) -> IterDup<'t> {
         IterDup::Ok {
-            cursor: cursor,
-            op: op,
+            cursor,
+            op,
             _marker: PhantomData,
         }
     }

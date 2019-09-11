@@ -32,7 +32,7 @@ impl Database {
         let mut dbi: ffi::MDB_dbi = 0;
         lmdb_result(ffi::mdb_dbi_open(txn, name_ptr, flags, &mut dbi))?;
         Ok(Database {
-            dbi: dbi,
+            dbi,
         })
     }
 
@@ -46,6 +46,7 @@ impl Database {
     ///
     /// The caller **must** ensure that the handle is not used after the lifetime of the
     /// environment, or after the database has been closed.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn dbi(&self) -> ffi::MDB_dbi {
         self.dbi
     }

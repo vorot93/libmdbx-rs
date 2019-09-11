@@ -62,6 +62,7 @@ pub struct Environment {
 
 impl Environment {
     /// Creates a new builder for specifying options for opening an LMDB environment.
+    #[allow(clippy::new_ret_no_self)]
     pub fn new() -> EnvironmentBuilder {
         EnvironmentBuilder {
             flags: EnvironmentFlags::empty(),
@@ -128,7 +129,7 @@ impl Environment {
     /// Retrieves the set of flags which the database is opened with.
     ///
     /// The database must belong to to this environment.
-    pub fn get_db_flags<'env>(&'env self, db: Database) -> Result<DatabaseFlags> {
+    pub fn get_db_flags(&self, db: Database) -> Result<DatabaseFlags> {
         let txn = self.begin_ro_txn()?;
         let mut flags: c_uint = 0;
         unsafe {
@@ -428,7 +429,7 @@ impl EnvironmentBuilder {
             );
         }
         Ok(Environment {
-            env: env,
+            env,
             dbi_open_mutex: Mutex::new(()),
         })
     }

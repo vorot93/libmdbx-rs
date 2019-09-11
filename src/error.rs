@@ -86,6 +86,7 @@ impl Error {
     }
 
     /// Converts an `Error` to the raw error code.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn to_err_code(&self) -> c_int {
         match *self {
             Error::KeyExist => ffi::MDB_KEYEXIST,
