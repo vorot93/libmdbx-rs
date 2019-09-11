@@ -4,19 +4,21 @@
 #![deny(missing_docs)]
 #![doc(html_root_url = "https://docs.rs/lmdb-rkv/0.12.0")]
 
+extern crate byteorder;
 extern crate libc;
 extern crate lmdb_rkv_sys as ffi;
-extern crate byteorder;
 
-#[cfg(test)] extern crate tempdir;
-#[macro_use] extern crate bitflags;
+#[cfg(test)]
+extern crate tempdir;
+#[macro_use]
+extern crate bitflags;
 
 pub use cursor::{
     Cursor,
-    RoCursor,
-    RwCursor,
     Iter,
     IterDup,
+    RoCursor,
+    RwCursor,
 };
 pub use database::Database;
 pub use environment::{
@@ -25,7 +27,10 @@ pub use environment::{
     Info,
     Stat,
 };
-pub use error::{Error, Result};
+pub use error::{
+    Error,
+    Result,
+};
 pub use flags::*;
 pub use transaction::{
     InactiveTransaction,
@@ -35,37 +40,40 @@ pub use transaction::{
 };
 
 macro_rules! lmdb_try {
-    ($expr:expr) => ({
+    ($expr:expr) => {{
         match $expr {
             ::ffi::MDB_SUCCESS => (),
             err_code => return Err(::Error::from_err_code(err_code)),
         }
-    })
+    }};
 }
 
 macro_rules! lmdb_try_with_cleanup {
-    ($expr:expr, $cleanup:expr) => ({
+    ($expr:expr, $cleanup:expr) => {{
         match $expr {
             ::ffi::MDB_SUCCESS => (),
             err_code => {
                 let _ = $cleanup;
-                return Err(::Error::from_err_code(err_code))
+                return Err(::Error::from_err_code(err_code));
             },
         }
-    })
+    }};
 }
 
-mod flags;
 mod cursor;
 mod database;
 mod environment;
 mod error;
+mod flags;
 mod transaction;
 
 #[cfg(test)]
 mod test_utils {
 
-    use byteorder::{ByteOrder, LittleEndian};
+    use byteorder::{
+        ByteOrder,
+        LittleEndian,
+    };
     use tempdir::TempDir;
 
     use super::*;
@@ -91,10 +99,7 @@ mod test_utils {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, height);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.put(index,
-                   &HEIGHT_KEY,
-                   &value,
-                   WriteFlags::empty()).expect("tx.put");
+            tx.put(index, &HEIGHT_KEY, &value, WriteFlags::empty()).expect("tx.put");
             tx.commit().expect("tx.commit")
         }
     }

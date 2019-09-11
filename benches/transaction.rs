@@ -10,10 +10,19 @@ mod utils;
 
 use ffi::*;
 use libc::size_t;
-use lmdb::{Transaction, WriteFlags};
-use rand::{Rng, XorShiftRng};
+use lmdb::{
+    Transaction,
+    WriteFlags,
+};
+use rand::{
+    Rng,
+    XorShiftRng,
+};
 use std::ptr;
-use test::{Bencher, black_box};
+use test::{
+    black_box,
+    Bencher,
+};
 use utils::*;
 
 #[bench]
@@ -23,13 +32,13 @@ fn bench_get_rand(b: &mut Bencher) {
     let db = env.open_db(None).unwrap();
     let txn = env.begin_ro_txn().unwrap();
 
-    let mut keys: Vec<String> = (0..n).map(|n| get_key(n)).collect();
+    let mut keys: Vec<String> = (0..n).map(get_key).collect();
     XorShiftRng::new_unseeded().shuffle(&mut keys[..]);
 
     b.iter(|| {
         let mut i = 0usize;
         for key in &keys {
-            i = i + txn.get(db, key).unwrap().len();
+            i += txn.get(db, key).unwrap().len();
         }
         black_box(i);
     });
@@ -42,14 +51,20 @@ fn bench_get_rand_raw(b: &mut Bencher) {
     let db = env.open_db(None).unwrap();
     let _txn = env.begin_ro_txn().unwrap();
 
-    let mut keys: Vec<String> = (0..n).map(|n| get_key(n)).collect();
+    let mut keys: Vec<String> = (0..n).map(get_key).collect();
     XorShiftRng::new_unseeded().shuffle(&mut keys[..]);
 
     let dbi = db.dbi();
     let txn = _txn.txn();
 
-    let mut key_val: MDB_val = MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
-    let mut data_val: MDB_val = MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
+    let mut key_val: MDB_val = MDB_val {
+        mv_size: 0,
+        mv_data: ptr::null_mut(),
+    };
+    let mut data_val: MDB_val = MDB_val {
+        mv_size: 0,
+        mv_data: ptr::null_mut(),
+    };
 
     b.iter(|| unsafe {
         let mut i: size_t = 0;
@@ -59,7 +74,7 @@ fn bench_get_rand_raw(b: &mut Bencher) {
 
             mdb_get(txn, dbi, &mut key_val, &mut data_val);
 
-            i = i + key_val.mv_size;
+            i += key_val.mv_size;
         }
         black_box(i);
     });
@@ -95,8 +110,14 @@ fn bench_put_rand_raw(b: &mut Bencher) {
     let dbi = db.dbi();
     let env = _env.env();
 
-    let mut key_val: MDB_val = MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
-    let mut data_val: MDB_val = MDB_val { mv_size: 0, mv_data: ptr::null_mut() };
+    let mut key_val: MDB_val = MDB_val {
+        mv_size: 0,
+        mv_data: ptr::null_mut(),
+    };
+    let mut data_val: MDB_val = MDB_val {
+        mv_size: 0,
+        mv_data: ptr::null_mut(),
+    };
 
     b.iter(|| unsafe {
         let mut txn: *mut MDB_txn = ptr::null_mut();
@@ -104,7 +125,6 @@ fn bench_put_rand_raw(b: &mut Bencher) {
 
         let mut i: ::libc::c_int = 0;
         for &(ref key, ref data) in items.iter() {
-
             key_val.mv_size = key.len() as size_t;
             key_val.mv_data = key.as_bytes().as_ptr() as *mut _;
             data_val.mv_size = data.len() as size_t;

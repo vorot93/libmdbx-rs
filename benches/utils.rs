@@ -1,8 +1,12 @@
 extern crate lmdb;
 extern crate tempdir;
 
-use lmdb::{Environment, Transaction, WriteFlags};
 use self::tempdir::TempDir;
+use lmdb::{
+    Environment,
+    Transaction,
+    WriteFlags,
+};
 
 pub fn get_key(n: u32) -> String {
     format!("key{}", n)
@@ -12,7 +16,7 @@ pub fn get_data(n: u32) -> String {
     format!("data{}", n)
 }
 
-pub fn setup_bench_db<'a>(num_rows: u32) -> (TempDir, Environment) {
+pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment) {
     let dir = TempDir::new("test").unwrap();
     let env = Environment::new().open(dir.path()).unwrap();
 
