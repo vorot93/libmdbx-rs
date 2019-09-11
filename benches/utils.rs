@@ -16,7 +16,7 @@ pub fn get_data(n: u32) -> String {
     format!("data{}", n)
 }
 
-pub fn setup_bench_db<'a>(num_rows: u32) -> (TempDir, Environment) {
+pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment) {
     let dir = TempDir::new("test").unwrap();
     let env = Environment::new().open(dir.path()).unwrap();
 

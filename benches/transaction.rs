@@ -32,13 +32,13 @@ fn bench_get_rand(b: &mut Bencher) {
     let db = env.open_db(None).unwrap();
     let txn = env.begin_ro_txn().unwrap();
 
-    let mut keys: Vec<String> = (0..n).map(|n| get_key(n)).collect();
+    let mut keys: Vec<String> = (0..n).map(get_key).collect();
     XorShiftRng::new_unseeded().shuffle(&mut keys[..]);
 
     b.iter(|| {
         let mut i = 0usize;
         for key in &keys {
-            i = i + txn.get(db, key).unwrap().len();
+            i += txn.get(db, key).unwrap().len();
         }
         black_box(i);
     });
@@ -51,7 +51,7 @@ fn bench_get_rand_raw(b: &mut Bencher) {
     let db = env.open_db(None).unwrap();
     let _txn = env.begin_ro_txn().unwrap();
 
-    let mut keys: Vec<String> = (0..n).map(|n| get_key(n)).collect();
+    let mut keys: Vec<String> = (0..n).map(get_key).collect();
     XorShiftRng::new_unseeded().shuffle(&mut keys[..]);
 
     let dbi = db.dbi();
@@ -74,7 +74,7 @@ fn bench_get_rand_raw(b: &mut Bencher) {
 
             mdb_get(txn, dbi, &mut key_val, &mut data_val);
 
-            i = i + key_val.mv_size;
+            i += key_val.mv_size;
         }
         black_box(i);
     });

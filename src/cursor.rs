@@ -614,34 +614,34 @@ mod test {
 
         let txn = env.begin_ro_txn().unwrap();
         let mut cursor = txn.open_ro_cursor(db).unwrap();
-        assert_eq!(items, cursor.iter_dup().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap());
+        assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         cursor.get(Some(b"b"), None, MDB_SET).unwrap();
         assert_eq!(
             items.clone().into_iter().skip(4).collect::<Vec<(&[u8], &[u8])>>(),
-            cursor.iter_dup().flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap()
+            cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
-        assert_eq!(items, cursor.iter_dup_start().flat_map(|x| x).collect::<Result<Vec<(&[u8], &[u8])>>>().unwrap());
+        assert_eq!(items, cursor.iter_dup_start().flatten().collect::<Result<Vec<(&[u8], &[u8])>>>().unwrap());
 
         assert_eq!(
             items.clone().into_iter().skip(3).collect::<Vec<(&[u8], &[u8])>>(),
-            cursor.iter_dup_from(b"b").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap()
+            cursor.iter_dup_from(b"b").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
             items.clone().into_iter().skip(3).collect::<Vec<(&[u8], &[u8])>>(),
-            cursor.iter_dup_from(b"ab").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap()
+            cursor.iter_dup_from(b"ab").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
             items.clone().into_iter().skip(9).collect::<Vec<(&[u8], &[u8])>>(),
-            cursor.iter_dup_from(b"d").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap()
+            cursor.iter_dup_from(b"d").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
             vec!().into_iter().collect::<Vec<(&[u8], &[u8])>>(),
-            cursor.iter_dup_from(b"f").flat_map(|x| x).collect::<Result<Vec<_>>>().unwrap()
+            cursor.iter_dup_from(b"f").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(

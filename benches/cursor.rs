@@ -35,20 +35,18 @@ fn bench_get_seq_iter(b: &mut Bencher) {
 
         for (key, data) in cursor.iter().map(Result::unwrap) {
             i = i + key.len() + data.len();
-            count = count + 1;
+            count += 1;
         }
         for (key, data) in cursor.iter().filter_map(Result::ok) {
             i = i + key.len() + data.len();
-            count = count + 1;
+            count += 1;
         }
 
-        fn iterate<'a>(cursor: &mut RoCursor) -> Result<()> {
+        fn iterate(cursor: &mut RoCursor) -> Result<()> {
             let mut i = 0;
-            let mut count = 0u32;
             for result in cursor.iter() {
                 let (key, data) = result?;
                 i = i + key.len() + data.len();
-                count = count + 1;
             }
             Ok(())
         }
