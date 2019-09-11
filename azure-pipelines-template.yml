@@ -28,7 +28,7 @@ jobs:
       # All platforms.
       - script: |
           rustc -Vv
-          cargo -V
+          cargo -Vv
         displayName: Query rust and cargo versions
       - script: cargo build
         displayName: Build
