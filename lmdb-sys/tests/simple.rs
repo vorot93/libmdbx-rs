@@ -1,6 +1,6 @@
-extern crate lmdb_rkv_sys;
+extern crate lmdb_sys;
 
-use lmdb_rkv_sys::*;
+use lmdb_sys::*;
 
 use std::ffi::{c_void, CString};
 use std::ptr;

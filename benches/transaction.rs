@@ -2,7 +2,7 @@
 
 extern crate libc;
 extern crate lmdb;
-extern crate lmdb_rkv_sys as ffi;
+extern crate lmdb_sys as ffi;
 extern crate rand;
 extern crate test;
 
