@@ -1,4 +1,4 @@
-extern crate lmdb_rkv_sys;
+extern crate lmdb_sys;
 
 use std::env;
 use std::path::PathBuf;

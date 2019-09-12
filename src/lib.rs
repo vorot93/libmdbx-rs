@@ -6,7 +6,7 @@
 
 extern crate byteorder;
 extern crate libc;
-extern crate lmdb_rkv_sys as ffi;
+extern crate lmdb_sys as ffi;
 
 #[cfg(test)]
 extern crate tempdir;
