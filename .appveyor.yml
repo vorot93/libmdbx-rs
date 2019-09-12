@@ -21,7 +21,7 @@ install:
   - choco install mingw -y
   - refreshenv
   - rustc -Vv
-  - cargo -V
+  - cargo -Vv
   - make -v
   - gcc -v
 
