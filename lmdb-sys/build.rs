@@ -32,11 +32,22 @@ const MDB_IDL_LOGN: u8 = 15;
 )))]
 const MDB_IDL_LOGN: u8 = 16;
 
+macro_rules! warn {
+    ($message:expr) => {
+        println!("cargo:warning={}", $message);
+    };
+}
+
 fn main() {
     let mut lmdb = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     lmdb.push("lmdb");
     lmdb.push("libraries");
     lmdb.push("liblmdb");
+
+    if cfg!(feature = "with-fuzzer") && cfg!(feature = "with-fuzzer-no-link") {
+        warn!("Features `with-fuzzer` and `with-fuzzer-no-link` are mutually exclusive.");
+        warn!("Building with `-fsanitize=fuzzer`.");
+    }
 
     if !pkg_config::find_library("liblmdb").is_ok() {
         let mut builder = cc::Build::new();
@@ -60,6 +71,8 @@ fn main() {
 
         if env::var("CARGO_FEATURE_WITH_FUZZER").is_ok() {
             builder.flag("-fsanitize=fuzzer");
+        } else if env::var("CARGO_FEATURE_WITH_FUZZER_NO_LINK").is_ok() {
+            builder.flag("-fsanitize=fuzzer-no-link");
         }
 
         builder.compile("liblmdb.a")

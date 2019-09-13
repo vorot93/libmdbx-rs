@@ -36,6 +36,7 @@ default = []
 with-clang = []
 with-asan = ["with-clang"]
 with-fuzzer = ["with-clang"]
+with-fuzzer-no-link = ["with-clang"]
 
 # These features configure the MDB_IDL_LOGN macro, which determines
 # the size of the free and dirty page lists (and thus the amount of memory
