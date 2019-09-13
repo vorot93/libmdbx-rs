@@ -33,6 +33,9 @@ bindgen = "0.51.0"
 
 [features]
 default = []
+with-clang = []
+with-asan = ["with-clang"]
+with-fuzzer = ["with-clang"]
 
 # These features configure the MDB_IDL_LOGN macro, which determines
 # the size of the free and dirty page lists (and thus the amount of memory

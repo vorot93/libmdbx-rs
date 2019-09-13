@@ -50,3 +50,9 @@ lmdb-rkv-sys = { path = "./lmdb-sys" }
 [dev-dependencies]
 rand = "0.4.6"
 tempdir = "0.3.7"
+
+[features]
+default = []
+with-clang = ["lmdb-rkv-sys/with-clang"]
+with-asan = ["lmdb-rkv-sys/with-asan"]
+with-fuzzer = ["lmdb-rkv-sys/with-fuzzer"]
