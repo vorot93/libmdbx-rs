@@ -24,12 +24,12 @@ travis-ci = { repository = "mozilla/lmdb-rs" }
 appveyor = { repository = "mozilla/lmdb-rs" }
 
 [dependencies]
-libc = "0.2.62"
+libc = "0.2"
 
 [build-dependencies]
-pkg-config = "0.3.15"
-cc = "1.0.41"
-bindgen = "0.51.0"
+pkg-config = "0.3"
+cc = "1.0"
+bindgen = "0.51"
 
 [features]
 default = []

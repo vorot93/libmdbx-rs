@@ -33,9 +33,9 @@ members = [
 ]
 
 [dependencies]
-bitflags = "1.1.0"
-byteorder = "1.3.2"
-libc = "0.2.62"
+bitflags = "1"
+byteorder = "1"
+libc = "0.2"
 
 # In order to ensure that we test lmdb-rkv in CI against the in-tree version
 # of lmdb-rkv-sys, we specify the dependency as a path here.
@@ -48,8 +48,8 @@ libc = "0.2.62"
 lmdb-rkv-sys = { path = "./lmdb-sys" }
 
 [dev-dependencies]
-rand = "0.4.6"
-tempdir = "0.3.7"
+rand = "0.4"
+tempdir = "0.3"
 
 [features]
 default = []
