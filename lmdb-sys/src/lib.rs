@@ -1,7 +1,7 @@
 #![deny(warnings)]
 #![allow(non_camel_case_types)]
 #![allow(clippy::all)]
-#![doc(html_root_url = "https://docs.rs/lmdb-rkv-sys/0.9.1")]
+#![doc(html_root_url = "https://docs.rs/lmdb-rkv-sys/0.9.2")]
 
 extern crate libc;
 
