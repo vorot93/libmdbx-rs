@@ -32,13 +32,12 @@ before_script:
 
 script:
   - cargo +nightly-2019-09-11 fmt --all -- --check
-  - cargo +nightly-2019-09-11 clippy --all-features -- -D warnings -A clippy::match-ref-pats -A clippy::needless-lifetimes
-  - cargo build --features with-clang --verbose
-  - cargo build --features with-asan --verbose
-  - cargo build --features with-fuzzer --verbose
-  - cargo build --features with-fuzzer-no-link --verbose
-  - cargo build --features with-asan,with-fuzzer --verbose
-  - cargo build --features with-asan,with-fuzzer-no-link --verbose
+  - CC="clang" cargo +nightly-2019-09-11 clippy --all-features -- -D warnings -A clippy::match-ref-pats -A clippy::needless-lifetimes
+  - CC="clang" cargo build --features with-asan --verbose
+  - CC="clang" cargo build --features with-fuzzer --verbose
+  - CC="clang" cargo build --features with-fuzzer-no-link --verbose
+  - CC="clang" cargo build --features with-asan,with-fuzzer --verbose
+  - CC="clang" cargo build --features with-asan,with-fuzzer-no-link --verbose
   - cargo build --verbose
   - export RUST_BACKTRACE=1
   - cargo test --all --verbose

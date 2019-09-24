@@ -61,10 +61,6 @@ fn main() {
             .flag_if_supported("-Wbad-function-cast")
             .flag_if_supported("-Wuninitialized");
 
-        if env::var("CARGO_FEATURE_WITH_CLANG").is_ok() {
-            builder.compiler("clang");
-        }
-
         if env::var("CARGO_FEATURE_WITH_ASAN").is_ok() {
             builder.flag("-fsanitize=address");
         }
