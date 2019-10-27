@@ -23,19 +23,18 @@ macro_rules! str {
 }
 
 #[test]
-#[cfg(all(target_os = "windows", target_arch = "x86"))]
-#[should_panic(expected = "Failed with code -30793")]
-fn test_simple_win_32() {
-    test_simple()
+#[cfg(target_pointer_width = "32")]
+fn test_simple_32() {
+    test_simple("./tests/fixtures/testdb-32")
 }
 
 #[test]
-#[cfg(not(all(target_os = "windows", target_arch = "x86")))]
-fn test_simple_other() {
-    test_simple()
+#[cfg(target_pointer_width = "64")]
+fn test_simple_64() {
+    test_simple("./tests/fixtures/testdb")
 }
 
-fn test_simple() {
+fn test_simple(env_path: &str) {
     let mut env: *mut MDB_env = ptr::null_mut();
     let mut dbi: MDB_dbi = 0;
     let mut key = MDB_val {
@@ -53,7 +52,7 @@ fn test_simple() {
     unsafe {
         E!(mdb_env_create(&mut env));
         E!(mdb_env_set_maxdbs(env, 2));
-        E!(mdb_env_open(env, str!("./tests/fixtures/testdb"), 0, 0664));
+        E!(mdb_env_open(env, str!(env_path), 0, 0664));
 
         E!(mdb_txn_begin(env, ptr::null_mut(), 0, &mut txn));
         E!(mdb_dbi_open(txn, str!("subdb"), MDB_CREATE, &mut dbi));
