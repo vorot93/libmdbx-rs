@@ -1,5 +1,3 @@
-extern crate bindgen;
-
 use bindgen::callbacks::IntKind;
 use bindgen::callbacks::ParseCallbacks;
 use std::env;
@@ -38,7 +36,7 @@ impl ParseCallbacks for Callbacks {
     }
 }
 
-fn main() {
+pub fn generate() {
     let mut lmdb = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     lmdb.push("lmdb");
     lmdb.push("libraries");

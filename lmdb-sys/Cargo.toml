@@ -12,8 +12,7 @@ readme = "../README.md"
 keywords = ["LMDB", "database", "storage-engine", "bindings", "library"]
 categories = ["database", "external-ffi-bindings"]
 
-# NB: When generating bindings, change to "bindgen.rs" or use something
-# like `cargo-script` instead.
+# NB: Use "--feature bindgen" to generate bindings.
 build = "build.rs"
 
 [lib]
@@ -29,7 +28,7 @@ libc = "0.2"
 [build-dependencies]
 pkg-config = "0.3"
 cc = "1.0"
-bindgen = { version = "0.51.1-oldsyn", default-features = false }
+bindgen = { version = "0.51.1-oldsyn", default-features = false, optional = true }
 
 [features]
 default = []
