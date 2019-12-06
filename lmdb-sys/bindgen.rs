@@ -52,6 +52,7 @@ pub fn generate() {
         .whitelist_function("^(MDB|mdb)_.*")
         .ctypes_prefix("::libc")
         .blacklist_item("mode_t")
+        .blacklist_item("filehandle_t")
         .blacklist_item("^__.*")
         .parse_callbacks(Box::new(Callbacks {}))
         .layout_tests(false)
