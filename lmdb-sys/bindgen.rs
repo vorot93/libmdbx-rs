@@ -50,6 +50,7 @@ pub fn generate() {
         .whitelist_var("^(MDB|mdb)_.*")
         .whitelist_type("^(MDB|mdb)_.*")
         .whitelist_function("^(MDB|mdb)_.*")
+        .size_t_is_usize(true)
         .ctypes_prefix("::libc")
         .blacklist_item("mode_t")
         .blacklist_item("filehandle_t")
