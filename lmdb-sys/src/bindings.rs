@@ -52,8 +52,6 @@ pub const MDB_BAD_TXN: ::libc::c_int = -30782;
 pub const MDB_BAD_VALSIZE: ::libc::c_int = -30781;
 pub const MDB_BAD_DBI: ::libc::c_int = -30780;
 pub const MDB_LAST_ERRCODE: ::libc::c_int = -30780;
-pub type mdb_mode_t = mode_t;
-pub type mdb_filehandle_t = ::libc::c_int;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct MDB_env {
