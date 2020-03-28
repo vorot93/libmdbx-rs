@@ -1,0 +1,32 @@
+[package]
+name = "mdbx-sys"
+# NB: When modifying, also modify html_root_url in lib.rs
+# NB: The version must match the version of mdbx
+version = "0.7.0"
+authors = [
+    "Dan Burkert <dan@danburkert.com>",
+    "Victor Porof <vporof@mozilla.com>",
+    "Kerollmops <renault.cle@gmail.com>"
+]
+license = "Apache-2.0"
+description = "Rust bindings for mdbx."
+documentation = "https://docs.rs/mdbx-sys"
+homepage = "https://github.com/Kerollmops/mdbx-rs"
+repository = "https://github.com/Kerollmops/mdbx-rs.git"
+readme = "../README.md"
+keywords = ["MDBX", "database", "storage-engine", "bindings", "library"]
+categories = ["database", "external-ffi-bindings"]
+
+# NB: Use "--features bindgen" to generate bindings.
+build = "build.rs"
+
+[lib]
+name = "mdbx_sys"
+
+[dependencies]
+libc = "0.2"
+
+[build-dependencies]
+pkg-config = "0.3"
+cc = "1.0"
+bindgen = { version = "0.53.2", default-features = false, optional = true, features = ["runtime"] }
