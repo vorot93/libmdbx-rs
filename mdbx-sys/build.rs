@@ -20,9 +20,17 @@ fn main() {
     mdbx.push("libmdbx");
 
     if !pkg_config::find_library("libmdbx").is_ok() {
-        Command::new("make")
+        let ret = Command::new("make")
             .args(&["-C", &mdbx.display().to_string()])
-            .status()
+            .arg("libmdbx.a")
+            .output()
             .expect("failed to make!");
+
+        if !ret.status.success() {
+            println!("cargo:warning={:?}", ret);
+        }
     }
+
+    println!("cargo:rustc-link-search={}", mdbx.display());
+    println!("cargo:rustc-link-lib=static=mdbx");
 }
