@@ -10,7 +10,6 @@ mod generate;
 
 use std::env;
 use std::path::PathBuf;
-use std::process::Command;
 
 fn main() {
     #[cfg(feature = "bindgen")]
@@ -20,17 +19,24 @@ fn main() {
     mdbx.push("libmdbx");
 
     if !pkg_config::find_library("libmdbx").is_ok() {
-        let ret = Command::new("make")
-            .args(&["-C", &mdbx.display().to_string()])
-            .arg("libmdbx.a")
-            .output()
-            .expect("failed to make!");
+        let mut builder = cc::Build::new();
 
-        if !ret.status.success() {
-            println!("cargo:warning={:?}", ret);
+        builder
+            .file(mdbx.join("mdbx.c"))
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-Wbad-function-cast")
+            .flag_if_supported("-Wuninitialized");
+
+        if env::var("CARGO_FEATURE_WITH_ASAN").is_ok() {
+            builder.flag("-fsanitize=address");
         }
-    }
 
-    println!("cargo:rustc-link-search={}", mdbx.display());
-    println!("cargo:rustc-link-lib=static=mdbx");
+        if env::var("CARGO_FEATURE_WITH_FUZZER").is_ok() {
+            builder.flag("-fsanitize=fuzzer");
+        } else if env::var("CARGO_FEATURE_WITH_FUZZER_NO_LINK").is_ok() {
+            builder.flag("-fsanitize=fuzzer-no-link");
+        }
+
+        builder.compile("libmdbx.a")
+    }
 }

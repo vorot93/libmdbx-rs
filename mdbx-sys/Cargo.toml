@@ -30,3 +30,9 @@ libc = "0.2"
 pkg-config = "0.3"
 cc = "1.0"
 bindgen = { version = "0.53.2", default-features = false, optional = true, features = ["runtime"] }
+
+[features]
+default = []
+with-asan = []
+with-fuzzer = []
+with-fuzzer-no-link = []
