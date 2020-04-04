@@ -21,8 +21,7 @@ cd mdbx-rs/mdbx-sys
 # Update the version string in mdbx-sys/Cargo.toml and mdbx-sys/src/lib.rs.
 # We are forced to precompile the library, this is because of mdbx
 # needing the GIT_DIR and cargo publish that doesn't copy it with the sources.
-cargo clean && cargo check
-cargo publish --allow-dirty
+cargo publish
 git tag mdbx-sys-$VERSION # where $VERSION is the updated version string
 git push git@github.com:Kerollmops/mdbx-rs.git --tags
 ```

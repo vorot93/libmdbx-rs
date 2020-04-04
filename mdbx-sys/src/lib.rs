@@ -1,7 +1,7 @@
 #![deny(warnings)]
 #![allow(non_camel_case_types)]
 #![allow(clippy::all)]
-#![doc(html_root_url = "https://docs.rs/mdbx-sys/0.7.0")]
+#![doc(html_root_url = "https://docs.rs/mdbx-sys/0.7.1")]
 
 extern crate libc;
 
