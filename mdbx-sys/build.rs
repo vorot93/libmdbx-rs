@@ -37,6 +37,9 @@ fn main() {
             builder.flag("-fsanitize=fuzzer-no-link");
         }
 
+        let flags = format!("{:?}", builder.get_compiler().cflags_env());
+        builder.define("MDBX_BUILD_FLAGS", flags.as_str());
+
         builder.compile("libmdbx.a")
     }
 }
