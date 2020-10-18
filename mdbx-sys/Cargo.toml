@@ -2,7 +2,7 @@
 name = "mdbx-sys"
 # NB: When modifying, also modify html_root_url in lib.rs
 # NB: The version must match the version of mdbx
-version = "0.7.1"
+version = "0.9.2"
 authors = [
     "Dan Burkert <dan@danburkert.com>",
     "Victor Porof <vporof@mozilla.com>",
@@ -29,7 +29,7 @@ libc = "0.2"
 [build-dependencies]
 pkg-config = "0.3"
 cc = "1.0"
-bindgen = { version = "0.53.2", default-features = false, optional = true, features = ["runtime"] }
+bindgen = { version = "0.57", default-features = false, optional = true, features = ["runtime"] }
 
 [features]
 default = []

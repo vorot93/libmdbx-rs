@@ -8,8 +8,7 @@ extern crate bindgen;
 #[path = "bindgen.rs"]
 mod generate;
 
-use std::env;
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 fn main() {
     #[cfg(feature = "bindgen")]
@@ -18,7 +17,7 @@ fn main() {
     let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     mdbx.push("libmdbx");
 
-    if !pkg_config::find_library("libmdbx").is_ok() {
+    if pkg_config::find_library("libmdbx").is_err() {
         let mut builder = cc::Build::new();
 
         builder
