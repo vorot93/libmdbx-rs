@@ -113,7 +113,7 @@ pub type MDBX_debug_func = ::std::option::Option<
         loglevel: MDBX_log_level_t,
         function: *const ::libc::c_char,
         line: ::libc::c_int,
-        msg: *const ::libc::c_char,
+        fmt: *const ::libc::c_char,
         args: *mut __va_list_tag,
     ),
 >;
@@ -194,30 +194,27 @@ pub const MDBX_CP_DEFAULTS: MDBX_copy_flags_t = 0;
 pub const MDBX_CP_COMPACT: MDBX_copy_flags_t = 1;
 pub const MDBX_CP_FORCE_DYNAMIC_SIZE: MDBX_copy_flags_t = 2;
 pub type MDBX_copy_flags_t = ::libc::c_uint;
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub enum MDBX_cursor_op {
-    MDBX_FIRST = 0,
-    MDBX_FIRST_DUP = 1,
-    MDBX_GET_BOTH = 2,
-    MDBX_GET_BOTH_RANGE = 3,
-    MDBX_GET_CURRENT = 4,
-    MDBX_GET_MULTIPLE = 5,
-    MDBX_LAST = 6,
-    MDBX_LAST_DUP = 7,
-    MDBX_NEXT = 8,
-    MDBX_NEXT_DUP = 9,
-    MDBX_NEXT_MULTIPLE = 10,
-    MDBX_NEXT_NODUP = 11,
-    MDBX_PREV = 12,
-    MDBX_PREV_DUP = 13,
-    MDBX_PREV_NODUP = 14,
-    MDBX_SET = 15,
-    MDBX_SET_KEY = 16,
-    MDBX_SET_RANGE = 17,
-    MDBX_PREV_MULTIPLE = 18,
-    MDBX_SET_LOWERBOUND = 19,
-}
+pub const MDBX_FIRST: MDBX_cursor_op = 0;
+pub const MDBX_FIRST_DUP: MDBX_cursor_op = 1;
+pub const MDBX_GET_BOTH: MDBX_cursor_op = 2;
+pub const MDBX_GET_BOTH_RANGE: MDBX_cursor_op = 3;
+pub const MDBX_GET_CURRENT: MDBX_cursor_op = 4;
+pub const MDBX_GET_MULTIPLE: MDBX_cursor_op = 5;
+pub const MDBX_LAST: MDBX_cursor_op = 6;
+pub const MDBX_LAST_DUP: MDBX_cursor_op = 7;
+pub const MDBX_NEXT: MDBX_cursor_op = 8;
+pub const MDBX_NEXT_DUP: MDBX_cursor_op = 9;
+pub const MDBX_NEXT_MULTIPLE: MDBX_cursor_op = 10;
+pub const MDBX_NEXT_NODUP: MDBX_cursor_op = 11;
+pub const MDBX_PREV: MDBX_cursor_op = 12;
+pub const MDBX_PREV_DUP: MDBX_cursor_op = 13;
+pub const MDBX_PREV_NODUP: MDBX_cursor_op = 14;
+pub const MDBX_SET: MDBX_cursor_op = 15;
+pub const MDBX_SET_KEY: MDBX_cursor_op = 16;
+pub const MDBX_SET_RANGE: MDBX_cursor_op = 17;
+pub const MDBX_PREV_MULTIPLE: MDBX_cursor_op = 18;
+pub const MDBX_SET_LOWERBOUND: MDBX_cursor_op = 19;
+pub type MDBX_cursor_op = ::libc::c_uint;
 pub const MDBX_SUCCESS: MDBX_error_t = 0;
 pub const MDBX_RESULT_FALSE: MDBX_error_t = 0;
 pub const MDBX_RESULT_TRUE: MDBX_error_t = -1;
@@ -280,6 +277,33 @@ extern "C" {
 }
 extern "C" {
     pub fn mdbx_env_create(penv: *mut *mut MDBX_env) -> ::libc::c_int;
+}
+pub const MDBX_opt_max_db: MDBX_option_t = 0;
+pub const MDBX_opt_max_readers: MDBX_option_t = 1;
+pub const MDBX_opt_sync_bytes: MDBX_option_t = 2;
+pub const MDBX_opt_sync_period: MDBX_option_t = 3;
+pub const MDBX_opt_rp_augment_limit: MDBX_option_t = 4;
+pub const MDBX_opt_loose_limit: MDBX_option_t = 5;
+pub const MDBX_opt_dp_reserve_limit: MDBX_option_t = 6;
+pub const MDBX_opt_txn_dp_limit: MDBX_option_t = 7;
+pub const MDBX_opt_txn_dp_initial: MDBX_option_t = 8;
+pub const MDBX_opt_spill_max_denominator: MDBX_option_t = 9;
+pub const MDBX_opt_spill_min_denominator: MDBX_option_t = 10;
+pub const MDBX_opt_spill_parent4child_denominator: MDBX_option_t = 11;
+pub type MDBX_option_t = ::libc::c_uint;
+extern "C" {
+    pub fn mdbx_env_set_option(
+        env: *mut MDBX_env,
+        option: MDBX_option_t,
+        value: u64,
+    ) -> ::libc::c_int;
+}
+extern "C" {
+    pub fn mdbx_env_get_option(
+        env: *const MDBX_env,
+        option: MDBX_option_t,
+        value: *mut u64,
+    ) -> ::libc::c_int;
 }
 extern "C" {
     pub fn mdbx_env_open(
@@ -394,15 +418,6 @@ extern "C" {
     pub fn mdbx_env_sync_ex(env: *mut MDBX_env, force: bool, nonblock: bool) -> ::libc::c_int;
 }
 extern "C" {
-    pub fn mdbx_env_set_syncbytes(env: *mut MDBX_env, threshold: usize) -> ::libc::c_int;
-}
-extern "C" {
-    pub fn mdbx_env_set_syncperiod(
-        env: *mut MDBX_env,
-        seconds_16dot16: ::libc::c_uint,
-    ) -> ::libc::c_int;
-}
-extern "C" {
     pub fn mdbx_env_close_ex(env: *mut MDBX_env, dont_sync: bool) -> ::libc::c_int;
 }
 extern "C" {
@@ -454,19 +469,7 @@ extern "C" {
     pub fn mdbx_limits_txnsize_max(pagesize: isize) -> isize;
 }
 extern "C" {
-    pub fn mdbx_env_set_maxreaders(env: *mut MDBX_env, readers: ::libc::c_uint) -> ::libc::c_int;
-}
-extern "C" {
-    pub fn mdbx_env_get_maxreaders(
-        env: *const MDBX_env,
-        readers: *mut ::libc::c_uint,
-    ) -> ::libc::c_int;
-}
-extern "C" {
-    pub fn mdbx_env_set_maxdbs(env: *mut MDBX_env, dbs: MDBX_dbi) -> ::libc::c_int;
-}
-extern "C" {
-    pub fn mdbx_env_get_maxdbs(env: *mut MDBX_env, dbs: *mut MDBX_dbi) -> ::libc::c_int;
+    pub fn mdbx_default_pagesize() -> usize;
 }
 extern "C" {
     pub fn mdbx_env_get_maxkeysize_ex(
@@ -914,19 +917,16 @@ extern "C" {
 extern "C" {
     pub fn mdbx_env_get_hsr(env: *const MDBX_env) -> MDBX_hsr_func;
 }
-#[repr(u32)]
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
-pub enum MDBX_page_type_t {
-    MDBX_page_broken = 0,
-    MDBX_page_meta = 1,
-    MDBX_page_large = 2,
-    MDBX_page_branch = 3,
-    MDBX_page_leaf = 4,
-    MDBX_page_dupfixed_leaf = 5,
-    MDBX_subpage_leaf = 6,
-    MDBX_subpage_dupfixed_leaf = 7,
-    MDBX_subpage_broken = 8,
-}
+pub const MDBX_page_broken: MDBX_page_type_t = 0;
+pub const MDBX_page_meta: MDBX_page_type_t = 1;
+pub const MDBX_page_large: MDBX_page_type_t = 2;
+pub const MDBX_page_branch: MDBX_page_type_t = 3;
+pub const MDBX_page_leaf: MDBX_page_type_t = 4;
+pub const MDBX_page_dupfixed_leaf: MDBX_page_type_t = 5;
+pub const MDBX_subpage_leaf: MDBX_page_type_t = 6;
+pub const MDBX_subpage_dupfixed_leaf: MDBX_page_type_t = 7;
+pub const MDBX_subpage_broken: MDBX_page_type_t = 8;
+pub type MDBX_page_type_t = ::libc::c_uint;
 pub type MDBX_pgvisitor_func = ::std::option::Option<
     unsafe extern "C" fn(
         pgno: u64,

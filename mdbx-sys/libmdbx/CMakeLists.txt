@@ -1,5 +1,5 @@
 ##
-##  Copyright 2020 Leonid Yuriev <leo@yuriev.ru>
+##  Copyright 2020-2021 Leonid Yuriev <leo@yuriev.ru>
 ##  and other libmdbx authors: please see AUTHORS file.
 ##  All rights reserved.
 ##
@@ -340,12 +340,14 @@ if(NOT DEFINED MDBX_CXX_STANDARD)
     set(MDBX_CXX_STANDARD 98)
   endif()
 endif()
-# MSVC >= 19.28 (Microsoft Visual Studio 16.8) is mad!
-#               It unable process Windows SDK headers in the C11 mode!
-if(HAS_C11 LESS 0 OR (MSVC AND MSVC_VERSION GREATER 1927))
-  set(MDBX_C_STANDARD 99)
-else()
-  set(MDBX_C_STANDARD 11)
+if(NOT DEFINED MDBX_C_STANDARD)
+  # MSVC >= 19.28 (Microsoft Visual Studio 16.8) is mad!
+  #               It unable process Windows SDK headers in the C11 mode!
+  if(HAS_C11 LESS 0 OR (MSVC AND MSVC_VERSION GREATER 1927))
+    set(MDBX_C_STANDARD 99)
+  else()
+    set(MDBX_C_STANDARD 11)
+  endif()
 endif()
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows" AND EXISTS "${MDBX_SOURCE_DIR}/ntdll.def")
@@ -436,7 +438,6 @@ add_mdbx_option(MDBX_BUILD_TOOLS "Build MDBX tools (mdbx_chk/stat/dump/load/copy
 CMAKE_DEPENDENT_OPTION(MDBX_INSTALL_MANPAGES "Install man-pages for MDBX tools (mdbx_chk/stat/dump/load/copy)" ON MDBX_BUILD_TOOLS OFF)
 add_mdbx_option(MDBX_TXN_CHECKOWNER "Checking transaction matches the calling thread inside libmdbx's API" ON)
 add_mdbx_option(MDBX_ENV_CHECKPID "Paranoid checking PID inside libmdbx's API" AUTO)
-add_mdbx_option(MDBX_HUGE_TRANSACTIONS "Support for huge write-transactions" OFF)
 mark_as_advanced(MDBX_ENV_CHECKPID)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   add_mdbx_option(MDBX_DISABLE_GNU_SOURCE "Don't use GNU/Linux libc extensions" OFF)
