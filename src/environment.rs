@@ -30,6 +30,10 @@ use std::{
     ffi::CString,
     fmt,
     mem,
+    ops::{
+        Bound,
+        RangeBounds,
+    },
     path::Path,
     ptr,
     result,
@@ -64,7 +68,7 @@ impl Environment {
             flags: EnvironmentFlags::empty(),
             max_readers: None,
             max_dbs: None,
-            map_size: None,
+            geometry: None,
         }
     }
 
@@ -369,13 +373,38 @@ impl Drop for Environment {
 //// Environment Builder
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PageSize {
+    MinimalAcceptable,
+    Set(usize),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Geometry<R> {
+    pub size: Option<R>,
+    pub growth_step: Option<isize>,
+    pub shrink_threshold: Option<isize>,
+    pub page_size: Option<PageSize>,
+}
+
+impl<R> Default for Geometry<R> {
+    fn default() -> Self {
+        Self {
+            size: None,
+            growth_step: None,
+            shrink_threshold: None,
+            page_size: None,
+        }
+    }
+}
+
 /// Options for opening or creating an environment.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EnvironmentBuilder {
     flags: EnvironmentFlags,
     max_readers: Option<c_uint>,
     max_dbs: Option<c_uint>,
-    map_size: Option<usize>,
+    geometry: Option<Geometry<(Option<usize>, Option<usize>)>>,
 }
 
 impl EnvironmentBuilder {
@@ -399,25 +428,33 @@ impl EnvironmentBuilder {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             lmdb_try!(ffi::mdbx_env_create(&mut env));
-            if let Some(max_readers) = self.max_readers {
-                lmdb_try_with_cleanup!(
-                    ffi::mdbx_env_set_maxreaders(env, max_readers),
-                    ffi::mdbx_env_close_ex(env, false)
-                )
-            }
-            if let Some(max_dbs) = self.max_dbs {
-                lmdb_try_with_cleanup!(ffi::mdbx_env_set_maxdbs(env, max_dbs), ffi::mdbx_env_close_ex(env, false))
-            }
-            if let Some(map_size) = self.map_size {
+            if let Some(geometry) = &self.geometry {
+                let mut min_size = -1;
+                let mut max_size = -1;
+
+                if let Some(size) = geometry.size {
+                    if let Some(size) = size.0 {
+                        min_size = size as isize;
+                    }
+
+                    if let Some(size) = size.1 {
+                        max_size = size as isize;
+                    }
+                }
+
                 lmdb_try_with_cleanup!(
                     ffi::mdbx_env_set_geometry(
                         env,
-                        map_size as isize,
-                        map_size as isize,
-                        map_size as isize,
+                        min_size,
                         -1,
-                        -1,
-                        -1
+                        max_size,
+                        geometry.growth_step.unwrap_or(-1),
+                        geometry.shrink_threshold.unwrap_or(-1),
+                        match geometry.page_size {
+                            None => -1,
+                            Some(PageSize::MinimalAcceptable) => 0,
+                            Some(PageSize::Set(size)) => size as isize,
+                        }
                     ),
                     ffi::mdbx_env_close_ex(env, false)
                 )
@@ -439,7 +476,7 @@ impl EnvironmentBuilder {
 
     /// Sets the provided options in the environment.
     pub fn set_flags(&mut self, flags: EnvironmentFlags) -> &mut EnvironmentBuilder {
-        self.flags = flags;
+        self.flags = flags | EnvironmentFlags::NO_TLS;
         self
     }
 
@@ -469,18 +506,18 @@ impl EnvironmentBuilder {
         self
     }
 
-    /// Sets the size of the memory map to use for the environment.
-    ///
-    /// The size should be a multiple of the OS page size. The default is
-    /// 1048576 bytes. The size of the memory map is also the maximum size
-    /// of the database. The value should be chosen as large as possible,
-    /// to accommodate future growth of the database. It may be increased at
-    /// later times.
-    ///
-    /// Any attempt to set a size smaller than the space already consumed
-    /// by the environment will be silently changed to the current size of the used space.
-    pub fn set_map_size(&mut self, map_size: usize) -> &mut EnvironmentBuilder {
-        self.map_size = Some(map_size);
+    /// Set all size-related parameters of environment, including page size and the min/max size of the memory map.
+    pub fn set_geometry<R: RangeBounds<usize>>(&mut self, geometry: Geometry<R>) -> &mut EnvironmentBuilder {
+        let convert_bound = |bound: Bound<&usize>| match bound {
+            Bound::Included(v) | Bound::Excluded(v) => Some(*v),
+            _ => None,
+        };
+        self.geometry = Some(Geometry {
+            size: geometry.size.map(|range| (convert_bound(range.start_bound()), convert_bound(range.end_bound()))),
+            growth_step: geometry.growth_step,
+            shrink_threshold: geometry.shrink_threshold,
+            page_size: geometry.page_size,
+        });
         self
     }
 }
@@ -612,7 +649,13 @@ mod test {
     fn test_info() {
         let map_size = 1024 * 1024;
         let dir = TempDir::new("test").unwrap();
-        let env = Environment::new().set_map_size(map_size).open(dir.path()).unwrap();
+        let env = Environment::new()
+            .set_geometry(Geometry {
+                size: Some(map_size..),
+                ..Default::default()
+            })
+            .open(dir.path())
+            .unwrap();
 
         let info = env.info().unwrap();
         assert_eq!(info.map_size(), map_size);

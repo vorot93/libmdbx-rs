@@ -33,10 +33,19 @@ use std::{
     slice,
 };
 
+mod private {
+    use super::*;
+
+    pub trait Sealed {}
+
+    impl<'env> Sealed for RoTransaction<'env> {}
+    impl<'env> Sealed for RwTransaction<'env> {}
+}
+
 /// An LMDB transaction.
 ///
 /// All database operations require a transaction.
-pub trait Transaction: Sized {
+pub trait Transaction: Sized + private::Sealed {
     /// Returns a raw pointer to the underlying LMDB transaction.
     ///
     /// The caller **must** ensure that the pointer is not used after the
@@ -52,13 +61,6 @@ pub trait Transaction: Sized {
             mem::forget(self);
             result
         }
-    }
-
-    /// Aborts the transaction.
-    ///
-    /// Any pending operations will not be saved.
-    fn abort(self) {
-        // Abort should be performed in transaction destructors.
     }
 
     /// Opens a database in the transaction.
@@ -205,6 +207,9 @@ impl<'env> Transaction for RoTransaction<'env> {
         self.txn
     }
 }
+
+unsafe impl<'env> Send for RoTransaction<'env> {}
+unsafe impl<'env> Sync for RoTransaction<'env> {}
 
 /// An inactive read-only transaction.
 pub struct InactiveTransaction<'env> {
@@ -647,7 +652,6 @@ mod test {
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     assert_eq!(txn.get(db, key), Err(Error::NotFound));
-                    txn.abort();
                 }
                 reader_barrier.wait();
                 reader_barrier.wait();

@@ -15,6 +15,7 @@ pub use crate::{
     environment::{
         Environment,
         EnvironmentBuilder,
+        Geometry,
         Info,
         Stat,
     },
@@ -82,7 +83,10 @@ mod test_utils {
         let env = {
             let mut builder = Environment::new();
             builder.set_max_dbs(2);
-            builder.set_map_size(1_000_000);
+            builder.set_geometry(Geometry {
+                size: Some(1_000_000..1_000_000),
+                ..Default::default()
+            });
             builder.open(dir.path()).expect("open lmdb env")
         };
         let index = env.create_db(None, DatabaseFlags::DUP_SORT).expect("open index db");

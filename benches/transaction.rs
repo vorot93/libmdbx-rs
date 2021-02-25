@@ -90,7 +90,6 @@ fn bench_put_rand(b: &mut Bencher) {
         for &(ref key, ref data) in items.iter() {
             txn.put(db, key, data, WriteFlags::empty()).unwrap();
         }
-        txn.abort();
     });
 }
 
