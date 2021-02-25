@@ -3,7 +3,10 @@ use mdbx::{
     Transaction,
     WriteFlags,
 };
-use tempdir::TempDir;
+use tempfile::{
+    tempdir,
+    TempDir,
+};
 
 pub fn get_key(n: u32) -> String {
     format!("key{}", n)
@@ -14,7 +17,7 @@ pub fn get_data(n: u32) -> String {
 }
 
 pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment) {
-    let dir = TempDir::new("test").unwrap();
+    let dir = tempdir().unwrap();
     let env = Environment::new().open(dir.path()).unwrap();
 
     {

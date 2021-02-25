@@ -51,7 +51,7 @@ ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 [dev-dependencies]
 rand = "0.8"
 rand_xorshift = "0.3"
-tempdir = "0.3"
+tempfile = "3"
 
 [features]
 default = []

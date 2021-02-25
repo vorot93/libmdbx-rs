@@ -67,7 +67,7 @@ mod test_utils {
         ByteOrder,
         LittleEndian,
     };
-    use tempdir::TempDir;
+    use tempfile::tempdir;
 
     use super::*;
 
@@ -78,7 +78,7 @@ mod test_utils {
     fn issue_21_regression() {
         const HEIGHT_KEY: [u8; 1] = [0];
 
-        let dir = TempDir::new("test").unwrap();
+        let dir = tempdir().unwrap();
 
         let env = {
             let mut builder = Environment::new();
