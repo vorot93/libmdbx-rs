@@ -60,6 +60,23 @@ pub fn generate() {
         .whitelist_var("^(MDBX|mdbx)_.*")
         .whitelist_type("^(MDBX|mdbx)_.*")
         .whitelist_function("^(MDBX|mdbx)_.*")
+        .raw_line(
+            "
+#[cfg(unix)]
+#[allow(non_camel_case_types)]
+pub type mode_t = ::libc::mode_t;
+#[cfg(windows)]
+#[allow(non_camel_case_types)]
+pub type mode_t = ::libc::c_int;
+
+#[cfg(unix)]
+#[allow(non_camel_case_types)]
+pub type mdbx_filehandle_t = ::libc::c_int;
+#[cfg(windows)]
+#[allow(non_camel_case_types)]
+pub type mdbx_filehandle_t = *mut ::libc::c_void;
+",
+        )
         .size_t_is_usize(true)
         .ctypes_prefix("::libc")
         .blacklist_item("mode_t")

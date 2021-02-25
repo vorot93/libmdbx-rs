@@ -1,3 +1,19 @@
+
+#[cfg(unix)]
+#[allow(non_camel_case_types)]
+pub type mode_t = ::libc::mode_t;
+#[cfg(windows)]
+#[allow(non_camel_case_types)]
+pub type mode_t = ::libc::c_int;
+
+#[cfg(unix)]
+#[allow(non_camel_case_types)]
+pub type mdbx_filehandle_t = ::libc::c_int;
+#[cfg(windows)]
+#[allow(non_camel_case_types)]
+pub type mdbx_filehandle_t = *mut ::libc::c_void;
+
+
 pub const MDBX_VERSION_MAJOR: ::libc::c_uint = 0;
 pub const MDBX_VERSION_MINOR: ::libc::c_uint = 9;
 pub const MDBX_LOCKNAME: &'static [u8; 10usize] = b"/mdbx.lck\0";
