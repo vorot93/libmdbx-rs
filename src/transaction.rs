@@ -15,7 +15,6 @@ use crate::{
     },
     flags::{
         DatabaseFlags,
-        EnvironmentFlags,
         WriteFlags,
     },
 };
@@ -45,22 +44,25 @@ mod private {
 /// An LMDB transaction.
 ///
 /// All database operations require a transaction.
-pub trait Transaction: Sized + private::Sealed {
-    /// Returns a raw pointer to the underlying LMDB transaction.
+pub trait Transaction<'env>: Sized + private::Sealed {
+    /// Returns a raw pointer to the underlying MDBX transaction.
     ///
     /// The caller **must** ensure that the pointer is not used after the
     /// lifetime of the transaction.
     fn txn(&self) -> *mut ffi::MDBX_txn;
 
+    /// Returns a raw pointer to the MDBX environment.
+    fn env(&self) -> *mut ffi::MDBX_env {
+        unsafe { ffi::mdbx_txn_env(self.txn()) }
+    }
+
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
-    fn commit(self) -> Result<()> {
-        unsafe {
-            let result = mdbx_result(ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()));
-            mem::forget(self);
-            result
-        }
+    fn commit(self) -> Result<bool> {
+        let result = mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()) });
+        mem::forget(self);
+        result
     }
 
     /// Opens a database in the transaction.
@@ -80,8 +82,8 @@ pub trait Transaction: Sized + private::Sealed {
     /// from multiple concurrent transactions in the same environment. A
     /// transaction which uses this function must finish (either commit or
     /// abort) before any other transaction may use this function.
-    unsafe fn open_db(&self, name: Option<&str>) -> Result<Database> {
-        Database::new(self.txn(), name, 0)
+    fn open_db(&self, name: Option<&str>) -> Result<Database<'env>> {
+        Database::new(self, name, 0)
     }
 
     /// Gets an item from a database.
@@ -92,7 +94,7 @@ pub trait Transaction: Sized + private::Sealed {
     /// returned. Retrieval of other items requires the use of
     /// `Transaction::cursor_get`. If the item is not in the database, then
     /// `Error::NotFound` will be returned.
-    fn get<'txn, K>(&'txn self, database: Database, key: &K) -> Result<&'txn [u8]>
+    fn get<'txn, K>(&'txn self, database: Database<'env>, key: &K) -> Result<&'txn [u8]>
     where
         K: AsRef<[u8]>,
     {
@@ -114,12 +116,12 @@ pub trait Transaction: Sized + private::Sealed {
     }
 
     /// Open a new read-only cursor on the given database.
-    fn open_ro_cursor(&self, db: Database) -> Result<RoCursor<'_>> {
+    fn open_ro_cursor(&self, db: Database<'env>) -> Result<RoCursor<'_>> {
         RoCursor::new(self, db)
     }
 
     /// Gets the option flags for the given database in the transaction.
-    fn db_flags(&self, db: Database) -> Result<DatabaseFlags> {
+    fn db_flags(&self, db: Database<'env>) -> Result<DatabaseFlags> {
         let mut flags: c_uint = 0;
         unsafe {
             mdbx_result(ffi::mdbx_dbi_flags_ex(self.txn(), db.dbi(), &mut flags, ptr::null_mut()))?;
@@ -128,7 +130,7 @@ pub trait Transaction: Sized + private::Sealed {
     }
 
     /// Retrieves database statistics.
-    fn stat(&self, db: Database) -> Result<Stat> {
+    fn stat(&self, db: Database<'env>) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
             lmdb_try!(ffi::mdbx_dbi_stat(self.txn(), db.dbi(), stat.mdb_stat(), size_of::<Stat>()));
@@ -202,7 +204,7 @@ impl<'env> RoTransaction<'env> {
     }
 }
 
-impl<'env> Transaction for RoTransaction<'env> {
+impl<'env> Transaction<'env> for RoTransaction<'env> {
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
     }
@@ -270,6 +272,8 @@ impl<'env> Drop for RwTransaction<'env> {
     }
 }
 
+// unsafe impl<'env> Sync for RwTransaction<'env> {}
+
 impl<'env> RwTransaction<'env> {
     /// Creates a new read-write transaction in the given environment. Prefer
     /// using `Environment::begin_ro_txn`.
@@ -279,7 +283,7 @@ impl<'env> RwTransaction<'env> {
             mdbx_result(ffi::mdbx_txn_begin_ex(
                 env.env(),
                 ptr::null_mut(),
-                EnvironmentFlags::empty().bits(),
+                ffi::MDBX_TXN_READWRITE,
                 &mut txn,
                 ptr::null_mut(),
             ))?;
@@ -307,12 +311,12 @@ impl<'env> RwTransaction<'env> {
     /// from multiple concurrent transactions in the same environment. A
     /// transaction which uses this function must finish (either commit or
     /// abort) before any other transaction may use this function.
-    pub unsafe fn create_db(&self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database> {
-        Database::new(self.txn(), name, flags.bits() | ffi::MDBX_CREATE)
+    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'env>> {
+        Database::new(self, name, flags.bits() | ffi::MDBX_CREATE)
     }
 
     /// Opens a new read-write cursor on the given database and transaction.
-    pub fn open_rw_cursor(&mut self, db: Database) -> Result<RwCursor<'_>> {
+    pub fn open_rw_cursor<'txn>(&'txn mut self, db: Database<'env>) -> Result<RwCursor<'txn>> {
         RwCursor::new(self, db)
     }
 
@@ -337,7 +341,9 @@ impl<'env> RwTransaction<'env> {
             iov_len: data.len(),
             iov_base: data.as_ptr() as *mut c_void,
         };
-        unsafe { mdbx_result(ffi::mdbx_put(self.txn(), database.dbi(), &key_val, &mut data_val, flags.bits())) }
+        mdbx_result(unsafe { ffi::mdbx_put(self.txn(), database.dbi(), &key_val, &mut data_val, flags.bits()) })?;
+
+        Ok(())
     }
 
     /// Returns a buffer which can be used to write a value into the item at the
@@ -374,22 +380,18 @@ impl<'env> RwTransaction<'env> {
         }
     }
 
-    /// Deletes an item from a database.
+    /// Delete items from a database.
+    /// This function removes key/data pairs from the database.
     ///
-    /// This function removes key/data pairs from the database. If the database
-    /// does not support sorted duplicate data items (`DatabaseFlags::DUP_SORT`)
-    /// the data parameter is ignored.  If the database supports sorted
-    /// duplicates and the data parameter is `None`, all of the duplicate data
-    /// items for the key will be deleted. Otherwise, if the data parameter is
-    /// `Some` only the matching data item will be deleted. This function will
-    /// return `Error::NotFound` if the specified key/data pair is not in the
-    /// database.
+    /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
+    /// If the data parameter is non-NULL only the matching data item will be deleted.
+    /// Otherwise, if data parameter is `None`, any/all value(s) for specified key will be deleted.
     pub fn del<K>(&mut self, database: Database, key: &K, data: Option<&[u8]>) -> Result<()>
     where
         K: AsRef<[u8]>,
     {
         let key = key.as_ref();
-        let mut key_val: ffi::MDBX_val = ffi::MDBX_val {
+        let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
             iov_base: key.as_ptr() as *mut c_void,
         };
@@ -398,26 +400,29 @@ impl<'env> RwTransaction<'env> {
             iov_base: data.as_ptr() as *mut c_void,
         });
 
-        if let Some(mut d) = data_val {
-            unsafe { mdbx_result(ffi::mdbx_del(self.txn(), database.dbi(), &mut key_val, &mut d)) }
-        } else {
-            unsafe { mdbx_result(ffi::mdbx_del(self.txn(), database.dbi(), &mut key_val, ptr::null_mut())) }
-        }
+        mdbx_result({
+            if let Some(d) = data_val {
+                unsafe { ffi::mdbx_del(self.txn(), database.dbi(), &key_val, &d) }
+            } else {
+                unsafe { ffi::mdbx_del(self.txn(), database.dbi(), &key_val, ptr::null()) }
+            }
+        })?;
+
+        Ok(())
     }
 
     /// Empties the given database. All items will be removed.
     pub fn clear_db(&mut self, db: Database) -> Result<()> {
-        unsafe { mdbx_result(ffi::mdbx_drop(self.txn(), db.dbi(), false)) }
+        mdbx_result(unsafe { ffi::mdbx_drop(self.txn(), db.dbi(), false) })?;
+
+        Ok(())
     }
 
     /// Drops the database from the environment.
-    ///
-    /// ## Safety
-    ///
-    /// This method is unsafe in the same ways as `Environment::close_db`, and
-    /// should be used accordingly.
-    pub unsafe fn drop_db(&mut self, db: Database) -> Result<()> {
-        mdbx_result(ffi::mdbx_drop(self.txn, db.dbi(), true))
+    pub fn drop_db(&mut self, db: Database) -> Result<()> {
+        mdbx_result(unsafe { ffi::mdbx_drop(self.txn(), db.dbi(), true) })?;
+
+        Ok(())
     }
 
     /// Begins a new nested transaction inside of this transaction.
@@ -434,7 +439,7 @@ impl<'env> RwTransaction<'env> {
     }
 }
 
-impl<'env> Transaction for RwTransaction<'env> {
+impl<'env> Transaction<'env> for RwTransaction<'env> {
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
     }
@@ -622,9 +627,7 @@ mod test {
         }
         {
             let mut txn = env.begin_rw_txn().unwrap();
-            unsafe {
-                txn.drop_db(db).unwrap();
-            }
+            txn.drop_db(db).unwrap();
             txn.commit().unwrap();
         }
 

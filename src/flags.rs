@@ -2,26 +2,113 @@ use bitflags::bitflags;
 use ffi::*;
 use libc::c_uint;
 
-bitflags! {
-    #[doc="Environment options."]
-    #[derive(Default)]
-    pub struct EnvironmentFlags: c_uint {
-        const NO_SUB_DIR = MDBX_NOSUBDIR;
-        const READ_ONLY = MDBX_RDONLY;
-        const EXCLUSIVE = MDBX_EXCLUSIVE;
-        const ACCEDE = MDBX_ACCEDE;
-        const WRITE_MAP = MDBX_WRITEMAP;
-        const NO_TLS = MDBX_NOTLS;
-        const NO_READAHEAD = MDBX_NORDAHEAD;
-        const NO_MEM_INIT = MDBX_NOMEMINIT;
-        const COALESCE = MDBX_COALESCE;
-        const LIFORECLAIM = MDBX_LIFORECLAIM;
-        const PAGEPERTURB = MDBX_PAGEPERTURB;
-        const SYNC_DURABLE = MDBX_SYNC_DURABLE;
-        const NO_META_SYNC = MDBX_NOMETASYNC;
-        const SAFE_NO_SYNC = MDBX_SAFE_NOSYNC;
-        const MAP_ASYNC = MDBX_MAPASYNC;
-        const UTTERLY_NO_SYNC = MDBX_UTTERLY_NOSYNC;
+#[derive(Clone, Copy, Debug)]
+pub enum SyncMode {
+    Durable,
+    NoMetaSync,
+    SafeNoSync,
+    UtterlyNoSync,
+}
+
+impl Default for SyncMode {
+    fn default() -> Self {
+        Self::Durable
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Mode {
+    ReadOnly,
+    ReadWrite {
+        write_map: bool,
+        sync_mode: SyncMode,
+    },
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Self::ReadWrite {
+            write_map: false,
+            sync_mode: SyncMode::default(),
+        }
+    }
+}
+
+impl From<Mode> for EnvironmentFlags {
+    fn from(mode: Mode) -> Self {
+        Self {
+            mode,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EnvironmentFlags {
+    pub no_sub_dir: bool,
+    pub exclusive: bool,
+    pub accede: bool,
+    pub mode: Mode,
+    pub no_rdahead: bool,
+    pub no_meminit: bool,
+    pub coalesce: bool,
+    pub liforeclaim: bool,
+}
+
+impl EnvironmentFlags {
+    pub(crate) fn make_flags(&self) -> ffi::MDBX_env_flags_t {
+        let mut flags = 0;
+
+        if self.no_sub_dir {
+            flags |= ffi::MDBX_NOSUBDIR;
+        }
+
+        if self.exclusive {
+            flags |= ffi::MDBX_EXCLUSIVE;
+        }
+
+        if self.accede {
+            flags |= ffi::MDBX_ACCEDE;
+        }
+
+        match self.mode {
+            Mode::ReadOnly => {
+                flags |= ffi::MDBX_RDONLY;
+            },
+            Mode::ReadWrite {
+                write_map,
+                sync_mode,
+            } => {
+                if write_map {
+                    flags |= ffi::MDBX_WRITEMAP;
+                }
+
+                flags |= match sync_mode {
+                    SyncMode::Durable => ffi::MDBX_SYNC_DURABLE,
+                    SyncMode::NoMetaSync => ffi::MDBX_NOMETASYNC,
+                    SyncMode::SafeNoSync => ffi::MDBX_SAFE_NOSYNC,
+                    SyncMode::UtterlyNoSync => ffi::MDBX_UTTERLY_NOSYNC,
+                };
+            },
+        }
+
+        if self.no_rdahead {
+            flags |= ffi::MDBX_NORDAHEAD;
+        }
+
+        if self.no_meminit {
+            flags |= ffi::MDBX_NOMEMINIT;
+        }
+
+        if self.coalesce {
+            flags |= ffi::MDBX_COALESCE;
+        }
+
+        if self.liforeclaim {
+            flags |= ffi::MDBX_LIFORECLAIM;
+        }
+
+        flags
     }
 }
 

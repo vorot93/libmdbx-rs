@@ -35,20 +35,9 @@ pub use crate::{
 macro_rules! lmdb_try {
     ($expr:expr) => {{
         match $expr {
-            ::ffi::MDBX_SUCCESS => (),
+            ::ffi::MDBX_SUCCESS => false,
+            ::ffi::MDBX_RESULT_TRUE => true,
             err_code => return Err(crate::Error::from_err_code(err_code)),
-        }
-    }};
-}
-
-macro_rules! lmdb_try_with_cleanup {
-    ($expr:expr, $cleanup:expr) => {{
-        match $expr {
-            ::ffi::MDBX_SUCCESS => (),
-            err_code => {
-                let _ = $cleanup;
-                return Err(crate::Error::from_err_code(err_code));
-            },
         }
     }};
 }
@@ -96,7 +85,7 @@ mod test_utils {
             LittleEndian::write_u64(&mut value, height);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
             tx.put(index, &HEIGHT_KEY, &value, WriteFlags::empty()).expect("tx.put");
-            tx.commit().expect("tx.commit")
+            tx.commit().expect("tx.commit");
         }
     }
 }

@@ -154,9 +154,9 @@ impl<'txn> Drop for RoCursor<'txn> {
 impl<'txn> RoCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `Transaction::open_cursor`.
-    pub(crate) fn new<T>(txn: &'txn T, db: Database) -> Result<RoCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: Database) -> Result<RoCursor<'txn>>
     where
-        T: Transaction,
+        T: Transaction<'env>,
     {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
         unsafe {
@@ -196,9 +196,9 @@ impl<'txn> Drop for RwCursor<'txn> {
 impl<'txn> RwCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `RwTransaction::open_rw_cursor`.
-    pub(crate) fn new<T>(txn: &'txn T, db: Database) -> Result<RwCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: Database) -> Result<RwCursor<'txn>>
     where
-        T: Transaction,
+        T: Transaction<'env>,
     {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
         unsafe {
@@ -227,7 +227,9 @@ impl<'txn> RwCursor<'txn> {
             iov_len: data.len(),
             iov_base: data.as_ptr() as *mut c_void,
         };
-        unsafe { mdbx_result(ffi::mdbx_cursor_put(self.cursor(), &key_val, &mut data_val, flags.bits())) }
+        mdbx_result(unsafe { ffi::mdbx_cursor_put(self.cursor(), &key_val, &mut data_val, flags.bits()) })?;
+
+        Ok(())
     }
 
     /// Deletes the current key/data pair.
@@ -237,7 +239,9 @@ impl<'txn> RwCursor<'txn> {
     /// `WriteFlags::NO_DUP_DATA` may be used to delete all data items for the
     /// current key, if the database was opened with `DatabaseFlags::DUP_SORT`.
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
-        unsafe { mdbx_result(ffi::mdbx_cursor_del(self.cursor(), flags.bits())) }
+        mdbx_result(unsafe { ffi::mdbx_cursor_del(self.cursor(), flags.bits()) })?;
+
+        Ok(())
     }
 }
 
@@ -576,6 +580,9 @@ mod test {
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
+        if let Some(v) = cursor.iter_from(b"foo").next().transpose().unwrap() {
+            panic!("{:?} != None", v);
+        }
         assert_eq!(0, cursor.iter_from(b"foo").count());
         assert_eq!(0, cursor.iter_dup().count());
         assert_eq!(0, cursor.iter_dup_start().count());
@@ -606,7 +613,7 @@ mod test {
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
-            for &(ref key, ref data) in &items {
+            for (key, data) in &items {
                 txn.put(db, key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();

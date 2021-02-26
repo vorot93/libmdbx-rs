@@ -116,11 +116,11 @@ impl fmt::Display for Error {
 /// An LMDB result.
 pub type Result<T> = result::Result<T, Error>;
 
-pub fn mdbx_result(err_code: c_int) -> Result<()> {
-    if err_code == ffi::MDBX_SUCCESS as i32 {
-        Ok(())
-    } else {
-        Err(Error::from_err_code(err_code))
+pub fn mdbx_result(err_code: c_int) -> Result<bool> {
+    match err_code {
+        ffi::MDBX_SUCCESS => Ok(false),
+        ffi::MDBX_RESULT_TRUE => Ok(true),
+        other => Err(Error::from_err_code(other)),
     }
 }
 

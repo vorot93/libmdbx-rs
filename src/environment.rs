@@ -37,7 +37,6 @@ use std::{
     path::Path,
     ptr,
     result,
-    sync::Mutex,
 };
 
 #[cfg(windows)]
@@ -57,7 +56,6 @@ impl OsStrExtLmdb for OsStr {
 /// An environment supports multiple databases, all residing in the same shared-memory map.
 pub struct Environment {
     env: *mut ffi::MDBX_env,
-    dbi_open_mutex: Mutex<()>,
 }
 
 impl Environment {
@@ -65,14 +63,14 @@ impl Environment {
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> EnvironmentBuilder {
         EnvironmentBuilder {
-            flags: EnvironmentFlags::empty(),
+            flags: EnvironmentFlags::default(),
             max_readers: None,
             max_dbs: None,
             geometry: None,
         }
     }
 
-    /// Returns a raw pointer to the underlying LMDB environment.
+    /// Returns a raw pointer to the underlying MDBX environment.
     ///
     /// The caller **must** ensure that the pointer is not dereferenced after the lifetime of the
     /// environment.
@@ -80,7 +78,7 @@ impl Environment {
         self.env
     }
 
-    /// Opens a handle to an LMDB database.
+    /// Opens a handle to an MDBX database.
     ///
     /// If `name` is `None`, then the returned handle will be for the default database.
     ///
@@ -95,15 +93,13 @@ impl Environment {
     ///
     /// The database name may not contain the null character.
     pub fn open_db(&self, name: Option<&str>) -> Result<Database> {
-        let mutex = self.dbi_open_mutex.lock();
         let txn = self.begin_ro_txn()?;
-        let db = unsafe { txn.open_db(name)? };
+        let db = txn.open_db(name)?;
         txn.commit()?;
-        drop(mutex);
         Ok(db)
     }
 
-    /// Opens a handle to an LMDB database, creating the database if necessary.
+    /// Opens a handle to an MDBX database, creating the database if necessary.
     ///
     /// If the database is already created, the given option flags will be added to it.
     ///
@@ -118,11 +114,9 @@ impl Environment {
     /// This function will fail with `Error::BadRslot` if called by a thread with an open
     /// transaction.
     pub fn create_db(&self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database> {
-        let mutex = self.dbi_open_mutex.lock();
         let txn = self.begin_rw_txn()?;
-        let db = unsafe { txn.create_db(name, flags)? };
+        let db = txn.create_db(name, flags)?;
         txn.commit()?;
-        drop(mutex);
         Ok(db)
     }
 
@@ -150,25 +144,8 @@ impl Environment {
     }
 
     /// Flush the environment data buffers to disk.
-    pub fn sync(&self, force: bool) -> Result<()> {
-        unsafe { mdbx_result(ffi::mdbx_env_sync_ex(self.env(), force, false)) }
-    }
-
-    /// Closes the database handle. Normally unnecessary.
-    ///
-    /// Closing a database handle is not necessary, but lets `Transaction::open_database` reuse the
-    /// handle value. Usually it's better to set a bigger `EnvironmentBuilder::set_max_dbs`, unless
-    /// that value would be large.
-    ///
-    /// ## Safety
-    ///
-    /// This call is not mutex protected. Databases should only be closed by a single thread, and
-    /// only if no other threads are going to reference the database handle or one of its cursors
-    /// any further. Do not close a handle if an existing transaction has modified its database.
-    /// Doing so can cause misbehavior from database corruption to errors like
-    /// `Error::BadValSize` (since the DB name is gone).
-    pub unsafe fn close_db(&mut self, db: Database) {
-        ffi::mdbx_dbi_close(self.env, db.dbi());
+    pub fn sync(&self, force: bool) -> Result<bool> {
+        mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.env(), force, false) })
     }
 
     /// Retrieves statistics about this environment.
@@ -214,8 +191,8 @@ impl Environment {
     /// * It will create a read transaction to traverse the freelist database.
     pub fn freelist(&self) -> Result<usize> {
         let mut freelist: usize = 0;
-        let db = Database::freelist_db();
         let txn = self.begin_ro_txn()?;
+        let db = Database::freelist_db();
         let mut cursor = txn.open_ro_cursor(db)?;
 
         for result in cursor.iter() {
@@ -233,28 +210,6 @@ impl Environment {
         }
 
         Ok(freelist)
-    }
-
-    /// Sets the size of the memory map to use for the environment.
-    ///
-    /// This could be used to resize the map when the environment is already open.
-    ///
-    /// Note:
-    ///
-    /// * No active transactions allowed when performing resizing in this process.
-    ///
-    /// * The size should be a multiple of the OS page size. Any attempt to set
-    ///   a size smaller than the space already consumed by the environment will
-    ///   be silently changed to the current size of the used space.
-    ///
-    /// * In the multi-process case, once a process resizes the map, other
-    ///   processes need to either re-open the environment, or call set_map_size
-    ///   with size 0 to update the environment. Otherwise, new transaction creation
-    ///   will fail with `Error::MapResized`.
-    pub fn set_map_size(&self, size: usize) -> Result<()> {
-        unsafe {
-            mdbx_result(ffi::mdbx_env_set_geometry(self.env(), size as isize, size as isize, size as isize, -1, -1, -1))
-        }
     }
 }
 
@@ -314,6 +269,15 @@ impl Stat {
     }
 }
 
+#[repr(transparent)]
+pub struct GeometryInfo(ffi::MDBX_envinfo__bindgen_ty_1);
+
+impl GeometryInfo {
+    pub fn min(&self) -> u64 {
+        self.0.lower
+    }
+}
+
 /// Environment information.
 ///
 /// Contains environment information about the map size, readers, last txn id etc.
@@ -321,6 +285,10 @@ impl Stat {
 pub struct Info(ffi::MDBX_envinfo);
 
 impl Info {
+    pub fn geometry(&self) -> GeometryInfo {
+        GeometryInfo(self.0.mi_geo)
+    }
+
     /// Size of memory map.
     #[inline]
     pub fn map_size(&self) -> usize {
@@ -399,11 +367,11 @@ impl<R> Default for Geometry<R> {
 }
 
 /// Options for opening or creating an environment.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub struct EnvironmentBuilder {
     flags: EnvironmentFlags,
     max_readers: Option<c_uint>,
-    max_dbs: Option<c_uint>,
+    max_dbs: Option<usize>,
     geometry: Option<Geometry<(Option<usize>, Option<usize>)>>,
 }
 
@@ -428,22 +396,22 @@ impl EnvironmentBuilder {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             lmdb_try!(ffi::mdbx_env_create(&mut env));
-            if let Some(geometry) = &self.geometry {
-                let mut min_size = -1;
-                let mut max_size = -1;
+            if let Err(e) = (|| {
+                if let Some(geometry) = &self.geometry {
+                    let mut min_size = -1;
+                    let mut max_size = -1;
 
-                if let Some(size) = geometry.size {
-                    if let Some(size) = size.0 {
-                        min_size = size as isize;
+                    if let Some(size) = geometry.size {
+                        if let Some(size) = size.0 {
+                            min_size = size as isize;
+                        }
+
+                        if let Some(size) = size.1 {
+                            max_size = size as isize;
+                        }
                     }
 
-                    if let Some(size) = size.1 {
-                        max_size = size as isize;
-                    }
-                }
-
-                lmdb_try_with_cleanup!(
-                    ffi::mdbx_env_set_geometry(
+                    lmdb_try!(ffi::mdbx_env_set_geometry(
                         env,
                         min_size,
                         -1,
@@ -455,28 +423,32 @@ impl EnvironmentBuilder {
                             Some(PageSize::MinimalAcceptable) => 0,
                             Some(PageSize::Set(size)) => size as isize,
                         }
-                    ),
-                    ffi::mdbx_env_close_ex(env, false)
-                )
+                    ));
+                }
+                if let Some(max_dbs) = self.max_dbs {
+                    lmdb_try!(ffi::mdbx_env_set_option(env, ffi::MDBX_opt_max_db, max_dbs as u64));
+                }
+                let path = match CString::new(path.as_os_str().as_bytes()) {
+                    Ok(path) => path,
+                    Err(..) => return Err(crate::Error::Invalid),
+                };
+                lmdb_try!(ffi::mdbx_env_open(env, path.as_ptr(), self.flags.make_flags(), mode));
+
+                Ok(())
+            })() {
+                ffi::mdbx_env_close_ex(env, false);
+
+                return Err(e);
             }
-            let path = match CString::new(path.as_os_str().as_bytes()) {
-                Ok(path) => path,
-                Err(..) => return Err(crate::Error::Invalid),
-            };
-            lmdb_try_with_cleanup!(
-                ffi::mdbx_env_open(env, path.as_ptr(), self.flags.bits(), mode),
-                ffi::mdbx_env_close_ex(env, false)
-            );
         }
         Ok(Environment {
             env,
-            dbi_open_mutex: Mutex::new(()),
         })
     }
 
     /// Sets the provided options in the environment.
     pub fn set_flags(&mut self, flags: EnvironmentFlags) -> &mut EnvironmentBuilder {
-        self.flags = flags | EnvironmentFlags::NO_TLS;
+        self.flags = flags;
         self
     }
 
@@ -501,7 +473,7 @@ impl EnvironmentBuilder {
     /// Currently a moderate number of slots are cheap but a huge number gets
     /// expensive: 7-120 words per transaction, and every `Transaction::open_db`
     /// does a linear search of the opened slots.
-    pub fn set_max_dbs(&mut self, max_dbs: c_uint) -> &mut EnvironmentBuilder {
+    pub fn set_max_dbs(&mut self, max_dbs: usize) -> &mut EnvironmentBuilder {
         self.max_dbs = Some(max_dbs);
         self
     }
@@ -537,13 +509,13 @@ mod test {
         let dir = tempdir().unwrap();
 
         // opening non-existent env with read-only should fail
-        assert!(Environment::new().set_flags(EnvironmentFlags::READ_ONLY).open(dir.path()).is_err());
+        assert!(Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).is_err());
 
         // opening non-existent env should succeed
         assert!(Environment::new().open(dir.path()).is_ok());
 
         // opening env with read-only should succeed
-        assert!(Environment::new().set_flags(EnvironmentFlags::READ_ONLY).open(dir.path()).is_ok());
+        assert!(Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).is_ok());
     }
 
     #[test]
@@ -560,7 +532,7 @@ mod test {
 
         {
             // read-only environment
-            let env = Environment::new().set_flags(EnvironmentFlags::READ_ONLY).open(dir.path()).unwrap();
+            let env = Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).unwrap();
 
             assert!(env.begin_rw_txn().is_err());
             assert!(env.begin_ro_txn().is_ok());
@@ -588,13 +560,10 @@ mod test {
     #[test]
     fn test_close_database() {
         let dir = tempdir().unwrap();
-        let mut env = Environment::new().set_max_dbs(10).open(dir.path()).unwrap();
+        let env = Environment::new().set_max_dbs(10).open(dir.path()).unwrap();
 
-        let db = env.create_db(Some("db"), DatabaseFlags::empty()).unwrap();
-        unsafe {
-            env.close_db(db);
-        }
-        assert!(env.open_db(Some("db")).is_ok());
+        env.create_db(Some("db"), DatabaseFlags::empty()).unwrap();
+        env.open_db(Some("db")).unwrap();
     }
 
     #[test]
@@ -605,7 +574,7 @@ mod test {
             env.sync(true).unwrap();
         }
         {
-            let env = Environment::new().set_flags(EnvironmentFlags::READ_ONLY).open(dir.path()).unwrap();
+            let env = Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).unwrap();
             env.sync(true).unwrap_err();
         }
     }
@@ -632,7 +601,7 @@ mod test {
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
             tx.put(db, &value, &value, WriteFlags::default()).expect("tx.put");
-            tx.commit().expect("tx.commit")
+            tx.commit().expect("tx.commit");
         }
 
         // Stats should now reflect inserted values.
@@ -658,9 +627,9 @@ mod test {
             .unwrap();
 
         let info = env.info().unwrap();
-        assert_eq!(info.map_size(), map_size);
-        assert_eq!(info.last_pgno(), 1);
-        assert_eq!(info.last_txnid(), 0);
+        assert_eq!(info.geometry().min(), map_size as u64);
+        // assert_eq!(info.last_pgno(), 1);
+        // assert_eq!(info.last_txnid(), 0);
         // The default max readers is 126.
         assert_eq!(info.max_readers(), 126);
         assert_eq!(info.num_readers(), 0);
@@ -681,7 +650,7 @@ mod test {
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
             tx.put(db, &value, &value, WriteFlags::default()).expect("tx.put");
-            tx.commit().expect("tx.commit")
+            tx.commit().expect("tx.commit");
         }
         let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
         tx.clear_db(db).expect("clear");
@@ -690,32 +659,5 @@ mod test {
         // Freelist should not be empty after clear_db.
         freelist = env.freelist().unwrap();
         assert!(freelist > 0);
-    }
-
-    #[test]
-    fn test_set_map_size() {
-        let dir = tempdir().unwrap();
-        let env = Environment::new().open(dir.path()).unwrap();
-
-        let mut info = env.info().unwrap();
-        let default_size = info.map_size();
-
-        // Resizing to 0 merely reloads the map size
-        env.set_map_size(0).unwrap();
-        info = env.info().unwrap();
-        assert_eq!(info.map_size(), default_size);
-
-        env.set_map_size(2 * default_size).unwrap();
-        info = env.info().unwrap();
-        assert_eq!(info.map_size(), 2 * default_size);
-
-        env.set_map_size(4 * default_size).unwrap();
-        info = env.info().unwrap();
-        assert_eq!(info.map_size(), 4 * default_size);
-
-        // Decreasing is also fine if the space hasn't been consumed.
-        env.set_map_size(2 * default_size).unwrap();
-        info = env.info().unwrap();
-        assert_eq!(info.map_size(), 2 * default_size);
     }
 }
