@@ -56,12 +56,15 @@ pub trait Transaction<'env>: Sized + private::Sealed {
         unsafe { ffi::mdbx_txn_env(self.txn()) }
     }
 
+    #[doc(hidden)]
+    fn note_committed(&mut self);
+
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
-    fn commit(self) -> Result<bool> {
+    fn commit(mut self) -> Result<bool> {
         let result = mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()) });
-        mem::forget(self);
+        self.note_committed();
         result
     }
 
@@ -125,6 +128,7 @@ pub trait Transaction<'env>: Sized + private::Sealed {
 /// An LMDB read-only transaction.
 pub struct RoTransaction<'env> {
     txn: *mut ffi::MDBX_txn,
+    committed: bool,
     _marker: PhantomData<&'env ()>,
 }
 
@@ -136,8 +140,10 @@ impl<'env> fmt::Debug for RoTransaction<'env> {
 
 impl<'env> Drop for RoTransaction<'env> {
     fn drop(&mut self) {
-        unsafe {
-            ffi::mdbx_txn_abort(self.txn);
+        if !self.committed {
+            unsafe {
+                ffi::mdbx_txn_abort(self.txn);
+            }
         }
     }
 }
@@ -157,6 +163,7 @@ impl<'env> RoTransaction<'env> {
             ))?;
             Ok(RoTransaction {
                 txn,
+                committed: false,
                 _marker: PhantomData,
             })
         }
@@ -190,6 +197,10 @@ impl<'env> RoTransaction<'env> {
 impl<'env> Transaction<'env> for RoTransaction<'env> {
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
+    }
+
+    fn note_committed(&mut self) {
+        self.committed = true;
     }
 }
 
@@ -230,6 +241,7 @@ impl<'env> InactiveTransaction<'env> {
         };
         Ok(RoTransaction {
             txn,
+            committed: false,
             _marker: PhantomData,
         })
     }
@@ -238,6 +250,7 @@ impl<'env> InactiveTransaction<'env> {
 /// An LMDB read-write transaction.
 pub struct RwTransaction<'env> {
     txn: *mut ffi::MDBX_txn,
+    committed: bool,
     _marker: PhantomData<&'env ()>,
 }
 
@@ -249,8 +262,10 @@ impl<'env> fmt::Debug for RwTransaction<'env> {
 
 impl<'env> Drop for RwTransaction<'env> {
     fn drop(&mut self) {
-        unsafe {
-            ffi::mdbx_txn_abort(self.txn);
+        if !self.committed {
+            unsafe {
+                ffi::mdbx_txn_abort(self.txn);
+            }
         }
     }
 }
@@ -272,6 +287,7 @@ impl<'env> RwTransaction<'env> {
             ))?;
             Ok(RwTransaction {
                 txn,
+                committed: false,
                 _marker: PhantomData,
             })
         }
@@ -400,6 +416,7 @@ impl<'env> RwTransaction<'env> {
         }
         Ok(RwTransaction {
             txn: nested,
+            committed: false,
             _marker: PhantomData,
         })
     }
@@ -408,6 +425,10 @@ impl<'env> RwTransaction<'env> {
 impl<'env> Transaction<'env> for RwTransaction<'env> {
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
+    }
+
+    fn note_committed(&mut self) {
+        self.committed = true;
     }
 }
 
@@ -595,6 +616,11 @@ mod test {
             let mut txn = env.begin_rw_txn().unwrap();
             txn.drop_db(db).unwrap();
             txn.commit().unwrap();
+        }
+        {
+            let txn = env.begin_ro_txn().unwrap();
+            let db = env.open_db(Some("test")).unwrap();
+            assert_eq!(b"val", txn.get(&db, b"key").unwrap());
         }
 
         assert_eq!(env.open_db(Some("test")), Err(Error::NotFound));
