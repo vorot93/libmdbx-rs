@@ -2,7 +2,6 @@ use libc::c_int;
 use std::{
     ffi::CStr,
     fmt,
-    os::raw::c_char,
     result,
     str,
 };
@@ -23,11 +22,18 @@ pub enum Error {
     TxnFull,
     CursorFull,
     PageFull,
+    UnableExtendMapsize,
     Incompatible,
     BadRslot,
     BadTxn,
     BadValSize,
     BadDbi,
+    Problem,
+    Busy,
+    Multival,
+    WannaRecovery,
+    KeyMismatch,
+    TooLarge,
     Other(c_int),
 }
 
@@ -48,11 +54,18 @@ impl Error {
             ffi::MDBX_TXN_FULL => Error::TxnFull,
             ffi::MDBX_CURSOR_FULL => Error::CursorFull,
             ffi::MDBX_PAGE_FULL => Error::PageFull,
+            ffi::MDBX_UNABLE_EXTEND_MAPSIZE => Error::UnableExtendMapsize,
             ffi::MDBX_INCOMPATIBLE => Error::Incompatible,
             ffi::MDBX_BAD_RSLOT => Error::BadRslot,
             ffi::MDBX_BAD_TXN => Error::BadTxn,
             ffi::MDBX_BAD_VALSIZE => Error::BadValSize,
             ffi::MDBX_BAD_DBI => Error::BadDbi,
+            ffi::MDBX_PROBLEM => Error::Problem,
+            ffi::MDBX_BUSY => Error::Busy,
+            ffi::MDBX_EMULTIVAL => Error::Multival,
+            ffi::MDBX_WANNA_RECOVERY => Error::WannaRecovery,
+            ffi::MDBX_EKEYMISMATCH => Error::KeyMismatch,
+            ffi::MDBX_TOO_LARGE => Error::TooLarge,
             other => Error::Other(other),
         }
     }
@@ -74,11 +87,18 @@ impl Error {
             Error::TxnFull => ffi::MDBX_TXN_FULL,
             Error::CursorFull => ffi::MDBX_CURSOR_FULL,
             Error::PageFull => ffi::MDBX_PAGE_FULL,
+            Error::UnableExtendMapsize => ffi::MDBX_UNABLE_EXTEND_MAPSIZE,
             Error::Incompatible => ffi::MDBX_INCOMPATIBLE,
             Error::BadRslot => ffi::MDBX_BAD_RSLOT,
             Error::BadTxn => ffi::MDBX_BAD_TXN,
             Error::BadValSize => ffi::MDBX_BAD_VALSIZE,
             Error::BadDbi => ffi::MDBX_BAD_DBI,
+            Error::Problem => ffi::MDBX_PROBLEM,
+            Error::Busy => ffi::MDBX_BUSY,
+            Error::Multival => ffi::MDBX_EMULTIVAL,
+            Error::WannaRecovery => ffi::MDBX_WANNA_RECOVERY,
+            Error::KeyMismatch => ffi::MDBX_EKEYMISMATCH,
+            Error::TooLarge => ffi::MDBX_TOO_LARGE,
             Error::Other(err_code) => *err_code,
         }
     }
@@ -87,8 +107,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "{}", unsafe {
-            // This is safe since the error messages returned from mdbx_strerror are static.
-            let err: *const c_char = ffi::mdbx_strerror(self.to_err_code()) as *const c_char;
+            let err = ffi::mdbx_strerror(self.to_err_code());
             str::from_utf8_unchecked(CStr::from_ptr(err).to_bytes())
         })
     }
