@@ -15,7 +15,7 @@ use std::{
 /// A handle to an individual database in an environment.
 ///
 /// A database handle denotes the name and parameters of a database in an environment.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Database<'env> {
     dbi: ffi::MDBX_dbi,
     _marker: PhantomData<&'env ()>,

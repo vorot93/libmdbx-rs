@@ -34,7 +34,7 @@ fn bench_get_rand(b: &mut Bencher) {
     b.iter(|| {
         let mut i = 0usize;
         for key in &keys {
-            i += txn.get(db, key).unwrap().len();
+            i += txn.get(&db, key).unwrap().len();
         }
         black_box(i);
     });
@@ -88,7 +88,7 @@ fn bench_put_rand(b: &mut Bencher) {
     b.iter(|| {
         let mut txn = env.begin_rw_txn().unwrap();
         for &(ref key, ref data) in items.iter() {
-            txn.put(db, key, data, WriteFlags::empty()).unwrap();
+            txn.put(&db, key, data, WriteFlags::empty()).unwrap();
         }
     });
 }

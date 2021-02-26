@@ -88,11 +88,8 @@ impl Environment {
     ///
     /// The returned database handle may be shared among any transaction in the environment.
     ///
-    /// This function will fail with `Error::BadRslot` if called by a thread which has an ongoing
-    /// transaction.
-    ///
     /// The database name may not contain the null character.
-    pub fn open_db(&self, name: Option<&str>) -> Result<Database> {
+    pub fn open_db(&self, name: Option<&str>) -> Result<Database<'_>> {
         let txn = self.begin_ro_txn()?;
         let db = txn.open_db(name)?;
         txn.commit()?;
@@ -113,7 +110,7 @@ impl Environment {
     ///
     /// This function will fail with `Error::BadRslot` if called by a thread with an open
     /// transaction.
-    pub fn create_db(&self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database> {
+    pub fn create_db(&self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'_>> {
         let txn = self.begin_rw_txn()?;
         let db = txn.create_db(name, flags)?;
         txn.commit()?;
@@ -123,7 +120,7 @@ impl Environment {
     /// Retrieves the set of flags which the database is opened with.
     ///
     /// The database must belong to to this environment.
-    pub fn get_db_flags(&self, db: Database) -> Result<DatabaseFlags> {
+    pub fn get_db_flags(&self, db: &Database<'_>) -> Result<DatabaseFlags> {
         let txn = self.begin_ro_txn()?;
         let mut flags: c_uint = 0;
         unsafe {
@@ -193,7 +190,7 @@ impl Environment {
         let mut freelist: usize = 0;
         let txn = self.begin_ro_txn()?;
         let db = Database::freelist_db();
-        let mut cursor = txn.open_ro_cursor(db)?;
+        let mut cursor = txn.open_ro_cursor(&db)?;
 
         for result in cursor.iter() {
             let (_key, value) = result?;
@@ -600,7 +597,7 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.put(db, &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.put(&db, &value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
 
@@ -649,11 +646,11 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.put(db, &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.put(&db, &value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
         let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-        tx.clear_db(db).expect("clear");
+        tx.clear_db(&db).expect("clear");
         tx.commit().expect("tx.commit");
 
         // Freelist should not be empty after clear_db.

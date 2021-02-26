@@ -65,23 +65,6 @@ pub trait Transaction<'env>: Sized + private::Sealed {
         result
     }
 
-    /// Opens a database in the transaction.
-    ///
-    /// If `name` is `None`, then the default database will be opened, otherwise
-    /// a named database will be opened. The database handle will be private to
-    /// the transaction until the transaction is successfully committed. If the
-    /// transaction is aborted the returned database handle should no longer be
-    /// used.
-    ///
-    /// Prefer using `Environment::open_db`.
-    ///
-    /// ## Safety
-    ///
-    /// This function (as well as `Environment::open_db`,
-    /// `Environment::create_db`, and `Database::create`) **must not** be called
-    /// from multiple concurrent transactions in the same environment. A
-    /// transaction which uses this function must finish (either commit or
-    /// abort) before any other transaction may use this function.
     fn open_db(&self, name: Option<&str>) -> Result<Database<'env>> {
         Database::new(self, name, 0)
     }
@@ -94,7 +77,7 @@ pub trait Transaction<'env>: Sized + private::Sealed {
     /// returned. Retrieval of other items requires the use of
     /// `Transaction::cursor_get`. If the item is not in the database, then
     /// `Error::NotFound` will be returned.
-    fn get<'txn, K>(&'txn self, database: Database<'env>, key: &K) -> Result<&'txn [u8]>
+    fn get<'txn, K>(&'txn self, database: &Database<'env>, key: &K) -> Result<&'txn [u8]>
     where
         K: AsRef<[u8]>,
     {
@@ -116,12 +99,12 @@ pub trait Transaction<'env>: Sized + private::Sealed {
     }
 
     /// Open a new read-only cursor on the given database.
-    fn open_ro_cursor(&self, db: Database<'env>) -> Result<RoCursor<'_>> {
+    fn open_ro_cursor<'txn>(&'txn self, db: &Database<'env>) -> Result<RoCursor<'txn>> {
         RoCursor::new(self, db)
     }
 
     /// Gets the option flags for the given database in the transaction.
-    fn db_flags(&self, db: Database<'env>) -> Result<DatabaseFlags> {
+    fn db_flags(&self, db: &Database<'env>) -> Result<DatabaseFlags> {
         let mut flags: c_uint = 0;
         unsafe {
             mdbx_result(ffi::mdbx_dbi_flags_ex(self.txn(), db.dbi(), &mut flags, ptr::null_mut()))?;
@@ -130,7 +113,7 @@ pub trait Transaction<'env>: Sized + private::Sealed {
     }
 
     /// Retrieves database statistics.
-    fn stat(&self, db: Database<'env>) -> Result<Stat> {
+    fn stat(&self, db: &Database<'env>) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
             lmdb_try!(ffi::mdbx_dbi_stat(self.txn(), db.dbi(), stat.mdb_stat(), size_of::<Stat>()));
@@ -294,29 +277,12 @@ impl<'env> RwTransaction<'env> {
         }
     }
 
-    /// Opens a database in the provided transaction, creating it if necessary.
-    ///
-    /// If `name` is `None`, then the default database will be opened, otherwise
-    /// a named database will be opened. The database handle will be private to
-    /// the transaction until the transaction is successfully committed. If the
-    /// transaction is aborted the returned database handle should no longer be
-    /// used.
-    ///
-    /// Prefer using `Environment::create_db`.
-    ///
-    /// ## Safety
-    ///
-    /// This function (as well as `Environment::open_db`,
-    /// `Environment::create_db`, and `Database::open`) **must not** be called
-    /// from multiple concurrent transactions in the same environment. A
-    /// transaction which uses this function must finish (either commit or
-    /// abort) before any other transaction may use this function.
-    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'env>> {
+    pub(crate) fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'env>> {
         Database::new(self, name, flags.bits() | ffi::MDBX_CREATE)
     }
 
     /// Opens a new read-write cursor on the given database and transaction.
-    pub fn open_rw_cursor<'txn>(&'txn mut self, db: Database<'env>) -> Result<RwCursor<'txn>> {
+    pub fn open_rw_cursor<'txn>(&'txn mut self, db: &Database<'env>) -> Result<RwCursor<'txn>> {
         RwCursor::new(self, db)
     }
 
@@ -326,7 +292,7 @@ impl<'env> RwTransaction<'env> {
     /// behavior is to enter the new key/data pair, replacing any previously
     /// existing key if duplicates are disallowed, or adding a duplicate data
     /// item if duplicates are allowed (`DatabaseFlags::DUP_SORT`).
-    pub fn put<K, D>(&mut self, database: Database, key: &K, data: &D, flags: WriteFlags) -> Result<()>
+    pub fn put<K, D>(&mut self, database: &Database<'env>, key: &K, data: &D, flags: WriteFlags) -> Result<()>
     where
         K: AsRef<[u8]>,
         D: AsRef<[u8]>,
@@ -351,7 +317,7 @@ impl<'env> RwTransaction<'env> {
     /// filled by the caller.
     pub fn reserve<'txn, K>(
         &'txn mut self,
-        database: Database,
+        database: &Database<'env>,
         key: &K,
         len: usize,
         flags: WriteFlags,
@@ -386,7 +352,7 @@ impl<'env> RwTransaction<'env> {
     /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
     /// If the data parameter is non-NULL only the matching data item will be deleted.
     /// Otherwise, if data parameter is `None`, any/all value(s) for specified key will be deleted.
-    pub fn del<K>(&mut self, database: Database, key: &K, data: Option<&[u8]>) -> Result<()>
+    pub fn del<K>(&mut self, database: &Database<'env>, key: &K, data: Option<&[u8]>) -> Result<()>
     where
         K: AsRef<[u8]>,
     {
@@ -412,14 +378,14 @@ impl<'env> RwTransaction<'env> {
     }
 
     /// Empties the given database. All items will be removed.
-    pub fn clear_db(&mut self, db: Database) -> Result<()> {
+    pub fn clear_db(&mut self, db: &Database<'env>) -> Result<()> {
         mdbx_result(unsafe { ffi::mdbx_drop(self.txn(), db.dbi(), false) })?;
 
         Ok(())
     }
 
     /// Drops the database from the environment.
-    pub fn drop_db(&mut self, db: Database) -> Result<()> {
+    pub fn drop_db(&mut self, db: Database<'env>) -> Result<()> {
         mdbx_result(unsafe { ffi::mdbx_drop(self.txn(), db.dbi(), true) })?;
 
         Ok(())
@@ -473,19 +439,19 @@ mod test {
         let db = env.open_db(None).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        assert_eq!(b"val1", txn.get(db, b"key1").unwrap());
-        assert_eq!(b"val2", txn.get(db, b"key2").unwrap());
-        assert_eq!(b"val3", txn.get(db, b"key3").unwrap());
-        assert_eq!(txn.get(db, b"key"), Err(Error::NotFound));
+        assert_eq!(b"val1", txn.get(&db, b"key1").unwrap());
+        assert_eq!(b"val2", txn.get(&db, b"key2").unwrap());
+        assert_eq!(b"val3", txn.get(&db, b"key3").unwrap());
+        assert_eq!(txn.get(&db, b"key"), Err(Error::NotFound));
 
-        txn.del(db, b"key1", None).unwrap();
-        assert_eq!(txn.get(db, b"key1"), Err(Error::NotFound));
+        txn.del(&db, b"key1", None).unwrap();
+        assert_eq!(txn.get(&db, b"key1"), Err(Error::NotFound));
     }
 
     #[test]
@@ -495,20 +461,20 @@ mod test {
         let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
         {
-            let mut cur = txn.open_ro_cursor(db).unwrap();
+            let mut cur = txn.open_ro_cursor(&db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1", b"val2", b"val3"]);
@@ -516,13 +482,13 @@ mod test {
         txn.commit().unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.del(db, b"key1", Some(b"val2")).unwrap();
-        txn.del(db, b"key2", None).unwrap();
+        txn.del(&db, b"key1", Some(b"val2")).unwrap();
+        txn.del(&db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
         {
-            let mut cur = txn.open_ro_cursor(db).unwrap();
+            let mut cur = txn.open_ro_cursor(&db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1", b"val3"]);
@@ -541,17 +507,17 @@ mod test {
 
         let mut txn = env.begin_rw_txn().unwrap();
         {
-            let mut writer = txn.reserve(db, b"key1", 4, WriteFlags::empty()).unwrap();
+            let mut writer = txn.reserve(&db, b"key1", 4, WriteFlags::empty()).unwrap();
             writer.write_all(b"val1").unwrap();
         }
         txn.commit().unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        assert_eq!(b"val1", txn.get(db, b"key1").unwrap());
-        assert_eq!(txn.get(db, b"key"), Err(Error::NotFound));
+        assert_eq!(b"val1", txn.get(&db, b"key1").unwrap());
+        assert_eq!(txn.get(&db, b"key"), Err(Error::NotFound));
 
-        txn.del(db, b"key1", None).unwrap();
-        assert_eq!(txn.get(db, b"key1"), Err(Error::NotFound));
+        txn.del(&db, b"key1", None).unwrap();
+        assert_eq!(txn.get(&db, b"key1"), Err(Error::NotFound));
     }
 
     #[test]
@@ -562,14 +528,14 @@ mod test {
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
-            txn.put(db, b"key", b"val", WriteFlags::empty()).unwrap();
+            txn.put(&db, b"key", b"val", WriteFlags::empty()).unwrap();
             txn.commit().unwrap();
         }
 
         let txn = env.begin_ro_txn().unwrap();
         let inactive = txn.reset();
         let active = inactive.renew().unwrap();
-        assert!(active.get(db, b"key").is_ok());
+        assert!(active.get(&db, b"key").is_ok());
     }
 
     #[test]
@@ -579,17 +545,17 @@ mod test {
         let db = env.open_db(None).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
 
         {
             let mut nested = txn.begin_nested_txn().unwrap();
-            nested.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-            assert_eq!(nested.get(db, b"key1").unwrap(), b"val1");
-            assert_eq!(nested.get(db, b"key2").unwrap(), b"val2");
+            nested.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+            assert_eq!(nested.get(&db, b"key1").unwrap(), b"val1");
+            assert_eq!(nested.get(&db, b"key2").unwrap(), b"val2");
         }
 
-        assert_eq!(txn.get(db, b"key1").unwrap(), b"val1");
-        assert_eq!(txn.get(db, b"key2"), Err(Error::NotFound));
+        assert_eq!(txn.get(&db, b"key1").unwrap(), b"val1");
+        assert_eq!(txn.get(&db, b"key2"), Err(Error::NotFound));
     }
 
     #[test]
@@ -600,18 +566,18 @@ mod test {
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
-            txn.put(db, b"key", b"val", WriteFlags::empty()).unwrap();
+            txn.put(&db, b"key", b"val", WriteFlags::empty()).unwrap();
             txn.commit().unwrap();
         }
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
-            txn.clear_db(db).unwrap();
+            txn.clear_db(&db).unwrap();
             txn.commit().unwrap();
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        assert_eq!(txn.get(db, b"key"), Err(Error::NotFound));
+        assert_eq!(txn.get(&db, b"key"), Err(Error::NotFound));
     }
 
     #[test]
@@ -622,7 +588,7 @@ mod test {
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
-            txn.put(db, b"key", b"val", WriteFlags::empty()).unwrap();
+            txn.put(&db, b"key", b"val", WriteFlags::empty()).unwrap();
             txn.commit().unwrap();
         }
         {
@@ -654,13 +620,13 @@ mod test {
                 let db = reader_env.open_db(None).unwrap();
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
-                    assert_eq!(txn.get(db, key), Err(Error::NotFound));
+                    assert_eq!(txn.get(&db, key), Err(Error::NotFound));
                 }
                 reader_barrier.wait();
                 reader_barrier.wait();
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
-                    txn.get(db, key).unwrap() == val
+                    txn.get(&db, key).unwrap() == val
                 }
             }));
         }
@@ -668,7 +634,7 @@ mod test {
         let db = env.open_db(None).unwrap();
         let mut txn = env.begin_rw_txn().unwrap();
         barrier.wait();
-        txn.put(db, key, val, WriteFlags::empty()).unwrap();
+        txn.put(&db, key, val, WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
         barrier.wait();
 
@@ -692,7 +658,7 @@ mod test {
             threads.push(thread::spawn(move || {
                 let db = writer_env.open_db(None).unwrap();
                 let mut txn = writer_env.begin_rw_txn().unwrap();
-                txn.put(db, &format!("{}{}", key, i), &format!("{}{}", val, i), WriteFlags::empty()).unwrap();
+                txn.put(&db, &format!("{}{}", key, i), &format!("{}{}", val, i), WriteFlags::empty()).unwrap();
                 txn.commit().is_ok()
             }));
         }
@@ -702,7 +668,7 @@ mod test {
         let txn = env.begin_ro_txn().unwrap();
 
         for i in 0..n {
-            assert_eq!(format!("{}{}", val, i).as_bytes(), txn.get(db, &format!("{}{}", key, i)).unwrap());
+            assert_eq!(format!("{}{}", val, i).as_bytes(), txn.get(&db, &format!("{}{}", key, i)).unwrap());
         }
     }
 
@@ -713,37 +679,37 @@ mod test {
         let db = env.create_db(None, DatabaseFlags::empty()).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.stat(db).unwrap();
+            let stat = txn.stat(&db).unwrap();
             assert_eq!(stat.entries(), 3);
         }
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.del(db, b"key1", None).unwrap();
-        txn.del(db, b"key2", None).unwrap();
+        txn.del(&db, b"key1", None).unwrap();
+        txn.del(&db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.stat(db).unwrap();
+            let stat = txn.stat(&db).unwrap();
             assert_eq!(stat.entries(), 1);
         }
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key4", b"val4", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key5", b"val5", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key6", b"val6", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key4", b"val4", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key5", b"val5", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key6", b"val6", WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.stat(db).unwrap();
+            let stat = txn.stat(&db).unwrap();
             assert_eq!(stat.entries(), 4);
         }
     }
@@ -755,43 +721,43 @@ mod test {
         let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.stat(db).unwrap();
+            let stat = txn.stat(&db).unwrap();
             assert_eq!(stat.entries(), 9);
         }
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.del(db, b"key1", Some(b"val2")).unwrap();
-        txn.del(db, b"key2", None).unwrap();
+        txn.del(&db, b"key1", Some(b"val2")).unwrap();
+        txn.del(&db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.stat(db).unwrap();
+            let stat = txn.stat(&db).unwrap();
             assert_eq!(stat.entries(), 5);
         }
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key4", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key4", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key4", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key4", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key4", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key4", b"val3", WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.stat(db).unwrap();
+            let stat = txn.stat(&db).unwrap();
             assert_eq!(stat.entries(), 8);
         }
     }

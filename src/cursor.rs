@@ -154,7 +154,7 @@ impl<'txn> Drop for RoCursor<'txn> {
 impl<'txn> RoCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `Transaction::open_cursor`.
-    pub(crate) fn new<'env, T>(txn: &'txn T, db: Database) -> Result<RoCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'env>) -> Result<RoCursor<'txn>>
     where
         T: Transaction<'env>,
     {
@@ -196,7 +196,7 @@ impl<'txn> Drop for RwCursor<'txn> {
 impl<'txn> RwCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `RwTransaction::open_rw_cursor`.
-    pub(crate) fn new<'env, T>(txn: &'txn T, db: Database) -> Result<RwCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'env>) -> Result<RwCursor<'txn>>
     where
         T: Transaction<'env>,
     {
@@ -434,11 +434,11 @@ mod test {
         let db = env.open_db(None).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
 
-        let cursor = txn.open_ro_cursor(db).unwrap();
+        let cursor = txn.open_ro_cursor(&db).unwrap();
         assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_FIRST).unwrap());
         assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
         assert_eq!((Some(&b"key2"[..]), &b"val2"[..]), cursor.get(None, None, MDBX_NEXT).unwrap());
@@ -456,14 +456,14 @@ mod test {
         let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
 
-        let cursor = txn.open_ro_cursor(db).unwrap();
+        let cursor = txn.open_ro_cursor(&db).unwrap();
         assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_FIRST).unwrap());
         assert_eq!((None, &b"val1"[..]), cursor.get(None, None, MDBX_FIRST_DUP).unwrap());
         assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
@@ -491,14 +491,14 @@ mod test {
         let db = env.create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        txn.put(db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val4", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val5", WriteFlags::empty()).unwrap();
-        txn.put(db, b"key2", b"val6", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val4", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val5", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
 
-        let cursor = txn.open_ro_cursor(db).unwrap();
+        let cursor = txn.open_ro_cursor(&db).unwrap();
         assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_FIRST).unwrap());
         assert_eq!((None, &b"val1val2val3"[..]), cursor.get(None, None, MDBX_GET_MULTIPLE).unwrap());
         assert!(cursor.get(None, None, MDBX_NEXT_MULTIPLE).is_err());
@@ -516,13 +516,13 @@ mod test {
         {
             let mut txn = env.begin_rw_txn().unwrap();
             for &(ref key, ref data) in &items {
-                txn.put(db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        let mut cursor = txn.open_ro_cursor(db).unwrap();
+        let mut cursor = txn.open_ro_cursor(&db).unwrap();
 
         // Because Result implements FromIterator, we can collect the iterator
         // of items of type Result<_, E> into a Result<Vec<_, E>> by specifying
@@ -563,7 +563,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
         let db = env.open_db(None).unwrap();
         let txn = env.begin_ro_txn().unwrap();
-        let mut cursor = txn.open_ro_cursor(db).unwrap();
+        let mut cursor = txn.open_ro_cursor(&db).unwrap();
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
@@ -576,7 +576,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
         let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         let txn = env.begin_ro_txn().unwrap();
-        let mut cursor = txn.open_ro_cursor(db).unwrap();
+        let mut cursor = txn.open_ro_cursor(&db).unwrap();
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
@@ -614,13 +614,13 @@ mod test {
         {
             let mut txn = env.begin_rw_txn().unwrap();
             for (key, data) in &items {
-                txn.put(db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        let mut cursor = txn.open_ro_cursor(db).unwrap();
+        let mut cursor = txn.open_ro_cursor(&db).unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         cursor.get(Some(b"b"), None, MDBX_SET).unwrap();
@@ -669,20 +669,20 @@ mod test {
         let r: Vec<(&[u8], &[u8])> = Vec::new();
         {
             let txn = env.begin_ro_txn().unwrap();
-            let mut cursor = txn.open_ro_cursor(db).unwrap();
+            let mut cursor = txn.open_ro_cursor(&db).unwrap();
             assert_eq!(r, cursor.iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
         }
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
             for &(ref key, ref data) in &items {
-                txn.put(db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
 
         let mut txn = env.begin_rw_txn().unwrap();
-        let mut cursor = txn.open_rw_cursor(db).unwrap();
+        let mut cursor = txn.open_rw_cursor(&db).unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(
@@ -704,7 +704,7 @@ mod test {
         let db = env.open_db(None).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
-        let mut cursor = txn.open_rw_cursor(db).unwrap();
+        let mut cursor = txn.open_rw_cursor(&db).unwrap();
 
         cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
         cursor.put(b"key2", b"val2", WriteFlags::empty()).unwrap();

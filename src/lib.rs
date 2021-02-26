@@ -84,7 +84,7 @@ mod test_utils {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, height);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.put(index, &HEIGHT_KEY, &value, WriteFlags::empty()).expect("tx.put");
+            tx.put(&index, &HEIGHT_KEY, &value, WriteFlags::empty()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
     }

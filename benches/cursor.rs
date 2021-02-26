@@ -26,7 +26,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
     let txn = env.begin_ro_txn().unwrap();
 
     b.iter(|| {
-        let mut cursor = txn.open_ro_cursor(db).unwrap();
+        let mut cursor = txn.open_ro_cursor(&db).unwrap();
         let mut i = 0;
         let mut count = 0u32;
 
@@ -63,7 +63,7 @@ fn bench_get_seq_cursor(b: &mut Bencher) {
     let txn = env.begin_ro_txn().unwrap();
 
     b.iter(|| {
-        let cursor = txn.open_ro_cursor(db).unwrap();
+        let cursor = txn.open_ro_cursor(&db).unwrap();
         let mut i = 0;
         let mut count = 0u32;
 
