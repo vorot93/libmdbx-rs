@@ -78,45 +78,6 @@ impl Environment {
         self.env
     }
 
-    /// Opens a handle to an MDBX database.
-    ///
-    /// If `name` is `None`, then the returned handle will be for the default database.
-    ///
-    /// If `name` is not `None`, then the returned handle will be for a named database. In this
-    /// case the environment must be configured to allow named databases through
-    /// `EnvironmentBuilder::set_max_dbs`.
-    ///
-    /// The returned database handle may be shared among any transaction in the environment.
-    ///
-    /// The database name may not contain the null character.
-    pub fn open_db(&self, name: Option<&str>) -> Result<Database<'_>> {
-        let txn = self.begin_ro_txn()?;
-        let db = txn.open_db(name)?;
-        txn.commit()?;
-        Ok(db)
-    }
-
-    /// Opens a handle to an MDBX database, creating the database if necessary.
-    ///
-    /// If the database is already created, the given option flags will be added to it.
-    ///
-    /// If `name` is `None`, then the returned handle will be for the default database.
-    ///
-    /// If `name` is not `None`, then the returned handle will be for a named database. In this
-    /// case the environment must be configured to allow named databases through
-    /// `EnvironmentBuilder::set_max_dbs`.
-    ///
-    /// The returned database handle may be shared among any transaction in the environment.
-    ///
-    /// This function will fail with `Error::BadRslot` if called by a thread with an open
-    /// transaction.
-    pub fn create_db(&self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'_>> {
-        let txn = self.begin_rw_txn()?;
-        let db = txn.create_db(name, flags)?;
-        txn.commit()?;
-        Ok(db)
-    }
-
     /// Retrieves the set of flags which the database is opened with.
     ///
     /// The database must belong to to this environment.
@@ -541,17 +502,20 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().set_max_dbs(1).open(dir.path()).unwrap();
 
-        assert!(env.open_db(None).is_ok());
-        assert!(env.open_db(Some("testdb")).is_err());
+        let txn = env.begin_ro_txn().unwrap();
+        assert!(txn.open_db(None).is_ok());
+        assert!(txn.open_db(Some("testdb")).is_err());
     }
 
     #[test]
     fn test_create_db() {
         let dir = tempdir().unwrap();
         let env = Environment::new().set_max_dbs(11).open(dir.path()).unwrap();
-        assert!(env.open_db(Some("testdb")).is_err());
-        assert!(env.create_db(Some("testdb"), DatabaseFlags::empty()).is_ok());
-        assert!(env.open_db(Some("testdb")).is_ok())
+
+        let txn = env.begin_rw_txn().unwrap();
+        assert!(txn.open_db(Some("testdb")).is_err());
+        assert!(txn.create_db(Some("testdb"), DatabaseFlags::empty()).is_ok());
+        assert!(txn.open_db(Some("testdb")).is_ok())
     }
 
     #[test]
@@ -559,8 +523,9 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().set_max_dbs(10).open(dir.path()).unwrap();
 
-        env.create_db(Some("db"), DatabaseFlags::empty()).unwrap();
-        env.open_db(Some("db")).unwrap();
+        let txn = env.begin_rw_txn().unwrap();
+        txn.create_db(Some("db"), DatabaseFlags::empty()).unwrap();
+        txn.open_db(Some("db")).unwrap();
     }
 
     #[test]
@@ -590,13 +555,12 @@ mod test {
         assert_eq!(stat.overflow_pages(), 0);
         assert_eq!(stat.entries(), 0);
 
-        let db = env.open_db(None).unwrap();
-
         // Write a few small values.
         for i in 0..64 {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+            let db = tx.open_db(None).unwrap();
             tx.put(&db, &value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
@@ -637,7 +601,6 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let db = env.open_db(None).unwrap();
         let mut freelist = env.freelist().unwrap();
         assert_eq!(freelist, 0);
 
@@ -646,10 +609,12 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+            let db = tx.open_db(None).unwrap();
             tx.put(&db, &value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
         let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+        let db = tx.open_db(None).unwrap();
         tx.clear_db(&db).expect("clear");
         tx.commit().expect("tx.commit");
 

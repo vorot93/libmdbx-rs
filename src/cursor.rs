@@ -196,7 +196,7 @@ impl<'txn> Drop for RwCursor<'txn> {
 impl<'txn> RwCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `RwTransaction::open_rw_cursor`.
-    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'env>) -> Result<RwCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'txn>) -> Result<RwCursor<'txn>>
     where
         T: Transaction<'env>,
     {
@@ -431,9 +431,10 @@ mod test {
     fn test_get() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.open_db(None).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
+
         txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
@@ -453,9 +454,9 @@ mod test {
     fn test_get_dup() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
+        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
@@ -488,9 +489,9 @@ mod test {
     fn test_get_dupfixed() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
+        let db = txn.create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED).unwrap();
         txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
@@ -508,13 +509,13 @@ mod test {
     fn test_iter() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.open_db(None).unwrap();
 
         let items: Vec<(&[u8], &[u8])> =
             vec![(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3"), (b"key5", b"val5")];
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
+            let db = txn.open_db(None).unwrap();
             for &(ref key, ref data) in &items {
                 txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
@@ -522,6 +523,7 @@ mod test {
         }
 
         let txn = env.begin_ro_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
         let mut cursor = txn.open_ro_cursor(&db).unwrap();
 
         // Because Result implements FromIterator, we can collect the iterator
@@ -561,8 +563,8 @@ mod test {
     fn test_iter_empty_database() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.open_db(None).unwrap();
         let txn = env.begin_ro_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
         let mut cursor = txn.open_ro_cursor(&db).unwrap();
 
         assert_eq!(0, cursor.iter().count());
@@ -574,8 +576,13 @@ mod test {
     fn test_iter_empty_dup_database() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+
+        let txn = env.begin_rw_txn().unwrap();
+        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        txn.commit().unwrap();
+
         let txn = env.begin_ro_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
         let mut cursor = txn.open_ro_cursor(&db).unwrap();
 
         assert_eq!(0, cursor.iter().count());
@@ -594,7 +601,10 @@ mod test {
     fn test_iter_dup() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+
+        let txn = env.begin_rw_txn().unwrap();
+        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        txn.commit().unwrap();
 
         let items: Vec<(&[u8], &[u8])> = vec![
             (b"a", b"1"),
@@ -663,18 +673,19 @@ mod test {
     fn test_iter_del_get() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
 
         let items: Vec<(&[u8], &[u8])> = vec![(b"a", b"1"), (b"b", b"2")];
         let r: Vec<(&[u8], &[u8])> = Vec::new();
         {
-            let txn = env.begin_ro_txn().unwrap();
+            let txn = env.begin_rw_txn().unwrap();
+            let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
             let mut cursor = txn.open_ro_cursor(&db).unwrap();
             assert_eq!(r, cursor.iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
         }
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
+            let db = txn.open_db(None).unwrap();
             for &(ref key, ref data) in &items {
                 txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
@@ -682,6 +693,7 @@ mod test {
         }
 
         let mut txn = env.begin_rw_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
         let mut cursor = txn.open_rw_cursor(&db).unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
@@ -701,9 +713,9 @@ mod test {
     fn test_put_del() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
-        let db = env.open_db(None).unwrap();
 
         let mut txn = env.begin_rw_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
         let mut cursor = txn.open_rw_cursor(&db).unwrap();
 
         cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();

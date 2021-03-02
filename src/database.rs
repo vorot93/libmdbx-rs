@@ -8,7 +8,6 @@ use crate::{
 use libc::c_uint;
 use std::{
     ffi::CString,
-    marker::PhantomData,
     ptr,
 };
 
@@ -16,17 +15,17 @@ use std::{
 ///
 /// A database handle denotes the name and parameters of a database in an environment.
 #[derive(Debug, Eq, PartialEq)]
-pub struct Database<'env> {
+pub struct Database<'txn, Txn> {
     dbi: ffi::MDBX_dbi,
-    _marker: PhantomData<&'env ()>,
+    txn: &'txn Txn,
 }
 
-impl<'env> Database<'env> {
+impl<'txn, 'env: 'txn, Txn: Transaction<'env>> Database<'txn, Txn> {
     /// Opens a new database handle in the given transaction.
     ///
     /// Prefer using `Environment::open_db`, `Environment::create_db`, `TransactionExt::open_db`,
     /// or `RwTransaction::create_db`.
-    pub(crate) fn new<Txn: Transaction<'env>>(txn: &Txn, name: Option<&str>, flags: c_uint) -> Result<Self> {
+    pub(crate) fn new(txn: &'txn Txn, name: Option<&str>, flags: c_uint) -> Result<Self> {
         let c_name = name.map(|n| CString::new(n).unwrap());
         let name_ptr = if let Some(ref c_name) = c_name {
             c_name.as_ptr()
@@ -37,14 +36,14 @@ impl<'env> Database<'env> {
         mdbx_result(unsafe { ffi::mdbx_dbi_open(txn.txn(), name_ptr, flags, &mut dbi) })?;
         Ok(Database {
             dbi,
-            _marker: PhantomData,
+            txn,
         })
     }
 
-    pub(crate) fn freelist_db() -> Self {
+    pub(crate) fn freelist_db(txn: &'txn Txn) -> Self {
         Database {
             dbi: 0,
-            _marker: PhantomData,
+            txn,
         }
     }
 
@@ -58,5 +57,4 @@ impl<'env> Database<'env> {
     }
 }
 
-unsafe impl<'env> Sync for Database<'env> {}
-unsafe impl<'env> Send for Database<'env> {}
+unsafe impl<'txn, Txn> Send for Database<'txn, Txn> {}
