@@ -1,10 +1,5 @@
 use libc::c_int;
-use std::{
-    ffi::CStr,
-    fmt,
-    result,
-    str,
-};
+use std::{ffi::CStr, fmt, result, str};
 
 /// An MDBX error kind.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]

@@ -1,32 +1,12 @@
 use crate::{
-    error::{
-        mdbx_result,
-        Result,
-    },
-    flags::{
-        DatabaseFlags,
-        WriteFlags,
-    },
+    error::{mdbx_result, Result},
+    flags::{DatabaseFlags, WriteFlags},
     util::freeze_bytes,
-    Error,
-    RoCursor,
-    RwCursor,
-    RwTransaction,
-    Stat,
-    Transaction,
+    Error, RoCursor, RwCursor, RwTransaction, Stat, Transaction,
 };
-use libc::{
-    c_uint,
-    c_void,
-};
+use libc::{c_uint, c_void};
 use lifetimed_bytes::Bytes;
-use std::{
-    ffi::CString,
-    mem::size_of,
-    ptr,
-    slice,
-    sync::Arc,
-};
+use std::{ffi::CString, mem::size_of, ptr, slice, sync::Arc};
 
 /// A handle to an individual database in an environment.
 ///
@@ -227,7 +207,7 @@ impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     /// Drops the database from the environment.
     ///
     /// # Safety
-    /// Make sure to close ALL other `Database` and `Cursor` instances pointing to the same DBI.
+    /// Make sure to close ALL other `Database` and `Cursor` instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_db(self) -> Result<()> {
         mdbx_result(ffi::mdbx_drop(self.txn.txn(), self.dbi(), true))?;
 

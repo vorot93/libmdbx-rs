@@ -578,8 +578,6 @@ mod test {
         assert_eq!(info.geometry().min(), map_size as u64);
         // assert_eq!(info.last_pgno(), 1);
         // assert_eq!(info.last_txnid(), 0);
-        // The default max readers is 126.
-        assert_eq!(info.max_readers(), 126);
         assert_eq!(info.num_readers(), 0);
     }
 

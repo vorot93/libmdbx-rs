@@ -1,29 +1,14 @@
 use crate::{
     database::Database,
-    error::{
-        mdbx_result,
-        Error,
-        Result,
-    },
+    error::{mdbx_result, Error, Result},
     flags::*,
     transaction::Transaction,
     util::freeze_bytes,
 };
-use ffi::mdbx_is_dirty;
-use libc::{
-    c_uint,
-    c_void,
-    EINVAL,
-};
+use ffi::{mdbx_cursor_create, mdbx_cursor_dbi, mdbx_is_dirty};
+use libc::{c_uint, c_void, EINVAL};
 use lifetimed_bytes::Bytes;
-use std::{
-    fmt,
-    marker::PhantomData,
-    mem,
-    ptr,
-    result,
-    slice,
-};
+use std::{fmt, marker::PhantomData, mem, ptr, result, slice};
 
 /// An LMDB cursor.
 pub trait Cursor<'txn> {
@@ -60,8 +45,11 @@ pub trait Cursor<'txn> {
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    fn iter(&mut self) -> Iter<'txn> {
-        Iter::new(self.cursor(), ffi::MDBX_NEXT, ffi::MDBX_NEXT)
+    fn iter(&mut self) -> Iter<'_, 'txn, Self>
+    where
+        Self: Sized,
+    {
+        Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT)
     }
 
     /// Iterate over database items starting from the beginning of the database.
@@ -69,8 +57,11 @@ pub trait Cursor<'txn> {
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    fn iter_start(&mut self) -> Iter<'txn> {
-        Iter::new(self.cursor(), ffi::MDBX_FIRST, ffi::MDBX_NEXT)
+    fn iter_start(&mut self) -> Iter<'_, 'txn, Self>
+    where
+        Self: Sized,
+    {
+        Iter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
     }
 
     /// Iterate over database items starting from the given key.
@@ -78,57 +69,66 @@ pub trait Cursor<'txn> {
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    fn iter_from<K>(&mut self, key: K) -> Iter<'txn>
+    fn iter_from<K>(&mut self, key: K) -> Iter<'_, 'txn, Self>
     where
         K: AsRef<[u8]>,
+        Self: Sized,
     {
         match self.get(Some(key.as_ref()), None, ffi::MDBX_SET_RANGE) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => return Iter::Err(error),
         };
-        Iter::new(self.cursor(), ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
+        Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
     }
 
     /// Iterate over duplicate database items. The iterator will begin with the
     /// item next after the cursor, and continue until the end of the database.
     /// Each item will be returned as an iterator of its duplicates.
-    fn iter_dup(&mut self) -> IterDup<'txn> {
-        IterDup::new(self.cursor(), ffi::MDBX_NEXT)
+    fn iter_dup(&mut self) -> IterDup<'_, 'txn, Self>
+    where
+        Self: Sized,
+    {
+        IterDup::new(self, ffi::MDBX_NEXT)
     }
 
     /// Iterate over duplicate database items starting from the beginning of the
     /// database. Each item will be returned as an iterator of its duplicates.
-    fn iter_dup_start(&mut self) -> IterDup<'txn> {
-        IterDup::new(self.cursor(), ffi::MDBX_FIRST)
+    fn iter_dup_start(&mut self) -> IterDup<'_, 'txn, Self>
+    where
+        Self: Sized,
+    {
+        IterDup::new(self, ffi::MDBX_FIRST)
     }
 
     /// Iterate over duplicate items in the database starting from the given
     /// key. Each item will be returned as an iterator of its duplicates.
-    fn iter_dup_from<K>(&mut self, key: K) -> IterDup<'txn>
+    fn iter_dup_from<K>(&mut self, key: K) -> IterDup<'_, 'txn, Self>
     where
         K: AsRef<[u8]>,
+        Self: Sized,
     {
         match self.get(Some(key.as_ref()), None, ffi::MDBX_SET_RANGE) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => return IterDup::Err(error),
         };
-        IterDup::new(self.cursor(), ffi::MDBX_GET_CURRENT)
+        IterDup::new(self, ffi::MDBX_GET_CURRENT)
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
-    fn iter_dup_of<K>(&mut self, key: K) -> Iter<'txn>
+    fn iter_dup_of<K>(&mut self, key: K) -> Iter<'_, 'txn, Self>
     where
         K: AsRef<[u8]>,
+        Self: Sized,
     {
         match self.get(Some(key.as_ref()), None, ffi::MDBX_SET) {
             Ok(_) => (),
             Err(Error::NotFound) => {
                 self.get(None, None, ffi::MDBX_LAST).ok();
-                return Iter::new(self.cursor(), ffi::MDBX_NEXT, ffi::MDBX_NEXT);
-            },
+                return Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT);
+            }
             Err(error) => return Iter::Err(error),
         };
-        Iter::new(self.cursor(), ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
+        Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
     }
 }
 
@@ -141,6 +141,12 @@ pub struct RoCursor<'txn> {
 impl<'txn> Cursor<'txn> for RoCursor<'txn> {
     fn cursor(&self) -> *mut ffi::MDBX_cursor {
         self.cursor
+    }
+}
+
+impl<'txn> Clone for RoCursor<'txn> {
+    fn clone(&self) -> Self {
+        Self::new_at_position(self.cursor()).unwrap()
     }
 }
 
@@ -159,18 +165,35 @@ impl<'txn> Drop for RoCursor<'txn> {
 impl<'txn> RoCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `Transaction::open_cursor`.
-    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'txn, T>) -> Result<RoCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'txn, T>) -> Result<Self>
     where
         T: Transaction<'env>,
     {
+        Self::new_raw(txn.txn(), db.dbi())
+    }
+
+    pub(crate) fn new_raw(txn: *mut ffi::MDBX_txn, dbi: ffi::MDBX_dbi) -> Result<Self> {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
         unsafe {
-            mdbx_result(ffi::mdbx_cursor_open(txn.txn(), db.dbi(), &mut cursor))?;
+            mdbx_result(ffi::mdbx_cursor_open(txn, dbi, &mut cursor))?;
         }
         Ok(RoCursor {
             cursor,
             _marker: PhantomData,
         })
+    }
+
+    pub(crate) fn new_at_position(other: *mut ffi::MDBX_cursor) -> Result<Self> {
+        unsafe {
+            let cursor = ffi::mdbx_cursor_create(ptr::null_mut());
+
+            mdbx_result(ffi::mdbx_cursor_copy(other, cursor))?;
+
+            Ok(Self {
+                cursor,
+                _marker: PhantomData,
+            })
+        }
     }
 }
 
@@ -269,7 +292,8 @@ unsafe fn val_to_slice<'a>(val: ffi::MDBX_val) -> &'a [u8] {
 }
 
 /// An iterator over the key/value pairs in an MDBX database.
-pub enum Iter<'txn> {
+#[derive(Debug)]
+pub enum IntoIter<'txn, C: Cursor<'txn>> {
     /// An iterator that returns an error on every call to `Iter::next`.
     /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
     /// on retrieval of a cursor.  Using this variant instead of returning
@@ -283,7 +307,7 @@ pub enum Iter<'txn> {
     /// fails for some reason.
     Ok {
         /// The LMDB cursor with which to iterate.
-        cursor: *mut ffi::MDBX_cursor,
+        cursor: C,
 
         /// The first operation to perform when the consumer calls `Iter::next`.
         op: ffi::MDBX_cursor_op,
@@ -291,14 +315,99 @@ pub enum Iter<'txn> {
         /// The next and subsequent operations to perform.
         next_op: ffi::MDBX_cursor_op,
 
-        /// A marker to ensure the iterator doesn't outlive the database.
         _marker: PhantomData<fn(&'txn ())>,
     },
 }
 
-impl<'txn> Iter<'txn> {
+impl<'txn, C: Cursor<'txn>> IntoIter<'txn, C> {
     /// Creates a new iterator backed by the given cursor.
-    fn new(cursor: *mut ffi::MDBX_cursor, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
+    fn new(cursor: C, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
+        IntoIter::Ok {
+            cursor,
+            op,
+            next_op,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'txn, C: Cursor<'txn>> Iterator for IntoIter<'txn, C> {
+    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Ok {
+                cursor,
+                op,
+                next_op,
+                _marker,
+            } => {
+                let mut key = ffi::MDBX_val {
+                    iov_len: 0,
+                    iov_base: ptr::null_mut(),
+                };
+                let mut data = ffi::MDBX_val {
+                    iov_len: 0,
+                    iov_base: ptr::null_mut(),
+                };
+                let op = mem::replace(op, *next_op);
+                unsafe {
+                    match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
+                        ffi::MDBX_SUCCESS => {
+                            let txn = ffi::mdbx_cursor_txn(cursor.cursor());
+                            let key = match freeze_bytes(txn, &key) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            };
+                            let data = match freeze_bytes(txn, &data) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            };
+                            Some(Ok((key, data)))
+                        }
+                        // EINVAL can occur when the cursor was previously seeked to a non-existent value,
+                        // e.g. iter_from with a key greater than all values in the database.
+                        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
+                        error => Some(Err(Error::from_err_code(error))),
+                    }
+                }
+            }
+            Self::Err(err) => Some(Err(*err)),
+        }
+    }
+}
+
+/// An iterator over the key/value pairs in an MDBX database.
+#[derive(Debug)]
+pub enum Iter<'cur, 'txn, C: Cursor<'txn>> {
+    /// An iterator that returns an error on every call to `Iter::next`.
+    /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
+    /// on retrieval of a cursor.  Using this variant instead of returning
+    /// an error makes Cursor.iter()* methods infallible, so consumers only
+    /// need to check the result of Iter.next().
+    Err(Error),
+
+    /// An iterator that returns an Item on calls to `Iter::next`.
+    /// The Item is a `Result`, so this variant
+    /// might still return an error, if retrieval of the key/value pair
+    /// fails for some reason.
+    Ok {
+        /// The LMDB cursor with which to iterate.
+        cursor: &'cur mut C,
+
+        /// The first operation to perform when the consumer calls `Iter::next`.
+        op: ffi::MDBX_cursor_op,
+
+        /// The next and subsequent operations to perform.
+        next_op: ffi::MDBX_cursor_op,
+
+        _marker: PhantomData<fn(&'txn ())>,
+    },
+}
+
+impl<'cur, 'txn, C: Cursor<'txn>> Iter<'cur, 'txn, C> {
+    /// Creates a new iterator backed by the given cursor.
+    fn new(cursor: &'cur mut C, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
         Iter::Ok {
             cursor,
             op,
@@ -308,16 +417,10 @@ impl<'txn> Iter<'txn> {
     }
 }
 
-impl<'txn> fmt::Debug for Iter<'txn> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        f.debug_struct("Iter").finish()
-    }
-}
-
-impl<'txn> Iterator for Iter<'txn> {
+impl<'cur, 'txn, C: Cursor<'txn>> Iterator for Iter<'cur, 'txn, C> {
     type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
 
-    fn next(&mut self) -> Option<Result<(Bytes<'txn>, Bytes<'txn>)>> {
+    fn next(&mut self) -> Option<Self::Item> {
         match self {
             Iter::Ok {
                 cursor,
@@ -335,9 +438,9 @@ impl<'txn> Iterator for Iter<'txn> {
                 };
                 let op = mem::replace(op, *next_op);
                 unsafe {
-                    match ffi::mdbx_cursor_get(*cursor, &mut key, &mut data, op) {
+                    match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
                         ffi::MDBX_SUCCESS => {
-                            let txn = ffi::mdbx_cursor_txn(*cursor);
+                            let txn = ffi::mdbx_cursor_txn(cursor.cursor());
                             let key = match freeze_bytes(txn, &key) {
                                 Ok(v) => v,
                                 Err(e) => return Some(Err(e)),
@@ -347,14 +450,14 @@ impl<'txn> Iterator for Iter<'txn> {
                                 Err(e) => return Some(Err(e)),
                             };
                             Some(Ok((key, data)))
-                        },
+                        }
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
-                        ffi::MDBX_NOTFOUND | ffi::MDBX_EINVAL => None,
+                        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                         error => Some(Err(Error::from_err_code(error))),
                     }
                 }
-            },
+            }
             &mut Iter::Err(err) => Some(Err(err)),
         }
     }
@@ -364,7 +467,7 @@ impl<'txn> Iterator for Iter<'txn> {
 ///
 /// The yielded items of the iterator are themselves iterators over the duplicate values for a
 /// specific key.
-pub enum IterDup<'txn> {
+pub enum IterDup<'cur, 'txn, C: Cursor<'txn>> {
     /// An iterator that returns an error on every call to Iter.next().
     /// Cursor.iter*() creates an Iter of this type when LMDB returns an error
     /// on retrieval of a cursor.  Using this variant instead of returning
@@ -378,19 +481,18 @@ pub enum IterDup<'txn> {
     /// fails for some reason.
     Ok {
         /// The LMDB cursor with which to iterate.
-        cursor: *mut ffi::MDBX_cursor,
+        cursor: &'cur mut C,
 
         /// The first operation to perform when the consumer calls Iter.next().
         op: c_uint,
 
-        /// A marker to ensure the iterator doesn't outlive the transaction.
         _marker: PhantomData<fn(&'txn ())>,
     },
 }
 
-impl<'txn> IterDup<'txn> {
+impl<'cur, 'txn, C: Cursor<'txn>> IterDup<'cur, 'txn, C> {
     /// Creates a new iterator backed by the given cursor.
-    fn new<'t>(cursor: *mut ffi::MDBX_cursor, op: c_uint) -> IterDup<'t> {
+    fn new(cursor: &'cur mut C, op: c_uint) -> Self {
         IterDup::Ok {
             cursor,
             op,
@@ -399,16 +501,16 @@ impl<'txn> IterDup<'txn> {
     }
 }
 
-impl<'txn> fmt::Debug for IterDup<'txn> {
+impl<'cur, 'txn, C: Cursor<'txn>> fmt::Debug for IterDup<'cur, 'txn, C> {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("IterDup").finish()
     }
 }
 
-impl<'txn> Iterator for IterDup<'txn> {
-    type Item = Iter<'txn>;
+impl<'cur, 'txn, C: Cursor<'txn>> Iterator for IterDup<'cur, 'txn, C> {
+    type Item = IntoIter<'txn, RoCursor<'txn>>;
 
-    fn next(&mut self) -> Option<Iter<'txn>> {
+    fn next(&mut self) -> Option<Self::Item> {
         match self {
             IterDup::Ok {
                 cursor,
@@ -424,15 +526,19 @@ impl<'txn> Iterator for IterDup<'txn> {
                     iov_base: ptr::null_mut(),
                 };
                 let op = mem::replace(op, ffi::MDBX_NEXT_NODUP);
-                let err_code = unsafe { ffi::mdbx_cursor_get(*cursor, &mut key, &mut data, op) };
+                let err_code = unsafe { ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) };
 
                 if err_code == ffi::MDBX_SUCCESS {
-                    Some(Iter::new(*cursor, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP))
+                    Some(IntoIter::new(
+                        RoCursor::new_at_position(cursor.cursor()).unwrap(),
+                        ffi::MDBX_GET_CURRENT,
+                        ffi::MDBX_NEXT_DUP,
+                    ))
                 } else {
                     None
                 }
-            },
-            &mut IterDup::Err(err) => Some(Iter::Err(err)),
+            }
+            IterDup::Err(err) => Some(IntoIter::Err(*err)),
         }
     }
 }
@@ -706,14 +812,14 @@ mod test {
         {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-            let mut cursor = db.open_ro_cursor().unwrap();
-            assert_eq!(r, cursor.iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
+            assert_eq!(r, db.open_ro_cursor().unwrap().iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
+            txn.commit().unwrap();
         }
 
         {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
-            for &(ref key, ref data) in &items {
+            for (key, data) in &items {
                 db.put(key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
