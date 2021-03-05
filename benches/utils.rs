@@ -21,10 +21,10 @@ pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment) {
     let env = Environment::new().open(dir.path()).unwrap();
 
     {
-        let db = env.open_db(None).unwrap();
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
         for i in 0..num_rows {
-            txn.put(&db, &get_key(i), &get_data(i), WriteFlags::empty()).unwrap();
+            db.put(&get_key(i), &get_data(i), WriteFlags::empty()).unwrap();
         }
         txn.commit().unwrap();
     }

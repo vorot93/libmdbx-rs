@@ -7,12 +7,15 @@ use crate::{
     },
     flags::*,
     transaction::Transaction,
+    util::freeze_bytes,
 };
+use ffi::mdbx_is_dirty;
 use libc::{
     c_uint,
     c_void,
     EINVAL,
 };
+use lifetimed_bytes::Bytes;
 use std::{
     fmt,
     marker::PhantomData,
@@ -32,18 +35,20 @@ pub trait Cursor<'txn> {
 
     /// Retrieves a key/data pair from the cursor. Depending on the cursor op,
     /// the current key may be returned.
-    fn get(&self, key: Option<&[u8]>, data: Option<&[u8]>, op: c_uint) -> Result<(Option<&'txn [u8]>, &'txn [u8])> {
+    fn get(&self, key: Option<&[u8]>, data: Option<&[u8]>, op: c_uint) -> Result<(Option<Bytes<'txn>>, Bytes<'txn>)> {
         unsafe {
             let mut key_val = slice_to_val(key);
             let mut data_val = slice_to_val(data);
             let key_ptr = key_val.iov_base;
             mdbx_result(ffi::mdbx_cursor_get(self.cursor(), &mut key_val, &mut data_val, op))?;
+            let txn = ffi::mdbx_cursor_txn(self.cursor());
             let key_out = if key_ptr != key_val.iov_base {
-                Some(val_to_slice(key_val))
+                Some(freeze_bytes(txn, &key_val)?)
             } else {
                 None
             };
-            let data_out = val_to_slice(data_val);
+            let data_out = freeze_bytes(txn, &data_val)?;
+
             Ok((key_out, data_out))
         }
     }
@@ -154,7 +159,7 @@ impl<'txn> Drop for RoCursor<'txn> {
 impl<'txn> RoCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `Transaction::open_cursor`.
-    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'env>) -> Result<RoCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'txn, T>) -> Result<RoCursor<'txn>>
     where
         T: Transaction<'env>,
     {
@@ -196,9 +201,10 @@ impl<'txn> Drop for RwCursor<'txn> {
 impl<'txn> RwCursor<'txn> {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `RwTransaction::open_rw_cursor`.
-    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'txn>) -> Result<RwCursor<'txn>>
+    pub(crate) fn new<'env, T>(txn: &'txn T, db: &Database<'txn, T>) -> Result<RwCursor<'txn>>
     where
         T: Transaction<'env>,
+        'env: 'txn,
     {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
         unsafe {
@@ -262,37 +268,37 @@ unsafe fn val_to_slice<'a>(val: ffi::MDBX_val) -> &'a [u8] {
     slice::from_raw_parts(val.iov_base as *const u8, val.iov_len as usize)
 }
 
-/// An iterator over the key/value pairs in an LMDB database.
+/// An iterator over the key/value pairs in an MDBX database.
 pub enum Iter<'txn> {
-    /// An iterator that returns an error on every call to Iter.next().
-    /// Cursor.iter*() creates an Iter of this type when LMDB returns an error
+    /// An iterator that returns an error on every call to `Iter::next`.
+    /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
     /// on retrieval of a cursor.  Using this variant instead of returning
     /// an error makes Cursor.iter()* methods infallible, so consumers only
     /// need to check the result of Iter.next().
     Err(Error),
 
-    /// An iterator that returns an Item on calls to Iter.next().
-    /// The Item is a Result<(&'txn [u8], &'txn [u8])>, so this variant
+    /// An iterator that returns an Item on calls to `Iter::next`.
+    /// The Item is a `Result`, so this variant
     /// might still return an error, if retrieval of the key/value pair
     /// fails for some reason.
     Ok {
         /// The LMDB cursor with which to iterate.
         cursor: *mut ffi::MDBX_cursor,
 
-        /// The first operation to perform when the consumer calls Iter.next().
+        /// The first operation to perform when the consumer calls `Iter::next`.
         op: ffi::MDBX_cursor_op,
 
         /// The next and subsequent operations to perform.
         next_op: ffi::MDBX_cursor_op,
 
-        /// A marker to ensure the iterator doesn't outlive the transaction.
+        /// A marker to ensure the iterator doesn't outlive the database.
         _marker: PhantomData<fn(&'txn ())>,
     },
 }
 
 impl<'txn> Iter<'txn> {
     /// Creates a new iterator backed by the given cursor.
-    fn new<'t>(cursor: *mut ffi::MDBX_cursor, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Iter<'t> {
+    fn new(cursor: *mut ffi::MDBX_cursor, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
         Iter::Ok {
             cursor,
             op,
@@ -309,9 +315,9 @@ impl<'txn> fmt::Debug for Iter<'txn> {
 }
 
 impl<'txn> Iterator for Iter<'txn> {
-    type Item = Result<(&'txn [u8], &'txn [u8])>;
+    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
 
-    fn next(&mut self) -> Option<Result<(&'txn [u8], &'txn [u8])>> {
+    fn next(&mut self) -> Option<Result<(Bytes<'txn>, Bytes<'txn>)>> {
         match self {
             Iter::Ok {
                 cursor,
@@ -330,10 +336,21 @@ impl<'txn> Iterator for Iter<'txn> {
                 let op = mem::replace(op, *next_op);
                 unsafe {
                     match ffi::mdbx_cursor_get(*cursor, &mut key, &mut data, op) {
-                        ffi::MDBX_SUCCESS => Some(Ok((val_to_slice(key), val_to_slice(data)))),
+                        ffi::MDBX_SUCCESS => {
+                            let txn = ffi::mdbx_cursor_txn(*cursor);
+                            let key = match freeze_bytes(txn, &key) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            };
+                            let data = match freeze_bytes(txn, &data) {
+                                Ok(v) => v,
+                                Err(e) => return Some(Err(e)),
+                            };
+                            Some(Ok((key, data)))
+                        },
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
-                        ffi::MDBX_NOTFOUND | EINVAL => None,
+                        ffi::MDBX_NOTFOUND | ffi::MDBX_EINVAL => None,
                         error => Some(Err(Error::from_err_code(error))),
                     }
                 }
@@ -424,6 +441,7 @@ impl<'txn> Iterator for IterDup<'txn> {
 mod test {
     use super::*;
     use crate::environment::*;
+    use bytes_literal::bytes;
     use ffi::*;
     use tempfile::tempdir;
 
@@ -435,19 +453,19 @@ mod test {
         let mut txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
 
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
+        db.put(b"key3", b"val3", WriteFlags::empty()).unwrap();
 
-        let cursor = txn.open_ro_cursor(&db).unwrap();
-        assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_FIRST).unwrap());
-        assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
-        assert_eq!((Some(&b"key2"[..]), &b"val2"[..]), cursor.get(None, None, MDBX_NEXT).unwrap());
-        assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_PREV).unwrap());
-        assert_eq!((Some(&b"key3"[..]), &b"val3"[..]), cursor.get(None, None, MDBX_LAST).unwrap());
-        assert_eq!((None, &b"val2"[..]), cursor.get(Some(b"key2"), None, MDBX_SET).unwrap());
-        assert_eq!((Some(&b"key3"[..]), &b"val3"[..]), cursor.get(Some(&b"key3"[..]), None, MDBX_SET_KEY).unwrap());
-        assert_eq!((Some(&b"key3"[..]), &b"val3"[..]), cursor.get(Some(&b"key2\0"[..]), None, MDBX_SET_RANGE).unwrap());
+        let cursor = db.open_ro_cursor().unwrap();
+        assert_eq!((Some(b"key1".into()), b"val1".into()), cursor.get(None, None, MDBX_FIRST).unwrap());
+        assert_eq!((Some(b"key1".into()), b"val1".into()), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val2".into()), cursor.get(None, None, MDBX_NEXT).unwrap());
+        assert_eq!((Some(b"key1".into()), b"val1".into()), cursor.get(None, None, MDBX_PREV).unwrap());
+        assert_eq!((Some(b"key3".into()), b"val3".into()), cursor.get(None, None, MDBX_LAST).unwrap());
+        assert_eq!((None, b"val2".into()), cursor.get(Some(b"key2"), None, MDBX_SET).unwrap());
+        assert_eq!((Some(b"key3".into()), b"val3".into()), cursor.get(Some(b"key3"), None, MDBX_SET_KEY).unwrap());
+        assert_eq!((Some(b"key3".into()), b"val3".into()), cursor.get(Some(b"key2\0"), None, MDBX_SET_RANGE).unwrap());
     }
 
     #[test]
@@ -457,30 +475,33 @@ mod test {
 
         let mut txn = env.begin_rw_txn().unwrap();
         let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val2", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val3", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val1", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val3", WriteFlags::empty()).unwrap();
 
-        let cursor = txn.open_ro_cursor(&db).unwrap();
-        assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_FIRST).unwrap());
-        assert_eq!((None, &b"val1"[..]), cursor.get(None, None, MDBX_FIRST_DUP).unwrap());
-        assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
-        assert_eq!((Some(&b"key2"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_NEXT_NODUP).unwrap());
-        assert_eq!((Some(&b"key2"[..]), &b"val2"[..]), cursor.get(None, None, MDBX_NEXT_DUP).unwrap());
-        assert_eq!((Some(&b"key2"[..]), &b"val3"[..]), cursor.get(None, None, MDBX_NEXT_DUP).unwrap());
+        let cursor = db.open_ro_cursor().unwrap();
+        assert_eq!((Some(b"key1".into()), b"val1".into()), cursor.get(None, None, MDBX_FIRST).unwrap());
+        assert_eq!((None, b"val1".into()), cursor.get(None, None, MDBX_FIRST_DUP).unwrap());
+        assert_eq!((Some(b"key1".into()), b"val1".into()), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val1".into()), cursor.get(None, None, MDBX_NEXT_NODUP).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val2".into()), cursor.get(None, None, MDBX_NEXT_DUP).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val3".into()), cursor.get(None, None, MDBX_NEXT_DUP).unwrap());
         assert!(cursor.get(None, None, MDBX_NEXT_DUP).is_err());
-        assert_eq!((Some(&b"key2"[..]), &b"val2"[..]), cursor.get(None, None, MDBX_PREV_DUP).unwrap());
-        assert_eq!((None, &b"val3"[..]), cursor.get(None, None, MDBX_LAST_DUP).unwrap());
-        assert_eq!((Some(&b"key1"[..]), &b"val3"[..]), cursor.get(None, None, MDBX_PREV_NODUP).unwrap());
-        assert_eq!((None, &b"val1"[..]), cursor.get(Some(&b"key1"[..]), None, MDBX_SET).unwrap());
-        assert_eq!((Some(&b"key2"[..]), &b"val1"[..]), cursor.get(Some(&b"key2"[..]), None, MDBX_SET_KEY).unwrap());
-        assert_eq!((Some(&b"key2"[..]), &b"val1"[..]), cursor.get(Some(&b"key1\0"[..]), None, MDBX_SET_RANGE).unwrap());
-        assert_eq!((None, &b"val3"[..]), cursor.get(Some(&b"key1"[..]), Some(&b"val3"[..]), MDBX_GET_BOTH).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val2".into()), cursor.get(None, None, MDBX_PREV_DUP).unwrap());
+        assert_eq!((None, b"val3".into()), cursor.get(None, None, MDBX_LAST_DUP).unwrap());
+        assert_eq!((Some(b"key1".into()), b"val3".into()), cursor.get(None, None, MDBX_PREV_NODUP).unwrap());
+        assert_eq!((None, b"val1".into()), cursor.get(Some(&b"key1"[..]), None, MDBX_SET).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val1".into()), cursor.get(Some(&b"key2"[..]), None, MDBX_SET_KEY).unwrap());
         assert_eq!(
-            (None, &b"val1"[..]),
+            (Some(b"key2".into()), b"val1".into()),
+            cursor.get(Some(&b"key1\0"[..]), None, MDBX_SET_RANGE).unwrap()
+        );
+        assert_eq!((None, b"val3".into()), cursor.get(Some(&b"key1"[..]), Some(&b"val3"[..]), MDBX_GET_BOTH).unwrap());
+        assert_eq!(
+            (None, b"val1".into()),
             cursor.get(Some(&b"key2"[..]), Some(&b"val"[..]), MDBX_GET_BOTH_RANGE).unwrap()
         );
     }
@@ -490,18 +511,18 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
         let db = txn.create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val4", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val5", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val2", WriteFlags::empty()).unwrap();
+        db.put(b"key1", b"val3", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val4", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val5", WriteFlags::empty()).unwrap();
+        db.put(b"key2", b"val6", WriteFlags::empty()).unwrap();
 
-        let cursor = txn.open_ro_cursor(&db).unwrap();
-        assert_eq!((Some(&b"key1"[..]), &b"val1"[..]), cursor.get(None, None, MDBX_FIRST).unwrap());
-        assert_eq!((None, &b"val1val2val3"[..]), cursor.get(None, None, MDBX_GET_MULTIPLE).unwrap());
+        let cursor = db.open_ro_cursor().unwrap();
+        assert_eq!((Some(b"key1".into()), b"val1".into()), cursor.get(None, None, MDBX_FIRST).unwrap());
+        assert_eq!((None, b"val1val2val3".into()), cursor.get(None, None, MDBX_GET_MULTIPLE).unwrap());
         assert!(cursor.get(None, None, MDBX_NEXT_MULTIPLE).is_err());
     }
 
@@ -510,21 +531,25 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let items: Vec<(&[u8], &[u8])> =
-            vec![(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3"), (b"key5", b"val5")];
+        let items: Vec<(Bytes, Bytes)> = vec![
+            (b"key1".into(), b"val1".into()),
+            (b"key2".into(), b"val2".into()),
+            (b"key3".into(), b"val3".into()),
+            (b"key5".into(), b"val5".into()),
+        ];
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for &(ref key, ref data) in &items {
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                db.put(key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
 
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = txn.open_ro_cursor(&db).unwrap();
+        let mut cursor = db.open_ro_cursor().unwrap();
 
         // Because Result implements FromIterator, we can collect the iterator
         // of items of type Result<_, E> into a Result<Vec<_, E>> by specifying
@@ -554,7 +579,7 @@ mod test {
         );
 
         assert_eq!(
-            vec!().into_iter().collect::<Vec<(&[u8], &[u8])>>(),
+            vec!().into_iter().collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_from(b"key6").collect::<Result<Vec<_>>>().unwrap()
         );
     }
@@ -565,7 +590,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = txn.open_ro_cursor(&db).unwrap();
+        let mut cursor = db.open_ro_cursor().unwrap();
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
@@ -578,12 +603,12 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = txn.open_ro_cursor(&db).unwrap();
+        let mut cursor = db.open_ro_cursor().unwrap();
 
         assert_eq!(0, cursor.iter().count());
         assert_eq!(0, cursor.iter_start().count());
@@ -606,63 +631,65 @@ mod test {
         let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
-        let items: Vec<(&[u8], &[u8])> = vec![
-            (b"a", b"1"),
-            (b"a", b"2"),
-            (b"a", b"3"),
-            (b"b", b"1"),
-            (b"b", b"2"),
-            (b"b", b"3"),
-            (b"c", b"1"),
-            (b"c", b"2"),
-            (b"c", b"3"),
-            (b"e", b"1"),
-            (b"e", b"2"),
-            (b"e", b"3"),
+        let items: Vec<(Bytes, Bytes)> = vec![
+            (b"a".into(), b"1".into()),
+            (b"a".into(), b"2".into()),
+            (b"a".into(), b"3".into()),
+            (b"b".into(), b"1".into()),
+            (b"b".into(), b"2".into()),
+            (b"b".into(), b"3".into()),
+            (b"c".into(), b"1".into()),
+            (b"c".into(), b"2".into()),
+            (b"c".into(), b"3".into()),
+            (b"e".into(), b"1".into()),
+            (b"e".into(), b"2".into()),
+            (b"e".into(), b"3".into()),
         ];
 
         {
             let mut txn = env.begin_rw_txn().unwrap();
+            let db = txn.open_db(None).unwrap();
             for (key, data) in &items {
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                db.put(key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        let mut cursor = txn.open_ro_cursor(&db).unwrap();
+        let db = txn.open_db(None).unwrap();
+        let mut cursor = db.open_ro_cursor().unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         cursor.get(Some(b"b"), None, MDBX_SET).unwrap();
         assert_eq!(
-            items.clone().into_iter().skip(4).collect::<Vec<(&[u8], &[u8])>>(),
+            items.clone().into_iter().skip(4).collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
-        assert_eq!(items, cursor.iter_dup_start().flatten().collect::<Result<Vec<(&[u8], &[u8])>>>().unwrap());
+        assert_eq!(items, cursor.iter_dup_start().flatten().collect::<Result<Vec<(Bytes, Bytes)>>>().unwrap());
 
         assert_eq!(
-            items.clone().into_iter().skip(3).collect::<Vec<(&[u8], &[u8])>>(),
+            items.clone().into_iter().skip(3).collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup_from(b"b").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
-            items.clone().into_iter().skip(3).collect::<Vec<(&[u8], &[u8])>>(),
+            items.clone().into_iter().skip(3).collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup_from(b"ab").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
-            items.clone().into_iter().skip(9).collect::<Vec<(&[u8], &[u8])>>(),
+            items.clone().into_iter().skip(9).collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup_from(b"d").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
-            vec!().into_iter().collect::<Vec<(&[u8], &[u8])>>(),
+            vec!().into_iter().collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup_from(b"f").flatten().collect::<Result<Vec<_>>>().unwrap()
         );
 
         assert_eq!(
-            items.clone().into_iter().skip(3).take(3).collect::<Vec<(&[u8], &[u8])>>(),
+            items.clone().into_iter().skip(3).take(3).collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup_of(b"b").collect::<Result<Vec<_>>>().unwrap()
         );
 
@@ -674,35 +701,35 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let items: Vec<(&[u8], &[u8])> = vec![(b"a", b"1"), (b"b", b"2")];
-        let r: Vec<(&[u8], &[u8])> = Vec::new();
+        let items: Vec<(Bytes, Bytes)> = vec![(b"a".into(), b"1".into()), (b"b".into(), b"2".into())];
+        let r: Vec<(_, _)> = Vec::new();
         {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-            let mut cursor = txn.open_ro_cursor(&db).unwrap();
+            let mut cursor = db.open_ro_cursor().unwrap();
             assert_eq!(r, cursor.iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
         }
 
         {
-            let mut txn = env.begin_rw_txn().unwrap();
+            let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for &(ref key, ref data) in &items {
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                db.put(key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
 
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = txn.open_rw_cursor(&db).unwrap();
+        let mut cursor = db.open_rw_cursor().unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(
-            items.clone().into_iter().take(1).collect::<Vec<(&[u8], &[u8])>>(),
+            items.clone().into_iter().take(1).collect::<Vec<(Bytes, Bytes)>>(),
             cursor.iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap()
         );
 
-        assert_eq!((None, &b"1"[..]), cursor.get(Some(b"a"), Some(b"1"), MDBX_SET).unwrap());
+        assert_eq!((None, b"1".into()), cursor.get(Some(b"a"), Some(b"1"), MDBX_SET).unwrap());
 
         cursor.del(WriteFlags::empty()).unwrap();
 
@@ -716,15 +743,15 @@ mod test {
 
         let mut txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = txn.open_rw_cursor(&db).unwrap();
+        let mut cursor = db.open_rw_cursor().unwrap();
 
         cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
         cursor.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
         cursor.put(b"key3", b"val3", WriteFlags::empty()).unwrap();
 
-        assert_eq!((Some(&b"key3"[..]), &b"val3"[..]), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
+        assert_eq!((Some(b"key3".into()), b"val3".into()), cursor.get(None, None, MDBX_GET_CURRENT).unwrap());
 
         cursor.del(WriteFlags::empty()).unwrap();
-        assert_eq!((Some(&b"key2"[..]), &b"val2"[..]), cursor.get(None, None, MDBX_LAST).unwrap());
+        assert_eq!((Some(b"key2".into()), b"val2".into()), cursor.get(None, None, MDBX_LAST).unwrap());
     }
 }

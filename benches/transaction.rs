@@ -25,8 +25,8 @@ use utils::*;
 fn bench_get_rand(b: &mut Bencher) {
     let n = 100u32;
     let (_dir, env) = setup_bench_db(n);
-    let db = env.open_db(None).unwrap();
     let txn = env.begin_ro_txn().unwrap();
+    let db = txn.open_db(None).unwrap();
 
     let mut keys: Vec<String> = (0..n).map(get_key).collect();
     keys.shuffle(&mut XorShiftRng::from_seed(Default::default()));
@@ -34,7 +34,7 @@ fn bench_get_rand(b: &mut Bencher) {
     b.iter(|| {
         let mut i = 0usize;
         for key in &keys {
-            i += txn.get(&db, key).unwrap().len();
+            i += db.get(key).unwrap().len();
         }
         black_box(i);
     });
@@ -44,8 +44,8 @@ fn bench_get_rand(b: &mut Bencher) {
 fn bench_get_rand_raw(b: &mut Bencher) {
     let n = 100u32;
     let (_dir, env) = setup_bench_db(n);
-    let db = env.open_db(None).unwrap();
     let _txn = env.begin_ro_txn().unwrap();
+    let db = _txn.open_db(None).unwrap();
 
     let mut keys: Vec<String> = (0..n).map(get_key).collect();
     keys.shuffle(&mut XorShiftRng::from_seed(Default::default()));
@@ -80,15 +80,14 @@ fn bench_get_rand_raw(b: &mut Bencher) {
 fn bench_put_rand(b: &mut Bencher) {
     let n = 100u32;
     let (_dir, env) = setup_bench_db(0);
-    let db = env.open_db(None).unwrap();
 
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
 
     b.iter(|| {
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
         for &(ref key, ref data) in items.iter() {
-            txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+            txn.open_db(None).unwrap().put(key, data, WriteFlags::empty()).unwrap();
         }
     });
 }
@@ -97,12 +96,11 @@ fn bench_put_rand(b: &mut Bencher) {
 fn bench_put_rand_raw(b: &mut Bencher) {
     let n = 100u32;
     let (_dir, _env) = setup_bench_db(0);
-    let db = _env.open_db(None).unwrap();
 
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
 
-    let dbi = db.dbi();
+    let dbi = _env.begin_ro_txn().unwrap().open_db(None).unwrap().dbi();
     let env = _env.env();
 
     let mut key_val: MDBX_val = MDBX_val {

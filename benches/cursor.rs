@@ -22,11 +22,11 @@ use utils::*;
 fn bench_get_seq_iter(b: &mut Bencher) {
     let n = 100;
     let (_dir, env) = setup_bench_db(n);
-    let db = env.open_db(None).unwrap();
     let txn = env.begin_ro_txn().unwrap();
+    let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let mut cursor = txn.open_ro_cursor(&db).unwrap();
+        let mut cursor = db.open_ro_cursor().unwrap();
         let mut i = 0;
         let mut count = 0u32;
 
@@ -59,11 +59,11 @@ fn bench_get_seq_iter(b: &mut Bencher) {
 fn bench_get_seq_cursor(b: &mut Bencher) {
     let n = 100;
     let (_dir, env) = setup_bench_db(n);
-    let db = env.open_db(None).unwrap();
     let txn = env.begin_ro_txn().unwrap();
+    let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let cursor = txn.open_ro_cursor(&db).unwrap();
+        let cursor = db.open_ro_cursor().unwrap();
         let mut i = 0;
         let mut count = 0u32;
 
@@ -82,9 +82,8 @@ fn bench_get_seq_cursor(b: &mut Bencher) {
 fn bench_get_seq_raw(b: &mut Bencher) {
     let n = 100;
     let (_dir, env) = setup_bench_db(n);
-    let db = env.open_db(None).unwrap();
 
-    let dbi: MDBX_dbi = db.dbi();
+    let dbi = env.begin_ro_txn().unwrap().open_db(None).unwrap().dbi();
     let _txn = env.begin_ro_txn().unwrap();
     let txn = _txn.txn();
 

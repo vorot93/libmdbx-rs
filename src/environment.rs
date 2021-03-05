@@ -78,18 +78,6 @@ impl Environment {
         self.env
     }
 
-    /// Retrieves the set of flags which the database is opened with.
-    ///
-    /// The database must belong to to this environment.
-    pub fn get_db_flags(&self, db: &Database<'_>) -> Result<DatabaseFlags> {
-        let txn = self.begin_ro_txn()?;
-        let mut flags: c_uint = 0;
-        unsafe {
-            mdbx_result(ffi::mdbx_dbi_flags_ex(txn.txn(), db.dbi(), &mut flags, ptr::null_mut()))?;
-        }
-        Ok(DatabaseFlags::from_bits(flags).unwrap())
-    }
-
     /// Create a read-only transaction for use with the environment.
     pub fn begin_ro_txn(&self) -> Result<RoTransaction<'_>> {
         RoTransaction::new(self)
@@ -150,8 +138,8 @@ impl Environment {
     pub fn freelist(&self) -> Result<usize> {
         let mut freelist: usize = 0;
         let txn = self.begin_ro_txn()?;
-        let db = Database::freelist_db();
-        let mut cursor = txn.open_ro_cursor(&db)?;
+        let db = Database::freelist_db(&txn);
+        let mut cursor = db.open_ro_cursor()?;
 
         for result in cursor.iter() {
             let (_key, value) = result?;
@@ -560,8 +548,7 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-            let db = tx.open_db(None).unwrap();
-            tx.put(&db, &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.open_db(None).unwrap().put(&value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
 
@@ -609,13 +596,11 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-            let db = tx.open_db(None).unwrap();
-            tx.put(&db, &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.open_db(None).unwrap().put(&value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
         let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
-        let db = tx.open_db(None).unwrap();
-        tx.clear_db(&db).expect("clear");
+        tx.open_db(None).unwrap().clear_db().expect("clear");
         tx.commit().expect("tx.commit");
 
         // Freelist should not be empty after clear_db.
