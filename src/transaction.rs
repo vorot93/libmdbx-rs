@@ -1,50 +1,21 @@
 use crate::{
-    cursor::{
-        RoCursor,
-        RwCursor,
-    },
+    cursor::{RoCursor, RwCursor},
     database::Database,
-    environment::{
-        Environment,
-        Stat,
-    },
-    error::{
-        mdbx_result,
-        Error,
-        Result,
-    },
-    flags::{
-        DatabaseFlags,
-        WriteFlags,
-    },
+    environment::{Environment, Stat},
+    error::{mdbx_result, Error, Result},
+    flags::{DatabaseFlags, WriteFlags},
 };
-use ffi::{
-    mdbx_is_dirty,
-    MDBX_RESULT_FALSE,
-};
-use libc::{
-    c_uint,
-    c_void,
-};
+use ffi::{mdbx_is_dirty, MDBX_RESULT_FALSE};
+use libc::{c_uint, c_void};
 use mem::size_of;
-use parking_lot::{
-    Mutex,
-    ReentrantMutex,
-};
+use parking_lot::{Mutex, ReentrantMutex};
 use std::{
     borrow::BorrowMut,
     cell::RefCell,
-    collections::{
-        hash_map::Entry,
-        HashMap,
-        HashSet,
-    },
+    collections::{hash_map::Entry, HashMap, HashSet},
     fmt,
     marker::PhantomData,
-    mem,
-    ptr,
-    result,
-    slice,
+    mem, ptr, result, slice,
     sync::Arc,
 };
 
@@ -60,7 +31,7 @@ mod private {
 /// An LMDB transaction.
 ///
 /// All database operations require a transaction.
-pub trait Transaction<'env>: Sized + private::Sealed {
+pub trait Transaction: Sized + private::Sealed {
     /// Returns a raw pointer to the underlying MDBX transaction.
     ///
     /// The caller **must** ensure that the pointer is not used after the
@@ -68,8 +39,11 @@ pub trait Transaction<'env>: Sized + private::Sealed {
     fn txn(&self) -> *mut ffi::MDBX_txn;
 
     /// Returns a raw pointer to the MDBX environment.
-    fn env(&self) -> *mut ffi::MDBX_env {
-        unsafe { ffi::mdbx_txn_env(self.txn()) }
+    fn env(&self) -> &Environment;
+
+    /// Returns the transaction id.
+    fn id(&self) -> u64 {
+        unsafe { ffi::mdbx_txn_id(self.txn()) }
     }
 
     #[doc(hidden)]
@@ -113,7 +87,7 @@ pub trait Transaction<'env>: Sized + private::Sealed {
 pub struct RoTransaction<'env> {
     txn: *mut ffi::MDBX_txn,
     committed: bool,
-    _marker: PhantomData<&'env ()>,
+    env: &'env Environment,
 }
 
 impl<'env> fmt::Debug for RoTransaction<'env> {
@@ -148,19 +122,23 @@ impl<'env> RoTransaction<'env> {
             Ok(RoTransaction {
                 txn,
                 committed: false,
-                _marker: PhantomData,
+                env,
             })
         }
     }
 }
 
-impl<'env> Transaction<'env> for RoTransaction<'env> {
+impl<'env> Transaction for RoTransaction<'env> {
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
     }
 
     fn note_committed(&mut self) {
         self.committed = true;
+    }
+
+    fn env(&self) -> &Environment {
+        self.env
     }
 }
 
@@ -171,7 +149,7 @@ unsafe impl<'env> Sync for RoTransaction<'env> {}
 pub struct RwTransaction<'env> {
     txn: *mut ffi::MDBX_txn,
     committed: bool,
-    _marker: PhantomData<&'env ()>,
+    env: &'env Environment,
 }
 
 impl<'env> fmt::Debug for RwTransaction<'env> {
@@ -206,7 +184,7 @@ impl<'env> RwTransaction<'env> {
             Ok(RwTransaction {
                 txn,
                 committed: false,
-                _marker: PhantomData,
+                env,
             })
         }
     }
@@ -241,12 +219,12 @@ impl<'env> RwTransaction<'env> {
         Ok(RwTransaction {
             txn: nested,
             committed: false,
-            _marker: PhantomData,
+            env: self.env,
         })
     }
 }
 
-impl<'env> Transaction<'env> for RwTransaction<'env> {
+impl<'env> Transaction for RwTransaction<'env> {
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
     }
@@ -258,28 +236,22 @@ impl<'env> Transaction<'env> for RwTransaction<'env> {
     fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn, Self>> {
         self.open_db_with_flags(name, DatabaseFlags::default())
     }
+
+    fn env(&self) -> &Environment {
+        self.env
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        cursor::Cursor,
-        error::*,
-        flags::*,
-    };
+    use crate::{cursor::Cursor, error::*, flags::*};
     use lifetimed_bytes::Bytes;
     use std::{
         borrow::Borrow,
         io::Write,
-        sync::{
-            Arc,
-            Barrier,
-        },
-        thread::{
-            self,
-            JoinHandle,
-        },
+        sync::{Arc, Barrier},
+        thread::{self, JoinHandle},
     };
     use tempfile::tempdir;
 
@@ -421,7 +393,7 @@ mod test {
     #[test]
     fn test_drop_db() {
         let dir = tempdir().unwrap();
-        let env = Environment::new().set_max_dbs(2).open(dir.path()).unwrap();
+        let env = Environment::new().set_max_dbs(1).open(dir.path()).unwrap();
 
         {
             let txn = env.begin_rw_txn().unwrap();
@@ -442,7 +414,7 @@ mod test {
         {
             let txn = env.begin_ro_txn().unwrap();
             let db = txn.open_db(Some("test")).unwrap();
-            assert_eq!(Bytes::from(b"val"), db.get(b"key").unwrap());
+            assert_eq!(db.get(b"key").unwrap(), Bytes::from(b"val"));
         }
 
         assert_eq!(env.begin_ro_txn().unwrap().open_db(Some("test")).unwrap_err(), Error::NotFound);
@@ -482,9 +454,12 @@ mod test {
 
         let mut txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
+        println!("wait2");
         barrier.wait();
         db.put(key, val, WriteFlags::empty()).unwrap();
         txn.commit().unwrap();
+
+        println!("wait1");
         barrier.wait();
 
         assert!(threads.into_iter().all(|b| b.join().unwrap()))

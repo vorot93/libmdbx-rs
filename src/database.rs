@@ -6,7 +6,7 @@ use crate::{
 };
 use libc::{c_uint, c_void};
 use lifetimed_bytes::Bytes;
-use std::{ffi::CString, mem::size_of, ptr, slice, sync::Arc};
+use std::{ffi::CString, mem::size_of, ptr, slice};
 
 /// A handle to an individual database in an environment.
 ///
@@ -17,7 +17,7 @@ pub struct Database<'txn, Txn> {
     txn: &'txn Txn,
 }
 
-impl<'txn, 'env, Txn: Transaction<'env>> Database<'txn, Txn> {
+impl<'txn, Txn: Transaction> Database<'txn, Txn> {
     /// Opens a new database handle in the given transaction.
     ///
     /// Prefer using `Environment::open_db`, `Environment::create_db`, `TransactionExt::open_db`,
@@ -48,9 +48,12 @@ impl<'txn, 'env, Txn: Transaction<'env>> Database<'txn, Txn> {
     ///
     /// The caller **must** ensure that the handle is not used after the lifetime of the
     /// environment, or after the database has been closed.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn dbi(&self) -> ffi::MDBX_dbi {
         self.dbi
+    }
+
+    pub fn txn(&self) -> &'txn Txn {
+        self.txn
     }
 
     /// Gets an item from a database.
@@ -83,8 +86,8 @@ impl<'txn, 'env, Txn: Transaction<'env>> Database<'txn, Txn> {
     }
 
     /// Open a new read-only cursor on the given database.
-    pub fn open_ro_cursor(&self) -> Result<RoCursor<'_>> {
-        RoCursor::new(self.txn, self)
+    pub fn open_ro_cursor(&self) -> Result<RoCursor<'txn, '_, Txn>> {
+        RoCursor::new(self)
     }
 
     /// Gets the option flags for the given database in the transaction.
@@ -108,8 +111,8 @@ impl<'txn, 'env, Txn: Transaction<'env>> Database<'txn, Txn> {
 
 impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     /// Opens a new read-write cursor on the given database and transaction.
-    pub fn open_rw_cursor(&self) -> Result<RwCursor<'_>> {
-        RwCursor::new(self.txn, self)
+    pub fn open_rw_cursor(&self) -> Result<RwCursor<'txn, '_, RwTransaction<'env>>> {
+        RwCursor::new(self)
     }
 
     /// Stores an item into a database.
@@ -207,7 +210,7 @@ impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     /// Drops the database from the environment.
     ///
     /// # Safety
-    /// Make sure to close ALL other `Database` and `Cursor` instances pointing to the same dbi BEFORE calling this function.
+    /// Do close ALL other `Database` and `Cursor` instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_db(self) -> Result<()> {
         mdbx_result(ffi::mdbx_drop(self.txn.txn(), self.dbi(), true))?;
 
