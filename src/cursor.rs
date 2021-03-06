@@ -730,9 +730,9 @@ mod test {
         let db = txn.open_db(None).unwrap();
         let mut cursor = db.open_ro_cursor().unwrap();
 
-        assert_eq!(0, cursor.iter().count());
-        assert_eq!(0, cursor.iter_start().count());
-        assert_eq!(0, cursor.iter_from(b"foo").count());
+        assert_eq!(None, cursor.iter().next());
+        assert_eq!(None, cursor.iter_start().next());
+        assert_eq!(None, cursor.iter_from(b"foo").next());
     }
 
     #[test]
@@ -748,16 +748,14 @@ mod test {
         let db = txn.open_db(None).unwrap();
         let mut cursor = db.open_ro_cursor().unwrap();
 
-        assert_eq!(0, cursor.iter().count());
-        assert_eq!(0, cursor.iter_start().count());
-        if let Some(v) = cursor.iter_from(b"foo").next().transpose().unwrap() {
-            panic!("{:?} != None", v);
-        }
-        assert_eq!(0, cursor.iter_from(b"foo").count());
-        assert_eq!(0, cursor.iter_dup().count());
-        assert_eq!(0, cursor.iter_dup_start().count());
-        assert_eq!(0, cursor.iter_dup_from(b"foo").count());
-        assert_eq!(0, cursor.iter_dup_of(b"foo").count());
+        assert_eq!(None, cursor.iter().next());
+        assert_eq!(None, cursor.iter_start().next());
+        assert_eq!(None, cursor.iter_from(b"foo").next());
+        assert_eq!(None, cursor.iter_from(b"foo").next());
+        assert_eq!(None, cursor.iter_dup().flatten().next());
+        assert_eq!(None, cursor.iter_dup_start().flatten().next());
+        assert_eq!(None, cursor.iter_dup_from(b"foo").flatten().next());
+        assert_eq!(None, cursor.iter_dup_of(b"foo").next());
     }
 
     #[test]
