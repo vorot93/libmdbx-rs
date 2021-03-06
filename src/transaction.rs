@@ -381,17 +381,17 @@ mod test {
         {
             let txn = env.begin_rw_txn().unwrap();
             txn.open_db(None).unwrap().put(b"key", b"val", WriteFlags::empty()).unwrap();
-            txn.commit().unwrap();
+            assert!(!txn.commit().unwrap());
         }
 
         {
             let txn = env.begin_rw_txn().unwrap();
             txn.open_db(None).unwrap().clear_db().unwrap();
-            txn.commit().unwrap();
+            assert!(!txn.commit().unwrap());
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        assert_eq!(txn.open_db(None).unwrap().get(b"key"), Err(Error::NotFound));
+        assert_eq!(txn.open_db(None).unwrap().get(b"key").unwrap_err(), Error::NotFound);
     }
 
     #[test]

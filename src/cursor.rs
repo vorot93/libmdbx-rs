@@ -679,10 +679,10 @@ mod test {
         {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
-            for &(ref key, ref data) in &items {
+            for (key, data) in &items {
                 db.put(key, data, WriteFlags::empty()).unwrap();
             }
-            txn.commit().unwrap();
+            assert!(!txn.commit().unwrap());
         }
 
         let txn = env.begin_ro_txn().unwrap();
