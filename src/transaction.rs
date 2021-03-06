@@ -397,26 +397,35 @@ mod test {
     #[test]
     fn test_drop_db() {
         let dir = tempdir().unwrap();
-        let env = Environment::new().set_max_dbs(1).open(dir.path()).unwrap();
+        {
+            let env = Environment::new().set_max_dbs(2).open(dir.path()).unwrap();
 
-        {
-            let txn = env.begin_rw_txn().unwrap();
-            txn.create_db(Some("test"), DatabaseFlags::empty())
-                .unwrap()
-                .put(b"key", b"val", WriteFlags::empty())
-                .unwrap();
-            assert!(!txn.commit().unwrap());
-        }
-        {
-            let txn = env.begin_rw_txn().unwrap();
-            let db = txn.open_db(Some("test")).unwrap();
-            unsafe {
-                db.drop_db().unwrap();
+            {
+                let txn = env.begin_rw_txn().unwrap();
+                txn.create_db(Some("test"), DatabaseFlags::empty())
+                    .unwrap()
+                    .put(b"key", b"val", WriteFlags::empty())
+                    .unwrap();
+                // Workaround for MDBX dbi drop issue
+                txn.create_db(Some("canary"), DatabaseFlags::empty()).unwrap();
+                assert!(!txn.commit().unwrap());
             }
-            assert!(!txn.commit().unwrap());
+            {
+                let txn = env.begin_rw_txn().unwrap();
+                let db = txn.open_db(Some("test")).unwrap();
+                unsafe {
+                    db.drop_db().unwrap();
+                }
+                assert_eq!(txn.open_db(Some("test")).unwrap_err(), Error::NotFound);
+                assert!(!txn.commit().unwrap());
+            }
         }
 
-        assert_eq!(env.begin_ro_txn().unwrap().open_db(Some("test")).unwrap_err(), Error::NotFound);
+        let env = Environment::new().set_max_dbs(2).open(dir.path()).unwrap();
+
+        let txn = env.begin_ro_txn().unwrap();
+        txn.open_db(Some("canary")).unwrap();
+        assert_eq!(txn.open_db(Some("test")).unwrap_err(), Error::NotFound);
     }
 
     #[test]
