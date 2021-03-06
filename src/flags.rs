@@ -108,6 +108,8 @@ impl EnvironmentFlags {
             flags |= ffi::MDBX_LIFORECLAIM;
         }
 
+        flags |= ffi::MDBX_NOTLS;
+
         flags
     }
 }
