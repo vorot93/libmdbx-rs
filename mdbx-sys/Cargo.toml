@@ -28,7 +28,6 @@ name = "mdbx_sys"
 libc = "0.2"
 
 [build-dependencies]
-pkg-config = "0.3"
 cc = "1.0"
 bindgen = { version = "0.57", default-features = false, optional = true, features = ["runtime"] }
 
