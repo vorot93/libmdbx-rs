@@ -391,7 +391,7 @@ impl<'txn, 'db, Txn, C: Cursor<'txn, 'db, Txn>> Iterator for IntoIter<'txn, 'db,
                         },
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
-                        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
+                        ffi::MDBX_NOTFOUND | libc::ENODATA => None,
                         error => Some(Err(Error::from_err_code(error))),
                     }
                 }
@@ -477,7 +477,7 @@ impl<'txn, 'db, 'cur, Txn, C: Cursor<'txn, 'db, Txn>> Iterator for Iter<'txn, 'd
                         },
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
-                        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
+                        ffi::MDBX_NOTFOUND | libc::ENODATA => None,
                         error => Some(Err(Error::from_err_code(error))),
                     }
                 }
