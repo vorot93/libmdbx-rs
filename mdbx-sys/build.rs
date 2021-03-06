@@ -1,9 +1,3 @@
-extern crate cc;
-extern crate pkg_config;
-
-#[cfg(feature = "bindgen")]
-extern crate bindgen;
-
 #[cfg(feature = "bindgen")]
 #[path = "bindgen.rs"]
 mod generate;
