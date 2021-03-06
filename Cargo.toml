@@ -36,10 +36,8 @@ members = [
 [dependencies]
 bitflags = "1"
 byteorder = "1"
-bytes-literal = { git = "https://github.com/vorot93/bytes-literal", branch = "lifetimed-bytes" }
 libc = "0.2"
 lifetimed-bytes = { git = "https://github.com/vorot93/lifetimed-bytes" }
-parking_lot = "0.11"
 
 # In order to ensure that we test lmdb-rkv in CI against the in-tree version
 # of lmdb-rkv-sys, we specify the dependency as a path here.

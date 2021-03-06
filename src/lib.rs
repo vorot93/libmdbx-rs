@@ -82,7 +82,7 @@ mod test_utils {
         for height in 0..1000 {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, height);
-            let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+            let tx = env.begin_rw_txn().expect("begin_rw_txn");
             let index = tx.create_db(None, DatabaseFlags::DUP_SORT).expect("open index db");
             index.put(&HEIGHT_KEY, &value, WriteFlags::empty()).expect("tx.put");
             tx.commit().expect("tx.commit");

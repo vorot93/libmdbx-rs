@@ -1,14 +1,26 @@
 use crate::{
     database::Database,
-    error::{mdbx_result, Error, Result},
+    error::{
+        mdbx_result,
+        Error,
+        Result,
+    },
     flags::*,
     transaction::Transaction,
     util::freeze_bytes,
 };
-use ffi::{mdbx_cursor_create, mdbx_cursor_dbi, mdbx_is_dirty};
-use libc::{c_uint, c_void, EINVAL};
+use libc::{
+    c_uint,
+    c_void,
+};
 use lifetimed_bytes::Bytes;
-use std::{fmt, marker::PhantomData, mem, ptr, result, slice};
+use std::{
+    fmt,
+    marker::PhantomData,
+    mem,
+    ptr,
+    result,
+};
 
 /// An LMDB cursor.
 pub trait Cursor<'txn, 'db, Txn> {
@@ -127,7 +139,7 @@ pub trait Cursor<'txn, 'db, Txn> {
             Err(Error::NotFound) => {
                 self.get(None, None, ffi::MDBX_LAST).ok();
                 return Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT);
-            }
+            },
             Err(error) => return Iter::Err(error),
         };
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
@@ -299,10 +311,6 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
     }
 }
 
-unsafe fn val_to_slice<'a>(val: ffi::MDBX_val) -> &'a [u8] {
-    slice::from_raw_parts(val.iov_base as *const u8, val.iov_len as usize)
-}
-
 /// An iterator over the key/value pairs in an MDBX database.
 #[derive(Debug)]
 pub enum IntoIter<'txn, 'db, Txn, C>
@@ -331,7 +339,7 @@ where
         /// The next and subsequent operations to perform.
         next_op: ffi::MDBX_cursor_op,
 
-        _marker: PhantomData<fn((&'txn (), &'db (), &Txn))>,
+        _marker: PhantomData<fn(&'txn (), &'db (), &Txn)>,
     },
 }
 
@@ -380,14 +388,14 @@ impl<'txn, 'db, Txn, C: Cursor<'txn, 'db, Txn>> Iterator for IntoIter<'txn, 'db,
                                 Err(e) => return Some(Err(e)),
                             };
                             Some(Ok((key, data)))
-                        }
+                        },
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
                         ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                         error => Some(Err(Error::from_err_code(error))),
                     }
                 }
-            }
+            },
             Self::Err(err) => Some(Err(*err)),
         }
     }
@@ -466,14 +474,14 @@ impl<'txn, 'db, 'cur, Txn, C: Cursor<'txn, 'db, Txn>> Iterator for Iter<'txn, 'd
                                 Err(e) => return Some(Err(e)),
                             };
                             Some(Ok((key, data)))
-                        }
+                        },
                         // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                         // e.g. iter_from with a key greater than all values in the database.
                         ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                         error => Some(Err(Error::from_err_code(error))),
                     }
                 }
-            }
+            },
             &mut Iter::Err(err) => Some(Err(err)),
         }
     }
@@ -562,7 +570,7 @@ where
                 } else {
                     None
                 }
-            }
+            },
             IterDup::Err(err) => Some(IntoIter::Err(*err)),
         }
     }
@@ -572,7 +580,6 @@ where
 mod test {
     use super::*;
     use crate::environment::*;
-    use bytes_literal::bytes;
     use ffi::*;
     use tempfile::tempdir;
 
@@ -581,7 +588,7 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
 
         db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
@@ -604,7 +611,7 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
         let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
         db.put(b"key1", b"val2", WriteFlags::empty()).unwrap();
@@ -670,7 +677,7 @@ mod test {
         ];
 
         {
-            let mut txn = env.begin_rw_txn().unwrap();
+            let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for &(ref key, ref data) in &items {
                 db.put(key, data, WriteFlags::empty()).unwrap();
@@ -759,7 +766,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
         let items: Vec<(Bytes, Bytes)> = vec![
@@ -872,7 +879,7 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let mut txn = env.begin_rw_txn().unwrap();
+        let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         let mut cursor = db.open_rw_cursor().unwrap();
 

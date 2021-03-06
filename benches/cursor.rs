@@ -4,9 +4,17 @@ extern crate test;
 mod utils;
 
 use ffi::*;
-use mdbx::{Cursor, Result, RoCursor, Transaction};
+use mdbx::{
+    Cursor,
+    Result,
+    RoCursor,
+    Transaction,
+};
 use std::ptr;
-use test::{black_box, Bencher};
+use test::{
+    black_box,
+    Bencher,
+};
 use utils::*;
 
 /// Benchmark of iterator sequential read performance.
@@ -31,7 +39,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
             count += 1;
         }
 
-        fn iterate<'txn, 'db, Txn>(cursor: &mut RoCursor<'txn, 'db, Txn>) -> Result<()> {
+        fn iterate<Txn>(cursor: &mut RoCursor<'_, '_, Txn>) -> Result<()> {
             let mut i = 0;
             for result in cursor.iter() {
                 let (key, data) = result?;

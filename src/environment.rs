@@ -6,14 +6,10 @@ use crate::{
         Error,
         Result,
     },
-    flags::{
-        DatabaseFlags,
-        EnvironmentFlags,
-    },
+    flags::EnvironmentFlags,
     transaction::{
         RoTransaction,
         RwTransaction,
-        Transaction,
     },
 };
 use byteorder::{
@@ -443,7 +439,10 @@ impl EnvironmentBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::flags::*;
+    use crate::{
+        flags::*,
+        transaction::Transaction,
+    };
     use byteorder::{
         ByteOrder,
         LittleEndian,
@@ -547,7 +546,7 @@ mod test {
         for i in 0..64 {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
-            let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+            let tx = env.begin_rw_txn().expect("begin_rw_txn");
             tx.open_db(None).unwrap().put(&value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
@@ -593,11 +592,11 @@ mod test {
         for i in 0..64 {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
-            let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+            let tx = env.begin_rw_txn().expect("begin_rw_txn");
             tx.open_db(None).unwrap().put(&value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
-        let mut tx = env.begin_rw_txn().expect("begin_rw_txn");
+        let tx = env.begin_rw_txn().expect("begin_rw_txn");
         tx.open_db(None).unwrap().clear_db().expect("clear");
         tx.commit().expect("tx.commit");
 
