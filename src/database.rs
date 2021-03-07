@@ -1,12 +1,31 @@
 use crate::{
-    error::{mdbx_result, Result},
-    flags::{DatabaseFlags, WriteFlags},
+    error::{
+        mdbx_result,
+        Result,
+    },
+    flags::{
+        DatabaseFlags,
+        WriteFlags,
+    },
     util::freeze_bytes,
-    Error, RoCursor, RwCursor, RwTransaction, Stat, Transaction,
+    Error,
+    RoCursor,
+    RwCursor,
+    RwTransaction,
+    Stat,
+    Transaction,
 };
-use libc::{c_uint, c_void};
+use libc::{
+    c_uint,
+    c_void,
+};
 use lifetimed_bytes::Bytes;
-use std::{ffi::CString, mem::size_of, ptr, slice};
+use std::{
+    ffi::CString,
+    mem::size_of,
+    ptr,
+    slice,
+};
 
 /// A handle to an individual database in an environment.
 ///
@@ -86,7 +105,7 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
     }
 
     /// Open a new read-only cursor on the given database.
-    pub fn open_ro_cursor(&self) -> Result<RoCursor<'txn, '_, Txn>> {
+    pub fn open_ro_cursor(&self) -> Result<RoCursor<'txn, Txn>> {
         RoCursor::new(self)
     }
 
@@ -111,7 +130,7 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
 
 impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     /// Opens a new read-write cursor on the given database and transaction.
-    pub fn open_rw_cursor(&self) -> Result<RwCursor<'txn, '_, RwTransaction<'env>>> {
+    pub fn open_rw_cursor(&self) -> Result<RwCursor<'txn, RwTransaction<'env>>> {
         RwCursor::new(self)
     }
 

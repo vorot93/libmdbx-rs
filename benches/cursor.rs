@@ -39,7 +39,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
             count += 1;
         }
 
-        fn iterate<Txn>(cursor: &mut RoCursor<'_, '_, Txn>) -> Result<()> {
+        fn iterate<Txn>(cursor: &mut RoCursor<'_, Txn>) -> Result<()> {
             let mut i = 0;
             for result in cursor.iter() {
                 let (key, data) = result?;
