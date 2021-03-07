@@ -1,4 +1,5 @@
 use crate::{
+    chart::TxnChart,
     database::Database,
     environment::{Environment, EnvironmentKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
@@ -54,22 +55,25 @@ impl TransactionKind for RW {
 /// An MDBX transaction.
 ///
 /// All database operations require a transaction.
-pub struct Transaction<'env, K, E>
+pub struct Transaction<'env, K, E, Chart>
 where
     K: TransactionKind,
     E: EnvironmentKind,
+    Chart: TxnChart<K>,
 {
     txn: Arc<Mutex<*mut ffi::MDBX_txn>>,
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
     env: &'env Environment<E>,
+    chart: Chart,
     _marker: PhantomData<fn(K)>,
 }
 
-impl<'env, K, E> Transaction<'env, K, E>
+impl<'env, K, E, Chart> Transaction<'env, K, E, Chart>
 where
     K: TransactionKind,
     E: EnvironmentKind,
+    Chart: TxnChart<K>,
 {
     pub(crate) fn new(env: &'env Environment<E>) -> Result<Self> {
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
@@ -86,11 +90,13 @@ where
     }
 
     pub(crate) fn new_from_ptr(env: &'env Environment<E>, txn: *mut ffi::MDBX_txn) -> Self {
+        let chart = Chart::init(txn).unwrap();
         Self {
             txn: Arc::new(Mutex::new(txn)),
             primed_dbis: Mutex::new(IndexSet::new()),
             committed: false,
             env,
+            chart,
             _marker: PhantomData,
         }
     }
@@ -243,7 +249,7 @@ pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(
     (f)(*lck)
 }
 
-impl<'env, E> Transaction<'env, RW, E>
+impl<'env, E, Chart: TxnChart<RW>> Transaction<'env, RW, E, Chart>
 where
     E: EnvironmentKind,
 {

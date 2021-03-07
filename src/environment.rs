@@ -1,4 +1,5 @@
 use crate::{
+    chart::TxnChart,
     database::Database,
     error::{mdbx_result, Error, Result},
     flags::EnvironmentFlags,
@@ -124,13 +125,13 @@ where
     }
 
     /// Create a read-only transaction for use with the environment.
-    pub fn begin_ro_txn(&self) -> Result<Transaction<'_, RO, E>> {
+    pub fn begin_ro_txn<Chart: TxnChart<RO>>(&self) -> Result<Transaction<'_, RO, E, Chart>> {
         Transaction::new(self)
     }
 
     /// Create a read-write transaction for use with the environment. This method will block while
     /// there are any other read-write transactions open on the environment.
-    pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW, E>> {
+    pub fn begin_rw_txn<Chart: TxnChart<RO>>(&self) -> Result<Transaction<'_, RW, E, Chart>> {
         let sender = self.txn_manager.as_ref().ok_or(Error::Access)?;
         let txn = loop {
             let (tx, rx) = sync_channel(0);

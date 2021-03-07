@@ -1,8 +1,13 @@
 use crate::{
+    chart::TxnChart,
     environment::EnvironmentKind,
     error::{mdbx_result, Result},
+    error::{mdbx_result, Result},
+    flags::{DatabaseFlags, WriteFlags},
     transaction::{txn_execute, TransactionKind},
-    Transaction,
+    transaction::{TransactionKind, RW},
+    util::freeze_bytes,
+    Cursor, Error, Stat, Transaction,
 };
 use libc::c_uint;
 use std::{ffi::CString, marker::PhantomData, ptr};
@@ -21,8 +26,8 @@ impl<'txn> Database<'txn> {
     ///
     /// Prefer using `Environment::open_db`, `Environment::create_db`, `TransactionExt::open_db`,
     /// or `RwTransaction::create_db`.
-    pub(crate) fn new<'env, K: TransactionKind, E: EnvironmentKind>(
-        txn: &'txn Transaction<'env, K, E>,
+    pub(crate) fn new<'env, K: TransactionKind, E: EnvironmentKind, Chart>(
+        txn: &'txn Transaction<'env, K, E, Chart>,
         name: Option<&str>,
         flags: c_uint,
     ) -> Result<Self> {
@@ -46,7 +51,7 @@ impl<'txn> Database<'txn> {
         }
     }
 
-    pub(crate) fn freelist_db() -> Self {
+    pub(crate) fn freelist_db<'env, Chart>(txn: &'txn Transaction<'env, K, Chart>) -> Self {
         Database {
             dbi: 0,
             _marker: PhantomData,

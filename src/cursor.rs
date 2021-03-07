@@ -1,4 +1,5 @@
 use crate::{
+    chart::TxnChart,
     database::Database,
     error::{mdbx_result, Error, Result},
     flags::*,
