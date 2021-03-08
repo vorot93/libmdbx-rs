@@ -43,11 +43,11 @@ where
             mdbx_result(ffi::mdbx_cursor_get(self.cursor(), &mut key_val, &mut data_val, op))?;
             let txn = ffi::mdbx_cursor_txn(self.cursor());
             let key_out = if key_ptr != key_val.iov_base {
-                Some(freeze_bytes(txn, &key_val)?)
+                Some(freeze_bytes::<Txn>(txn, &key_val)?)
             } else {
                 None
             };
-            let data_out = freeze_bytes(txn, &data_val)?;
+            let data_out = freeze_bytes::<Txn>(txn, &data_val)?;
 
             Ok((key_out, data_out))
         }
@@ -386,11 +386,11 @@ where
                     match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
                         ffi::MDBX_SUCCESS => {
                             let txn = ffi::mdbx_cursor_txn(cursor.cursor());
-                            let key = match freeze_bytes(txn, &key) {
+                            let key = match freeze_bytes::<Txn>(txn, &key) {
                                 Ok(v) => v,
                                 Err(e) => return Some(Err(e)),
                             };
-                            let data = match freeze_bytes(txn, &data) {
+                            let data = match freeze_bytes::<Txn>(txn, &data) {
                                 Ok(v) => v,
                                 Err(e) => return Some(Err(e)),
                             };
@@ -484,11 +484,11 @@ where
                     match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
                         ffi::MDBX_SUCCESS => {
                             let txn = ffi::mdbx_cursor_txn(cursor.cursor());
-                            let key = match freeze_bytes(txn, &key) {
+                            let key = match freeze_bytes::<Txn>(txn, &key) {
                                 Ok(v) => v,
                                 Err(e) => return Some(Err(e)),
                             };
-                            let data = match freeze_bytes(txn, &data) {
+                            let data = match freeze_bytes::<Txn>(txn, &data) {
                                 Ok(v) => v,
                                 Err(e) => return Some(Err(e)),
                             };

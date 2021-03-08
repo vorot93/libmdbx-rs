@@ -27,6 +27,9 @@ mod private {
 ///
 /// All database operations require a transaction.
 pub trait Transaction: Sized + private::Sealed {
+    #[doc(hidden)]
+    const ONLY_CLEAN: bool;
+
     /// Returns a raw pointer to the underlying MDBX transaction.
     ///
     /// The caller **must** ensure that the pointer is not used after the
@@ -124,6 +127,8 @@ impl<'env> RoTransaction<'env> {
 }
 
 impl<'env> Transaction for RoTransaction<'env> {
+    const ONLY_CLEAN: bool = true;
+
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
     }
@@ -220,6 +225,8 @@ impl<'env> RwTransaction<'env> {
 }
 
 impl<'env> Transaction for RwTransaction<'env> {
+    const ONLY_CLEAN: bool = false;
+
     fn txn(&self) -> *mut ffi::MDBX_txn {
         self.txn
     }

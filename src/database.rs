@@ -98,7 +98,7 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
         };
         unsafe {
             match ffi::mdbx_get(self.txn.txn(), self.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => freeze_bytes(self.txn.txn(), &data_val),
+                ffi::MDBX_SUCCESS => freeze_bytes::<Txn>(self.txn.txn(), &data_val),
                 err_code => Err(Error::from_err_code(err_code)),
             }
         }
