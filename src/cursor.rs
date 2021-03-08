@@ -23,7 +23,10 @@ use std::{
 };
 
 /// An LMDB cursor.
-pub trait Cursor<'txn, Txn> {
+pub trait Cursor<'txn, Txn>
+where
+    Txn: Transaction,
+{
     /// Returns a raw pointer to the underlying LMDB cursor.
     ///
     /// The caller **must** ensure that the pointer is not used after the
@@ -150,7 +153,10 @@ pub struct RoCursor<'txn, Txn> {
     _marker: PhantomData<&'txn Txn>,
 }
 
-impl<'txn, Txn> Cursor<'txn, Txn> for RoCursor<'txn, Txn> {
+impl<'txn, Txn> Cursor<'txn, Txn> for RoCursor<'txn, Txn>
+where
+    Txn: Transaction,
+{
     fn cursor(&self) -> *mut ffi::MDBX_cursor {
         self.cursor
     }
@@ -218,7 +224,10 @@ pub struct RwCursor<'txn, Txn> {
     _marker: PhantomData<&'txn Txn>,
 }
 
-impl<'txn, Txn> Cursor<'txn, Txn> for RwCursor<'txn, Txn> {
+impl<'txn, Txn> Cursor<'txn, Txn> for RwCursor<'txn, Txn>
+where
+    Txn: Transaction,
+{
     fn cursor(&self) -> *mut ffi::MDBX_cursor {
         self.cursor
     }
@@ -305,6 +314,7 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
 #[derive(Debug)]
 pub enum IntoIter<'txn, Txn, C>
 where
+    Txn: Transaction,
     C: Cursor<'txn, Txn>,
 {
     /// An iterator that returns an error on every call to `Iter::next`.
@@ -332,7 +342,11 @@ where
     },
 }
 
-impl<'txn, Txn, C: Cursor<'txn, Txn>> IntoIter<'txn, Txn, C> {
+impl<'txn, Txn, C> IntoIter<'txn, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     /// Creates a new iterator backed by the given cursor.
     fn new(cursor: C, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
         IntoIter::Ok {
@@ -344,7 +358,11 @@ impl<'txn, Txn, C: Cursor<'txn, Txn>> IntoIter<'txn, Txn, C> {
     }
 }
 
-impl<'txn, Txn, C: Cursor<'txn, Txn>> Iterator for IntoIter<'txn, Txn, C> {
+impl<'txn, Txn, C> Iterator for IntoIter<'txn, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -392,7 +410,11 @@ impl<'txn, Txn, C: Cursor<'txn, Txn>> Iterator for IntoIter<'txn, Txn, C> {
 
 /// An iterator over the key/value pairs in an MDBX database.
 #[derive(Debug)]
-pub enum Iter<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> {
+pub enum Iter<'txn, 'cur, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     /// An iterator that returns an error on every call to `Iter::next`.
     /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
     /// on retrieval of a cursor.  Using this variant instead of returning
@@ -418,7 +440,11 @@ pub enum Iter<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> {
     },
 }
 
-impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> Iter<'txn, 'cur, Txn, C> {
+impl<'txn, 'cur, Txn, C> Iter<'txn, 'cur, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     /// Creates a new iterator backed by the given cursor.
     fn new(cursor: &'cur mut C, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
         Iter::Ok {
@@ -430,7 +456,11 @@ impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> Iter<'txn, 'cur, Txn, C> {
     }
 }
 
-impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> Iterator for Iter<'txn, 'cur, Txn, C> {
+impl<'txn, 'cur, Txn, C> Iterator for Iter<'txn, 'cur, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -480,7 +510,11 @@ impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> Iterator for Iter<'txn, 'cur, Txn, C
 ///
 /// The yielded items of the iterator are themselves iterators over the duplicate values for a
 /// specific key.
-pub enum IterDup<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> {
+pub enum IterDup<'txn, 'cur, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     /// An iterator that returns an error on every call to Iter.next().
     /// Cursor.iter*() creates an Iter of this type when LMDB returns an error
     /// on retrieval of a cursor.  Using this variant instead of returning
@@ -503,7 +537,7 @@ pub enum IterDup<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> {
     },
 }
 
-impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> IterDup<'txn, 'cur, Txn, C> {
+impl<'txn, 'cur, Txn: Transaction, C: Cursor<'txn, Txn>> IterDup<'txn, 'cur, Txn, C> {
     /// Creates a new iterator backed by the given cursor.
     fn new(cursor: &'cur mut C, op: c_uint) -> Self {
         IterDup::Ok {
@@ -514,7 +548,11 @@ impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> IterDup<'txn, 'cur, Txn, C> {
     }
 }
 
-impl<'txn, 'cur, Txn, C: Cursor<'txn, Txn>> fmt::Debug for IterDup<'txn, 'cur, Txn, C> {
+impl<'txn, 'cur, Txn, C> fmt::Debug for IterDup<'txn, 'cur, Txn, C>
+where
+    Txn: Transaction,
+    C: Cursor<'txn, Txn>,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("IterDup").finish()
     }
@@ -524,8 +562,6 @@ impl<'txn, 'cur, Txn, C> Iterator for IterDup<'txn, 'cur, Txn, C>
 where
     C: Cursor<'txn, Txn>,
     Txn: Transaction,
-    Txn: 'txn,
-    'txn: 'cur,
 {
     type Item = IntoIter<'txn, Txn, RoCursor<'txn, Txn>>;
 
