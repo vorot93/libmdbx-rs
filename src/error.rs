@@ -1,5 +1,10 @@
 use libc::c_int;
-use std::{ffi::CStr, fmt, result, str};
+use std::{
+    ffi::CStr,
+    fmt,
+    result,
+    str,
+};
 
 /// An MDBX error kind.
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -107,6 +112,8 @@ impl fmt::Display for Error {
         })
     }
 }
+
+impl std::error::Error for Error {}
 
 /// An LMDB result.
 pub type Result<T> = result::Result<T, Error>;
