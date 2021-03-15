@@ -19,16 +19,6 @@ fn main() {
         .flag_if_supported("-Wbad-function-cast")
         .flag_if_supported("-Wuninitialized");
 
-    if env::var("CARGO_FEATURE_WITH_ASAN").is_ok() {
-        builder.flag("-fsanitize=address");
-    }
-
-    if env::var("CARGO_FEATURE_WITH_FUZZER").is_ok() {
-        builder.flag("-fsanitize=fuzzer");
-    } else if env::var("CARGO_FEATURE_WITH_FUZZER_NO_LINK").is_ok() {
-        builder.flag("-fsanitize=fuzzer-no-link");
-    }
-
     let flags = format!("{:?}", builder.get_compiler().cflags_env());
     builder.define("MDBX_BUILD_FLAGS", flags.as_str());
 

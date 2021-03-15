@@ -53,9 +53,3 @@ ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 rand = "0.8"
 rand_xorshift = "0.3"
 tempfile = "3"
-
-[features]
-default = []
-with-asan = ["ffi/with-asan"]
-with-fuzzer = ["ffi/with-fuzzer"]
-with-fuzzer-no-link = ["ffi/with-fuzzer-no-link"]

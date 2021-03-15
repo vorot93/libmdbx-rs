@@ -30,9 +30,3 @@ libc = "0.2"
 [build-dependencies]
 cc = "1.0"
 bindgen = { version = "0.57", default-features = false, optional = true, features = ["runtime"] }
-
-[features]
-default = []
-with-asan = []
-with-fuzzer = []
-with-fuzzer-no-link = []
