@@ -1,5 +1,4 @@
 use crate::{
-    cursor::Cursor,
     database::Database,
     error::{
         mdbx_result,
@@ -135,7 +134,7 @@ impl Environment {
         let mut freelist: usize = 0;
         let txn = self.begin_ro_txn()?;
         let db = Database::freelist_db(&txn);
-        let mut cursor = db.open_ro_cursor()?;
+        let mut cursor = db.cursor()?;
 
         for result in cursor.iter() {
             let (_key, value) = result?;

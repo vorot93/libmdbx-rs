@@ -7,7 +7,6 @@ use ffi::*;
 use mdbx::{
     Cursor,
     Result,
-    RoCursor,
     Transaction,
 };
 use std::ptr;
@@ -26,7 +25,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
     let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let mut cursor = db.open_ro_cursor().unwrap();
+        let mut cursor = db.cursor().unwrap();
         let mut i = 0;
         let mut count = 0u32;
 
@@ -39,7 +38,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
             count += 1;
         }
 
-        fn iterate<Txn: Transaction>(cursor: &mut RoCursor<'_, Txn>) -> Result<()> {
+        fn iterate<Txn: Transaction>(cursor: &mut Cursor<'_, Txn>) -> Result<()> {
             let mut i = 0;
             for result in cursor.iter() {
                 let (key, data) = result?;
@@ -63,7 +62,7 @@ fn bench_get_seq_cursor(b: &mut Bencher) {
     let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let cursor = db.open_ro_cursor().unwrap();
+        let cursor = db.cursor().unwrap();
         let mut i = 0;
         let mut count = 0u32;
 

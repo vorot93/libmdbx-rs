@@ -248,7 +248,6 @@ impl<'env> Transaction for RwTransaction<'env> {
 mod test {
     use super::*;
     use crate::{
-        cursor::Cursor,
         error::*,
         flags::*,
     };
@@ -310,7 +309,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         {
-            let mut cur = db.open_ro_cursor().unwrap();
+            let mut cur = db.cursor().unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1".into(), b"val2".into(), b"val3".into()] as Vec<Bytes>);
@@ -326,7 +325,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         {
-            let mut cur = db.open_ro_cursor().unwrap();
+            let mut cur = db.cursor().unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1".into(), b"val3".into()] as Vec<Bytes>);

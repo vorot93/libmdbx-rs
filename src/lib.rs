@@ -8,8 +8,6 @@ pub use crate::{
         Cursor,
         Iter,
         IterDup,
-        RoCursor,
-        RwCursor,
     },
     database::Database,
     environment::{

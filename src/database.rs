@@ -8,9 +8,8 @@ use crate::{
         WriteFlags,
     },
     util::freeze_bytes,
+    Cursor,
     Error,
-    RoCursor,
-    RwCursor,
     RwTransaction,
     Stat,
     Transaction,
@@ -104,9 +103,9 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
         }
     }
 
-    /// Open a new read-only cursor on the given database.
-    pub fn open_ro_cursor(&self) -> Result<RoCursor<'txn, Txn>> {
-        RoCursor::new(self)
+    /// Open a new cursor on the given database.
+    pub fn cursor(&self) -> Result<Cursor<'txn, Txn>> {
+        Cursor::new(self)
     }
 
     /// Gets the option flags for the given database in the transaction.
@@ -129,11 +128,6 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
 }
 
 impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
-    /// Opens a new read-write cursor on the given database and transaction.
-    pub fn open_rw_cursor(&self) -> Result<RwCursor<'txn, RwTransaction<'env>>> {
-        RwCursor::new(self)
-    }
-
     /// Stores an item into a database.
     ///
     /// This function stores key/data pairs in the database. The default
