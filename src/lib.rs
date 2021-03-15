@@ -23,9 +23,10 @@ pub use crate::{
     },
     flags::*,
     transaction::{
-        RoTransaction,
-        RwTransaction,
         Transaction,
+        TransactionKind,
+        RO,
+        RW,
     },
 };
 

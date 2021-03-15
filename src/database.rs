@@ -7,10 +7,13 @@ use crate::{
         DatabaseFlags,
         WriteFlags,
     },
+    transaction::{
+        TransactionKind,
+        RW,
+    },
     util::freeze_bytes,
     Cursor,
     Error,
-    RwTransaction,
     Stat,
     Transaction,
 };
@@ -29,18 +32,24 @@ use std::{
 /// A handle to an individual database in an environment.
 ///
 /// A database handle denotes the name and parameters of a database in an environment.
-#[derive(Debug, Eq, PartialEq)]
-pub struct Database<'txn, Txn> {
+#[derive(Debug)]
+pub struct Database<'env, 'txn, K>
+where
+    K: TransactionKind,
+{
     dbi: ffi::MDBX_dbi,
-    txn: &'txn Txn,
+    txn: &'txn Transaction<'env, K>,
 }
 
-impl<'txn, Txn: Transaction> Database<'txn, Txn> {
+impl<'env, 'txn, K> Database<'env, 'txn, K>
+where
+    K: TransactionKind,
+{
     /// Opens a new database handle in the given transaction.
     ///
     /// Prefer using `Environment::open_db`, `Environment::create_db`, `TransactionExt::open_db`,
     /// or `RwTransaction::create_db`.
-    pub(crate) fn new(txn: &'txn Txn, name: Option<&str>, flags: c_uint) -> Result<Self> {
+    pub(crate) fn new(txn: &'txn Transaction<'env, K>, name: Option<&str>, flags: c_uint) -> Result<Self> {
         let c_name = name.map(|n| CString::new(n).unwrap());
         let name_ptr = if let Some(c_name) = &c_name {
             c_name.as_ptr()
@@ -55,7 +64,7 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
         })
     }
 
-    pub(crate) fn freelist_db(txn: &'txn Txn) -> Self {
+    pub(crate) fn freelist_db(txn: &'txn Transaction<'env, K>) -> Self {
         Database {
             dbi: 0,
             txn,
@@ -70,7 +79,7 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
         self.dbi
     }
 
-    pub fn txn(&self) -> &'txn Txn {
+    pub fn txn(&self) -> &'txn Transaction<'env, K> {
         self.txn
     }
 
@@ -82,10 +91,7 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
     /// returned. Retrieval of other items requires the use of
     /// `Transaction::cursor_get`. If the item is not in the database, then
     /// `Error::NotFound` will be returned.
-    pub fn get<K>(&self, key: &K) -> Result<Bytes<'txn>>
-    where
-        K: AsRef<[u8]>,
-    {
+    pub fn get(&self, key: &impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -97,14 +103,14 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
         };
         unsafe {
             match ffi::mdbx_get(self.txn.txn(), self.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => freeze_bytes::<Txn>(self.txn.txn(), &data_val),
+                ffi::MDBX_SUCCESS => freeze_bytes::<K>(self.txn.txn(), &data_val),
                 err_code => Err(Error::from_err_code(err_code)),
             }
         }
     }
 
     /// Open a new cursor on the given database.
-    pub fn cursor(&self) -> Result<Cursor<'txn, Txn>> {
+    pub fn cursor(&self) -> Result<Cursor<'txn, K>> {
         Cursor::new(self)
     }
 
@@ -127,18 +133,14 @@ impl<'txn, Txn: Transaction> Database<'txn, Txn> {
     }
 }
 
-impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
+impl<'txn, 'env> Database<'env, 'txn, RW> {
     /// Stores an item into a database.
     ///
     /// This function stores key/data pairs in the database. The default
     /// behavior is to enter the new key/data pair, replacing any previously
     /// existing key if duplicates are disallowed, or adding a duplicate data
     /// item if duplicates are allowed (`DatabaseFlags::DUP_SORT`).
-    pub fn put<K, D>(&self, key: &K, data: &D, flags: WriteFlags) -> Result<()>
-    where
-        K: AsRef<[u8]>,
-        D: AsRef<[u8]>,
-    {
+    pub fn put(&self, key: &impl AsRef<[u8]>, data: &impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
         let key = key.as_ref();
         let data = data.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
@@ -157,10 +159,7 @@ impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     /// Returns a buffer which can be used to write a value into the item at the
     /// given key and with the given length. The buffer must be completely
     /// filled by the caller.
-    pub fn reserve<K>(&self, key: &K, len: usize, flags: WriteFlags) -> Result<&'txn mut [u8]>
-    where
-        K: AsRef<[u8]>,
-    {
+    pub fn reserve(&self, key: &impl AsRef<[u8]>, len: usize, flags: WriteFlags) -> Result<&'txn mut [u8]> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -188,10 +187,7 @@ impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
     /// If the data parameter is non-NULL only the matching data item will be deleted.
     /// Otherwise, if data parameter is `None`, any/all value(s) for specified key will be deleted.
-    pub fn del<K>(&self, key: &K, data: Option<&[u8]>) -> Result<()>
-    where
-        K: AsRef<[u8]>,
-    {
+    pub fn del(&self, key: &impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -231,4 +227,9 @@ impl<'txn, 'env> Database<'txn, RwTransaction<'env>> {
     }
 }
 
-unsafe impl<'txn, Txn: Send> Send for Database<'txn, Txn> {}
+unsafe impl<'env, 'txn, K> Send for Database<'env, 'txn, K>
+where
+    K: TransactionKind,
+    Transaction<'env, K>: Send,
+{
+}

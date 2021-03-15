@@ -1,15 +1,21 @@
+use ffi::{
+    MDBX_txn_flags_t,
+    MDBX_TXN_RDONLY,
+    MDBX_TXN_READWRITE,
+};
+
 use crate::{
     database::Database,
     environment::Environment,
     error::{
         mdbx_result,
-        Error,
         Result,
     },
     flags::DatabaseFlags,
 };
 use std::{
     fmt,
+    marker::PhantomData,
     ptr,
     result,
 };
@@ -19,49 +25,86 @@ mod private {
 
     pub trait Sealed {}
 
-    impl<'env> Sealed for RoTransaction<'env> {}
-    impl<'env> Sealed for RwTransaction<'env> {}
+    impl<'env> Sealed for RO {}
+    impl<'env> Sealed for RW {}
 }
 
-/// An LMDB transaction.
-///
-/// All database operations require a transaction.
-pub trait Transaction: Sized + private::Sealed {
+pub trait TransactionKind: private::Sealed {
     #[doc(hidden)]
     const ONLY_CLEAN: bool;
+
+    #[doc(hidden)]
+    const OPEN_FLAGS: MDBX_txn_flags_t;
+}
+
+#[derive(Debug)]
+pub struct RO;
+#[derive(Debug)]
+pub struct RW;
+
+impl TransactionKind for RO {
+    const ONLY_CLEAN: bool = true;
+    const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_TXN_RDONLY;
+}
+impl TransactionKind for RW {
+    const ONLY_CLEAN: bool = false;
+    const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_TXN_READWRITE;
+}
+
+/// An MDBX transaction.
+///
+/// All database operations require a transaction.
+pub struct Transaction<'env, K>
+where
+    K: TransactionKind,
+{
+    txn: *mut ffi::MDBX_txn,
+    committed: bool,
+    env: &'env Environment,
+    _marker: PhantomData<fn(K)>,
+}
+
+impl<'env, K> Transaction<'env, K>
+where
+    K: TransactionKind,
+{
+    pub(crate) fn new(env: &'env Environment) -> Result<Self> {
+        let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
+        unsafe {
+            mdbx_result(ffi::mdbx_txn_begin_ex(env.env(), ptr::null_mut(), K::OPEN_FLAGS, &mut txn, ptr::null_mut()))?;
+            Ok(Self {
+                txn,
+                committed: false,
+                env,
+                _marker: PhantomData,
+            })
+        }
+    }
 
     /// Returns a raw pointer to the underlying MDBX transaction.
     ///
     /// The caller **must** ensure that the pointer is not used after the
     /// lifetime of the transaction.
-    fn txn(&self) -> *mut ffi::MDBX_txn;
-
-    /// Returns a raw pointer to the MDBX environment.
-    fn env(&self) -> &Environment;
-
-    /// Returns the transaction id.
-    fn id(&self) -> u64 {
-        unsafe { ffi::mdbx_txn_id(self.txn()) }
+    pub fn txn(&self) -> *mut ffi::MDBX_txn {
+        self.txn
     }
 
-    #[doc(hidden)]
-    fn note_committed(&mut self);
+    /// Returns a raw pointer to the MDBX environment.
+    pub fn env(&self) -> &Environment {
+        self.env
+    }
 
-    #[doc(hidden)]
-    unsafe fn is_dirty(&self, ptr: *const libc::c_void) -> Result<bool> {
-        match ffi::mdbx_is_dirty(self.txn(), ptr) {
-            ffi::MDBX_RESULT_TRUE => Ok(true),
-            ffi::MDBX_RESULT_FALSE => Ok(false),
-            other => Err(Error::from_err_code(other)),
-        }
+    /// Returns the transaction id.
+    pub fn id(&self) -> u64 {
+        unsafe { ffi::mdbx_txn_id(self.txn()) }
     }
 
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
-    fn commit(mut self) -> Result<bool> {
+    pub fn commit(mut self) -> Result<bool> {
         let result = mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()) });
-        self.note_committed();
+        self.committed = true;
         result
     }
 
@@ -76,120 +119,17 @@ pub trait Transaction: Sized + private::Sealed {
     /// The returned database handle may be shared among any transaction in the environment.
     ///
     /// The database name may not contain the null character.
-    fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn, Self>> {
+    pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'env, 'txn, K>> {
         Database::new(self, name, 0)
     }
 }
 
-/// An LMDB read-only transaction.
-pub struct RoTransaction<'env> {
-    txn: *mut ffi::MDBX_txn,
-    committed: bool,
-    env: &'env Environment,
-}
-
-impl<'env> fmt::Debug for RoTransaction<'env> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        f.debug_struct("RoTransaction").finish()
-    }
-}
-
-impl<'env> Drop for RoTransaction<'env> {
-    fn drop(&mut self) {
-        if !self.committed {
-            unsafe {
-                ffi::mdbx_txn_abort(self.txn);
-            }
-        }
-    }
-}
-
-impl<'env> RoTransaction<'env> {
-    /// Creates a new read-only transaction in the given environment. Prefer
-    /// using `Environment::begin_ro_txn`.
-    pub(crate) fn new(env: &'env Environment) -> Result<RoTransaction<'env>> {
-        let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-        unsafe {
-            mdbx_result(ffi::mdbx_txn_begin_ex(
-                env.env(),
-                ptr::null_mut(),
-                ffi::MDBX_RDONLY,
-                &mut txn,
-                ptr::null_mut(),
-            ))?;
-            Ok(RoTransaction {
-                txn,
-                committed: false,
-                env,
-            })
-        }
-    }
-}
-
-impl<'env> Transaction for RoTransaction<'env> {
-    const ONLY_CLEAN: bool = true;
-
-    fn txn(&self) -> *mut ffi::MDBX_txn {
-        self.txn
-    }
-
-    fn note_committed(&mut self) {
-        self.committed = true;
-    }
-
-    fn env(&self) -> &Environment {
-        self.env
-    }
-}
-
-unsafe impl<'env> Send for RoTransaction<'env> {}
-unsafe impl<'env> Sync for RoTransaction<'env> {}
-
-/// An LMDB read-write transaction.
-pub struct RwTransaction<'env> {
-    txn: *mut ffi::MDBX_txn,
-    committed: bool,
-    env: &'env Environment,
-}
-
-impl<'env> fmt::Debug for RwTransaction<'env> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        f.debug_struct("RwTransaction").finish()
-    }
-}
-
-impl<'env> Drop for RwTransaction<'env> {
-    fn drop(&mut self) {
-        if !self.committed {
-            unsafe {
-                ffi::mdbx_txn_abort(self.txn);
-            }
-        }
-    }
-}
-
-impl<'env> RwTransaction<'env> {
-    /// Creates a new read-write transaction in the given environment. Prefer
-    /// using `Environment::begin_ro_txn`.
-    pub(crate) fn new(env: &'env Environment) -> Result<RwTransaction<'env>> {
-        let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-        unsafe {
-            mdbx_result(ffi::mdbx_txn_begin_ex(
-                env.env(),
-                ptr::null_mut(),
-                ffi::MDBX_TXN_READWRITE,
-                &mut txn,
-                ptr::null_mut(),
-            ))?;
-            Ok(RwTransaction {
-                txn,
-                committed: false,
-                env,
-            })
-        }
-    }
-
-    fn open_db_with_flags<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, Self>> {
+impl<'env> Transaction<'env, RW> {
+    fn open_db_with_flags<'txn>(
+        &'txn self,
+        name: Option<&str>,
+        flags: DatabaseFlags,
+    ) -> Result<Database<'env, 'txn, RW>> {
         Database::new(self, name, flags.bits())
     }
 
@@ -205,44 +145,50 @@ impl<'env> RwTransaction<'env> {
     ///
     /// This function will fail with `Error::BadRslot` if called by a thread with an open
     /// transaction.
-    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, Self>> {
+    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'env, 'txn, RW>> {
         self.open_db_with_flags(name, flags | DatabaseFlags::CREATE)
     }
 
     /// Begins a new nested transaction inside of this transaction.
-    pub fn begin_nested_txn(&mut self) -> Result<RwTransaction<'_>> {
+    pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW>> {
         let mut nested: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             let env: *mut ffi::MDBX_env = ffi::mdbx_txn_env(self.txn());
             ffi::mdbx_txn_begin_ex(env, self.txn(), 0, &mut nested, ptr::null_mut());
         }
-        Ok(RwTransaction {
+        Ok(Transaction {
             txn: nested,
             committed: false,
             env: self.env,
+            _marker: PhantomData,
         })
     }
 }
 
-impl<'env> Transaction for RwTransaction<'env> {
-    const ONLY_CLEAN: bool = false;
-
-    fn txn(&self) -> *mut ffi::MDBX_txn {
-        self.txn
-    }
-
-    fn note_committed(&mut self) {
-        self.committed = true;
-    }
-
-    fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn, Self>> {
-        self.open_db_with_flags(name, DatabaseFlags::default())
-    }
-
-    fn env(&self) -> &Environment {
-        self.env
+impl<'env, K> fmt::Debug for Transaction<'env, K>
+where
+    K: TransactionKind,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        f.debug_struct("RoTransaction").finish()
     }
 }
+
+impl<'env, K> Drop for Transaction<'env, K>
+where
+    K: TransactionKind,
+{
+    fn drop(&mut self) {
+        if !self.committed {
+            unsafe {
+                ffi::mdbx_txn_abort(self.txn);
+            }
+        }
+    }
+}
+
+unsafe impl<'env> Send for Transaction<'env, RO> {}
+unsafe impl<'env> Sync for Transaction<'env, RO> {}
 
 #[cfg(test)]
 mod test {

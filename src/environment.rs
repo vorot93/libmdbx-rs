@@ -7,9 +7,10 @@ use crate::{
     },
     flags::EnvironmentFlags,
     transaction::{
-        RoTransaction,
-        RwTransaction,
+        RO,
+        RW,
     },
+    Transaction,
 };
 use byteorder::{
     ByteOrder,
@@ -74,14 +75,14 @@ impl Environment {
     }
 
     /// Create a read-only transaction for use with the environment.
-    pub fn begin_ro_txn(&self) -> Result<RoTransaction<'_>> {
-        RoTransaction::new(self)
+    pub fn begin_ro_txn(&self) -> Result<Transaction<'_, RO>> {
+        Transaction::new(self)
     }
 
     /// Create a read-write transaction for use with the environment. This method will block while
     /// there are any other read-write transactions open on the environment.
-    pub fn begin_rw_txn(&self) -> Result<RwTransaction<'_>> {
-        RwTransaction::new(self)
+    pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW>> {
+        Transaction::new(self)
     }
 
     /// Flush the environment data buffers to disk.
@@ -438,10 +439,7 @@ impl EnvironmentBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{
-        flags::*,
-        transaction::Transaction,
-    };
+    use crate::flags::*;
     use byteorder::{
         ByteOrder,
         LittleEndian,

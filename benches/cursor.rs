@@ -7,7 +7,7 @@ use ffi::*;
 use mdbx::{
     Cursor,
     Result,
-    Transaction,
+    TransactionKind,
 };
 use std::ptr;
 use test::{
@@ -38,7 +38,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
             count += 1;
         }
 
-        fn iterate<Txn: Transaction>(cursor: &mut Cursor<'_, Txn>) -> Result<()> {
+        fn iterate<K: TransactionKind>(cursor: &mut Cursor<'_, K>) -> Result<()> {
             let mut i = 0;
             for result in cursor.iter() {
                 let (key, data) = result?;

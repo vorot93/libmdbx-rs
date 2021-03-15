@@ -1,6 +1,5 @@
 use mdbx::{
     Environment,
-    Transaction,
     WriteFlags,
 };
 use tempfile::{

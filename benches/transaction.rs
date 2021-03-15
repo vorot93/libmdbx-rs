@@ -5,10 +5,7 @@ mod utils;
 
 use ffi::*;
 use libc::size_t;
-use mdbx::{
-    Transaction,
-    WriteFlags,
-};
+use mdbx::WriteFlags;
 use rand::{
     prelude::SliceRandom,
     SeedableRng,
