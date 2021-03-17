@@ -62,21 +62,19 @@ fn bench_get_seq_cursor(b: &mut Bencher) {
     let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let cursor = db.cursor().unwrap();
-        let mut i = 0;
-        let mut count = 0u32;
-
-        while let Ok((key_opt, val)) = cursor.get(None, None, MDBX_NEXT) {
-            i += key_opt.map(|key| key.len()).unwrap_or(0) + val.len();
-            count += 1;
-        }
+        let (i, count) = db
+            .cursor()
+            .unwrap()
+            .into_iter()
+            .map(Result::unwrap)
+            .fold((0, 0), |(i, count), (key, val)| (i + key.len() + val.len(), count + 1));
 
         black_box(i);
         assert_eq!(count, n);
     });
 }
 
-/// Benchmark of raw LMDB sequential read performance (control).
+/// Benchmark of raw MDBX sequential read performance (control).
 #[bench]
 fn bench_get_seq_raw(b: &mut Bencher) {
     let n = 100;

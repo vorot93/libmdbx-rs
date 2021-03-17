@@ -115,7 +115,7 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// An LMDB result.
+/// An MDBX result.
 pub type Result<T> = result::Result<T, Error>;
 
 pub fn mdbx_result(err_code: c_int) -> Result<bool> {
