@@ -91,7 +91,7 @@ where
     /// returned. Retrieval of other items requires the use of
     /// `Transaction::cursor_get`. If the item is not in the database, then
     /// `Error::NotFound` will be returned.
-    pub fn get(&self, key: &impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
+    pub fn get(&self, key: impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -140,7 +140,7 @@ impl<'txn, 'env> Database<'env, 'txn, RW> {
     /// behavior is to enter the new key/data pair, replacing any previously
     /// existing key if duplicates are disallowed, or adding a duplicate data
     /// item if duplicates are allowed (`DatabaseFlags::DUP_SORT`).
-    pub fn put(&self, key: &impl AsRef<[u8]>, data: &impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
+    pub fn put(&self, key: impl AsRef<[u8]>, data: impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
         let key = key.as_ref();
         let data = data.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
@@ -159,7 +159,7 @@ impl<'txn, 'env> Database<'env, 'txn, RW> {
     /// Returns a buffer which can be used to write a value into the item at the
     /// given key and with the given length. The buffer must be completely
     /// filled by the caller.
-    pub fn reserve(&self, key: &impl AsRef<[u8]>, len: usize, flags: WriteFlags) -> Result<&'txn mut [u8]> {
+    pub fn reserve(&self, key: impl AsRef<[u8]>, len: usize, flags: WriteFlags) -> Result<&'txn mut [u8]> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -187,7 +187,7 @@ impl<'txn, 'env> Database<'env, 'txn, RW> {
     /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
     /// If the data parameter is non-NULL only the matching data item will be deleted.
     /// Otherwise, if data parameter is `None`, any/all value(s) for specified key will be deleted.
-    pub fn del(&self, key: &impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
+    pub fn del(&self, key: impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),

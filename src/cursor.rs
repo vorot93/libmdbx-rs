@@ -154,11 +154,11 @@ where
         self.get_value(None, None, MDBX_FIRST_DUP)
     }
 
-    pub fn get_both(&mut self, k: &impl AsRef<[u8]>, v: &impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
+    pub fn get_both(&mut self, k: impl AsRef<[u8]>, v: impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
         self.get_value(Some(k.as_ref()), Some(v.as_ref()), MDBX_GET_BOTH)
     }
 
-    pub fn get_both_range(&mut self, k: &impl AsRef<[u8]>, v: &impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
+    pub fn get_both_range(&mut self, k: impl AsRef<[u8]>, v: impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
         self.get_value(Some(k.as_ref()), Some(v.as_ref()), MDBX_GET_BOTH_RANGE)
     }
 
@@ -207,15 +207,15 @@ where
         self.get_full(None, None, MDBX_PREV_NODUP)
     }
 
-    pub fn set(&mut self, key: &impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
+    pub fn set(&mut self, key: impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
         self.get_value(Some(key.as_ref()), None, MDBX_SET)
     }
 
-    pub fn set_key(&mut self, key: &impl AsRef<[u8]>) -> Result<(Bytes<'txn>, Bytes<'txn>)> {
+    pub fn set_key(&mut self, key: impl AsRef<[u8]>) -> Result<(Bytes<'txn>, Bytes<'txn>)> {
         self.get_full(Some(key.as_ref()), None, MDBX_SET_KEY)
     }
 
-    pub fn set_range(&mut self, key: &impl AsRef<[u8]>) -> Result<(Bytes<'txn>, Bytes<'txn>)> {
+    pub fn set_range(&mut self, key: impl AsRef<[u8]>) -> Result<(Bytes<'txn>, Bytes<'txn>)> {
         self.get_full(Some(key.as_ref()), None, MDBX_SET_RANGE)
     }
 
@@ -223,7 +223,7 @@ where
         self.get_full(None, None, MDBX_PREV_MULTIPLE)
     }
 
-    pub fn set_lowerbound(&mut self, key: &impl AsRef<[u8]>) -> Result<(bool, Bytes<'txn>, Bytes<'txn>)> {
+    pub fn set_lowerbound(&mut self, key: impl AsRef<[u8]>) -> Result<(bool, Bytes<'txn>, Bytes<'txn>)> {
         let (k, v, found) = self.get(Some(key.as_ref()), None, MDBX_SET_LOWERBOUND)?;
 
         Ok((found, k.unwrap(), v))
@@ -260,7 +260,7 @@ where
     /// For databases with duplicate data items (`DatabaseFlags::DUP_SORT`), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    pub fn iter_from(&mut self, key: &impl AsRef<[u8]>) -> Iter<'txn, '_, K> {
+    pub fn iter_from(&mut self, key: impl AsRef<[u8]>) -> Iter<'txn, '_, K> {
         match self.set_range(key) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => return Iter::Err(error),
@@ -283,7 +283,7 @@ where
 
     /// Iterate over duplicate items in the database starting from the given
     /// key. Each item will be returned as an iterator of its duplicates.
-    pub fn iter_dup_from(&mut self, key: &impl AsRef<[u8]>) -> IterDup<'txn, '_, K> {
+    pub fn iter_dup_from(&mut self, key: impl AsRef<[u8]>) -> IterDup<'txn, '_, K> {
         match self.set_range(key) {
             Ok(_) | Err(Error::NotFound) => (),
             Err(error) => return IterDup::Err(error),
@@ -292,7 +292,7 @@ where
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
-    pub fn iter_dup_of(&mut self, key: &impl AsRef<[u8]>) -> Iter<'txn, '_, K> {
+    pub fn iter_dup_of(&mut self, key: impl AsRef<[u8]>) -> Iter<'txn, '_, K> {
         match self.set(key) {
             Ok(_) => (),
             Err(Error::NotFound) => {
@@ -308,7 +308,7 @@ where
 impl<'txn> Cursor<'txn, RW> {
     /// Puts a key/data pair into the database. The cursor will be positioned at
     /// the new data item, or on failure usually near it.
-    pub fn put(&mut self, key: &impl AsRef<[u8]>, data: &impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
+    pub fn put(&mut self, key: impl AsRef<[u8]>, data: impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
         let key = key.as_ref();
         let data = data.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
