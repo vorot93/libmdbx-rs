@@ -16,6 +16,7 @@ use crate::{
     Error,
     Stat,
     Transaction,
+    RO,
 };
 use libc::{
     c_uint,
@@ -227,9 +228,4 @@ impl<'txn, 'env> Database<'env, 'txn, RW> {
     }
 }
 
-unsafe impl<'env, 'txn, K> Send for Database<'env, 'txn, K>
-where
-    K: TransactionKind,
-    Transaction<'env, K>: Send,
-{
-}
+unsafe impl<'env, 'txn> Send for Database<'env, 'txn, RO> {}

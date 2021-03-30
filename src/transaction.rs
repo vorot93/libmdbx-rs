@@ -188,7 +188,6 @@ where
 }
 
 unsafe impl<'env> Send for Transaction<'env, RO> {}
-unsafe impl<'env> Sync for Transaction<'env, RO> {}
 
 #[cfg(test)]
 mod test {

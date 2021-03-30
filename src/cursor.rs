@@ -11,6 +11,7 @@ use crate::{
         RW,
     },
     util::freeze_bytes,
+    RO,
 };
 use ffi::{
     MDBX_cursor_op,
@@ -377,7 +378,7 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
     }
 }
 
-unsafe impl<'txn, K> Send for Cursor<'txn, K> where K: TransactionKind {}
+unsafe impl<'txn> Send for Cursor<'txn, RO> {}
 
 impl<'txn, K> IntoIterator for Cursor<'txn, K>
 where
