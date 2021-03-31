@@ -64,10 +64,10 @@ where
 {
     /// Creates a new read-only cursor in the given database and transaction.
     /// Prefer using `Transaction::open_cursor`.
-    pub(crate) fn new<'env>(db: &Database<'env, 'txn, K>) -> Result<Self> {
+    pub(crate) fn new(db: &Database<'txn, K>) -> Result<Self> {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
         unsafe {
-            mdbx_result(ffi::mdbx_cursor_open(db.txn().txn(), db.dbi(), &mut cursor))?;
+            mdbx_result(ffi::mdbx_cursor_open(db.txn(), db.dbi(), &mut cursor))?;
         }
         Ok(Self {
             cursor,

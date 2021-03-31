@@ -119,17 +119,13 @@ where
     /// The returned database handle may be shared among any transaction in the environment.
     ///
     /// The database name may not contain the null character.
-    pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'env, 'txn, K>> {
+    pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn, K>> {
         Database::new(self, name, 0)
     }
 }
 
 impl<'env> Transaction<'env, RW> {
-    fn open_db_with_flags<'txn>(
-        &'txn self,
-        name: Option<&str>,
-        flags: DatabaseFlags,
-    ) -> Result<Database<'env, 'txn, RW>> {
+    fn open_db_with_flags<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
         Database::new(self, name, flags.bits())
     }
 
@@ -145,7 +141,7 @@ impl<'env> Transaction<'env, RW> {
     ///
     /// This function will fail with `Error::BadRslot` if called by a thread with an open
     /// transaction.
-    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'env, 'txn, RW>> {
+    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
         self.open_db_with_flags(name, flags | DatabaseFlags::CREATE)
     }
 
