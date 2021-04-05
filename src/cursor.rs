@@ -49,7 +49,7 @@ use std::{
     result,
 };
 
-/// A read-only cursor for navigating the items within a database.
+/// A read cursor for navigating the items within a database.
 pub struct Cursor<'txn, K>
 where
     K: TransactionKind,
@@ -62,8 +62,6 @@ impl<'txn, K> Cursor<'txn, K>
 where
     K: TransactionKind,
 {
-    /// Creates a new read-only cursor in the given database and transaction.
-    /// Prefer using `Transaction::open_cursor`.
     pub(crate) fn new(db: &Database<'txn, K>) -> Result<Self> {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
         unsafe {
