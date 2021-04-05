@@ -1,4 +1,5 @@
 use crate::{
+    environment::EnvironmentKind,
     error::{
         mdbx_result,
         Result,
@@ -52,7 +53,11 @@ where
     ///
     /// Prefer using `Environment::open_db`, `Environment::create_db`, `TransactionExt::open_db`,
     /// or `RwTransaction::create_db`.
-    pub(crate) fn new<'env>(txn: &'txn Transaction<'env, K>, name: Option<&str>, flags: c_uint) -> Result<Self> {
+    pub(crate) fn new<'env, E: EnvironmentKind>(
+        txn: &'txn Transaction<'env, K, E>,
+        name: Option<&str>,
+        flags: c_uint,
+    ) -> Result<Self> {
         let c_name = name.map(|n| CString::new(n).unwrap());
         let name_ptr = if let Some(c_name) = &c_name {
             c_name.as_ptr()
@@ -69,7 +74,7 @@ where
         })
     }
 
-    pub(crate) fn freelist_db<'env>(txn: &'txn Transaction<'env, K>) -> Self {
+    pub(crate) fn freelist_db<'env, E: EnvironmentKind>(txn: &'txn Transaction<'env, K, E>) -> Self {
         Database {
             dbi: 0,
             txn: txn.txn(),

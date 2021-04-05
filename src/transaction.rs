@@ -6,7 +6,11 @@ use ffi::{
 
 use crate::{
     database::Database,
-    environment::Environment,
+    environment::{
+        EnvironmentKind,
+        GenericEnvironment,
+        NoWriteMap,
+    },
     error::{
         mdbx_result,
         Result,
@@ -54,21 +58,23 @@ impl TransactionKind for RW {
 /// An MDBX transaction.
 ///
 /// All database operations require a transaction.
-pub struct Transaction<'env, K>
+pub struct Transaction<'env, K, E>
 where
     K: TransactionKind,
+    E: EnvironmentKind,
 {
     txn: *mut ffi::MDBX_txn,
     committed: bool,
-    env: &'env Environment,
+    env: &'env GenericEnvironment<E>,
     _marker: PhantomData<fn(K)>,
 }
 
-impl<'env, K> Transaction<'env, K>
+impl<'env, K, E> Transaction<'env, K, E>
 where
     K: TransactionKind,
+    E: EnvironmentKind,
 {
-    pub(crate) fn new(env: &'env Environment) -> Result<Self> {
+    pub(crate) fn new(env: &'env GenericEnvironment<E>) -> Result<Self> {
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_txn_begin_ex(env.env(), ptr::null_mut(), K::OPEN_FLAGS, &mut txn, ptr::null_mut()))?;
@@ -90,7 +96,7 @@ where
     }
 
     /// Returns a raw pointer to the MDBX environment.
-    pub fn env(&self) -> &Environment {
+    pub fn env(&self) -> &GenericEnvironment<E> {
         self.env
     }
 
@@ -124,7 +130,10 @@ where
     }
 }
 
-impl<'env> Transaction<'env, RW> {
+impl<'env, E> Transaction<'env, RW, E>
+where
+    E: EnvironmentKind,
+{
     fn open_db_with_flags<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
         Database::new(self, name, flags.bits())
     }
@@ -144,9 +153,11 @@ impl<'env> Transaction<'env, RW> {
     pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
         self.open_db_with_flags(name, flags | DatabaseFlags::CREATE)
     }
+}
 
+impl<'env> Transaction<'env, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
-    pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW>> {
+    pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
         let mut nested: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             let env: *mut ffi::MDBX_env = ffi::mdbx_txn_env(self.txn());
@@ -161,18 +172,20 @@ impl<'env> Transaction<'env, RW> {
     }
 }
 
-impl<'env, K> fmt::Debug for Transaction<'env, K>
+impl<'env, K, E> fmt::Debug for Transaction<'env, K, E>
 where
     K: TransactionKind,
+    E: EnvironmentKind,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("RoTransaction").finish()
     }
 }
 
-impl<'env, K> Drop for Transaction<'env, K>
+impl<'env, K, E> Drop for Transaction<'env, K, E>
 where
     K: TransactionKind,
+    E: EnvironmentKind,
 {
     fn drop(&mut self) {
         if !self.committed {
@@ -183,14 +196,14 @@ where
     }
 }
 
-unsafe impl<'env> Send for Transaction<'env, RO> {}
+unsafe impl<'env, E> Send for Transaction<'env, RO, E> where E: EnvironmentKind {}
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use crate::{
         error::*,
         flags::*,
+        Environment,
     };
     use lifetimed_bytes::Bytes;
     use std::{

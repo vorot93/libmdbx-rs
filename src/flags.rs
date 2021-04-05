@@ -20,7 +20,6 @@ impl Default for SyncMode {
 pub enum Mode {
     ReadOnly,
     ReadWrite {
-        write_map: bool,
         sync_mode: SyncMode,
     },
 }
@@ -28,7 +27,6 @@ pub enum Mode {
 impl Default for Mode {
     fn default() -> Self {
         Self::ReadWrite {
-            write_map: false,
             sync_mode: SyncMode::default(),
         }
     }
@@ -76,13 +74,8 @@ impl EnvironmentFlags {
                 flags |= ffi::MDBX_RDONLY;
             },
             Mode::ReadWrite {
-                write_map,
                 sync_mode,
             } => {
-                if write_map {
-                    flags |= ffi::MDBX_WRITEMAP;
-                }
-
                 flags |= match sync_mode {
                     SyncMode::Durable => ffi::MDBX_SYNC_DURABLE,
                     SyncMode::NoMetaSync => ffi::MDBX_NOMETASYNC,

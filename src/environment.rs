@@ -25,6 +25,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::CString,
     fmt,
+    marker::PhantomData,
     mem,
     ops::{
         Bound,
@@ -47,20 +48,55 @@ impl OsStrExtLmdb for OsStr {
     }
 }
 
-/// An environment supports multiple databases, all residing in the same shared-memory map.
-pub struct Environment {
-    env: *mut ffi::MDBX_env,
+mod private {
+    use super::*;
+
+    pub trait Sealed {}
+
+    impl<'env> Sealed for NoWriteMap {}
+    impl<'env> Sealed for WriteMap {}
 }
 
-impl Environment {
+pub trait EnvironmentKind: private::Sealed {
+    const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
+}
+
+#[derive(Debug)]
+pub struct NoWriteMap;
+#[derive(Debug)]
+pub struct WriteMap;
+
+impl EnvironmentKind for NoWriteMap {
+    const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_ENV_DEFAULTS;
+}
+impl EnvironmentKind for WriteMap {
+    const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_WRITEMAP;
+}
+
+pub type Environment = GenericEnvironment<NoWriteMap>;
+
+/// An environment supports multiple databases, all residing in the same shared-memory map.
+pub struct GenericEnvironment<E>
+where
+    E: EnvironmentKind,
+{
+    env: *mut ffi::MDBX_env,
+    _marker: PhantomData<E>,
+}
+
+impl<E> GenericEnvironment<E>
+where
+    E: EnvironmentKind,
+{
     /// Creates a new builder for specifying options for opening an LMDB environment.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new() -> EnvironmentBuilder {
+    pub fn new() -> EnvironmentBuilder<E> {
         EnvironmentBuilder {
             flags: EnvironmentFlags::default(),
             max_readers: None,
             max_dbs: None,
             geometry: None,
+            _marker: PhantomData,
         }
     }
 
@@ -73,13 +109,13 @@ impl Environment {
     }
 
     /// Create a read-only transaction for use with the environment.
-    pub fn begin_ro_txn(&self) -> Result<Transaction<'_, RO>> {
+    pub fn begin_ro_txn(&self) -> Result<Transaction<'_, RO, E>> {
         Transaction::new(self)
     }
 
     /// Create a read-write transaction for use with the environment. This method will block while
     /// there are any other read-write transactions open on the environment.
-    pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW>> {
+    pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW, E>> {
         Transaction::new(self)
     }
 
@@ -260,16 +296,22 @@ impl Info {
     }
 }
 
-unsafe impl Send for Environment {}
-unsafe impl Sync for Environment {}
+unsafe impl<E> Send for GenericEnvironment<E> where E: EnvironmentKind {}
+unsafe impl<E> Sync for GenericEnvironment<E> where E: EnvironmentKind {}
 
-impl fmt::Debug for Environment {
+impl<E> fmt::Debug for GenericEnvironment<E>
+where
+    E: EnvironmentKind,
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("Environment").finish()
     }
 }
 
-impl Drop for Environment {
+impl<E> Drop for GenericEnvironment<E>
+where
+    E: EnvironmentKind,
+{
     fn drop(&mut self) {
         unsafe {
             ffi::mdbx_env_close_ex(self.env, false);
@@ -308,21 +350,28 @@ impl<R> Default for Geometry<R> {
 
 /// Options for opening or creating an environment.
 #[derive(Debug, Clone)]
-pub struct EnvironmentBuilder {
+pub struct EnvironmentBuilder<E>
+where
+    E: EnvironmentKind,
+{
     flags: EnvironmentFlags,
     max_readers: Option<c_uint>,
     max_dbs: Option<usize>,
     geometry: Option<Geometry<(Option<usize>, Option<usize>)>>,
+    _marker: PhantomData<E>,
 }
 
-impl EnvironmentBuilder {
+impl<E> EnvironmentBuilder<E>
+where
+    E: EnvironmentKind,
+{
     /// Open an environment.
     ///
     /// On UNIX, the database files will be opened with 644 permissions.
     ///
     /// The path may not contain the null character, Windows UNC (Uniform Naming Convention)
     /// paths are not supported either.
-    pub fn open(&self, path: &Path) -> Result<Environment> {
+    pub fn open(&self, path: &Path) -> Result<GenericEnvironment<E>> {
         self.open_with_permissions(path, 0o644)
     }
 
@@ -332,7 +381,7 @@ impl EnvironmentBuilder {
     ///
     /// The path may not contain the null character, Windows UNC (Uniform Naming Convention)
     /// paths are not supported either.
-    pub fn open_with_permissions(&self, path: &Path, mode: ffi::mdbx_mode_t) -> Result<Environment> {
+    pub fn open_with_permissions(&self, path: &Path, mode: ffi::mdbx_mode_t) -> Result<GenericEnvironment<E>> {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             lmdb_try!(ffi::mdbx_env_create(&mut env));
@@ -372,7 +421,7 @@ impl EnvironmentBuilder {
                     Ok(path) => path,
                     Err(..) => return Err(crate::Error::Invalid),
                 };
-                lmdb_try!(ffi::mdbx_env_open(env, path.as_ptr(), self.flags.make_flags(), mode));
+                lmdb_try!(ffi::mdbx_env_open(env, path.as_ptr(), self.flags.make_flags() | E::EXTRA_FLAGS, mode));
 
                 Ok(())
             })() {
@@ -381,13 +430,14 @@ impl EnvironmentBuilder {
                 return Err(e);
             }
         }
-        Ok(Environment {
+        Ok(GenericEnvironment {
             env,
+            _marker: PhantomData,
         })
     }
 
     /// Sets the provided options in the environment.
-    pub fn set_flags(&mut self, flags: EnvironmentFlags) -> &mut EnvironmentBuilder {
+    pub fn set_flags(&mut self, flags: EnvironmentFlags) -> &mut Self {
         self.flags = flags;
         self
     }
@@ -399,7 +449,7 @@ impl EnvironmentBuilder {
     /// table slot to the current thread until the environment closes or the thread exits. If
     /// `MDB_NOTLS` is in use, `Environment::open_txn` instead ties the slot to the `Transaction`
     /// object until it or the `Environment` object is destroyed.
-    pub fn set_max_readers(&mut self, max_readers: c_uint) -> &mut EnvironmentBuilder {
+    pub fn set_max_readers(&mut self, max_readers: c_uint) -> &mut Self {
         self.max_readers = Some(max_readers);
         self
     }
@@ -413,13 +463,13 @@ impl EnvironmentBuilder {
     /// Currently a moderate number of slots are cheap but a huge number gets
     /// expensive: 7-120 words per transaction, and every `Transaction::open_db`
     /// does a linear search of the opened slots.
-    pub fn set_max_dbs(&mut self, max_dbs: usize) -> &mut EnvironmentBuilder {
+    pub fn set_max_dbs(&mut self, max_dbs: usize) -> &mut Self {
         self.max_dbs = Some(max_dbs);
         self
     }
 
     /// Set all size-related parameters of environment, including page size and the min/max size of the memory map.
-    pub fn set_geometry<R: RangeBounds<usize>>(&mut self, geometry: Geometry<R>) -> &mut EnvironmentBuilder {
+    pub fn set_geometry<R: RangeBounds<usize>>(&mut self, geometry: Geometry<R>) -> &mut Self {
         let convert_bound = |bound: Bound<&usize>| match bound {
             Bound::Included(v) | Bound::Excluded(v) => Some(*v),
             _ => None,
