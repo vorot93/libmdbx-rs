@@ -13,6 +13,7 @@ pub use crate::{
     environment::{
         Environment,
         EnvironmentBuilder,
+        EnvironmentKind,
         GenericEnvironment,
         Geometry,
         Info,
