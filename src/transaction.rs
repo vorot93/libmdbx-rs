@@ -33,7 +33,7 @@ mod private {
     impl<'env> Sealed for RW {}
 }
 
-pub trait TransactionKind: private::Sealed {
+pub trait TransactionKind: private::Sealed + 'static {
     #[doc(hidden)]
     const ONLY_CLEAN: bool;
 

@@ -57,7 +57,7 @@ mod private {
     impl<'env> Sealed for WriteMap {}
 }
 
-pub trait EnvironmentKind: private::Sealed {
+pub trait EnvironmentKind: private::Sealed + 'static {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
 }
 
