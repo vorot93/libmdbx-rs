@@ -16,7 +16,9 @@ pub use crate::{
         GenericEnvironment,
         Geometry,
         Info,
+        NoWriteMap,
         Stat,
+        WriteMap,
     },
     error::{
         Error,
