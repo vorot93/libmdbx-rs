@@ -71,8 +71,7 @@ impl Error {
     }
 
     /// Converts an `Error` to the raw error code.
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    pub fn to_err_code(&self) -> c_int {
+    pub fn to_err_code(self) -> c_int {
         match self {
             Error::KeyExist => ffi::MDBX_KEYEXIST,
             Error::NotFound => ffi::MDBX_NOTFOUND,
@@ -99,7 +98,7 @@ impl Error {
             Error::WannaRecovery => ffi::MDBX_WANNA_RECOVERY,
             Error::KeyMismatch => ffi::MDBX_EKEYMISMATCH,
             Error::TooLarge => ffi::MDBX_TOO_LARGE,
-            Error::Other(err_code) => *err_code,
+            Error::Other(err_code) => err_code,
         }
     }
 }
