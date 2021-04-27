@@ -34,16 +34,6 @@ pub use crate::{
     },
 };
 
-macro_rules! lmdb_try {
-    ($expr:expr) => {{
-        match $expr {
-            ::ffi::MDBX_SUCCESS => false,
-            ::ffi::MDBX_RESULT_TRUE => true,
-            err_code => return Err(crate::Error::from_err_code(err_code)),
-        }
-    }};
-}
-
 mod cursor;
 mod database;
 mod environment;

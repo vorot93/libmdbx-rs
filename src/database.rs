@@ -98,11 +98,11 @@ where
     ///
     /// This function retrieves the data associated with the given key in the
     /// database. If the database supports duplicate keys
-    /// (`DatabaseFlags::DUP_SORT`) then the first data item for the key will be
+    /// ([DatabaseFlags::DUP_SORT]) then the first data item for the key will be
     /// returned. Retrieval of other items requires the use of
-    /// `Transaction::cursor_get`. If the item is not in the database, then
-    /// `Error::NotFound` will be returned.
-    pub fn get(&self, key: impl AsRef<[u8]>) -> Result<Bytes<'txn>> {
+    /// [Cursor]. If the item is not in the database, then
+    /// [None] will be returned.
+    pub fn get(&self, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -114,7 +114,8 @@ where
         };
         unsafe {
             match ffi::mdbx_get(self.txn, self.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => freeze_bytes::<K>(self.txn, &data_val),
+                ffi::MDBX_SUCCESS => freeze_bytes::<K>(self.txn, &data_val).map(Some),
+                ffi::MDBX_NOTFOUND => Ok(None),
                 err_code => Err(Error::from_err_code(err_code)),
             }
         }
@@ -138,7 +139,7 @@ where
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            lmdb_try!(ffi::mdbx_dbi_stat(self.txn, self.dbi(), stat.mdb_stat(), size_of::<Stat>()));
+            mdbx_result(ffi::mdbx_dbi_stat(self.txn, self.dbi(), stat.mdb_stat(), size_of::<Stat>()))?;
             Ok(stat)
         }
     }
@@ -150,7 +151,7 @@ impl<'txn> Database<'txn, RW> {
     /// This function stores key/data pairs in the database. The default
     /// behavior is to enter the new key/data pair, replacing any previously
     /// existing key if duplicates are disallowed, or adding a duplicate data
-    /// item if duplicates are allowed (`DatabaseFlags::DUP_SORT`).
+    /// item if duplicates are allowed ([DatabaseFlags::DUP_SORT]).
     pub fn put(&self, key: impl AsRef<[u8]>, data: impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
         let key = key.as_ref();
         let data = data.as_ref();
@@ -197,7 +198,7 @@ impl<'txn> Database<'txn, RW> {
     ///
     /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
     /// If the data parameter is non-NULL only the matching data item will be deleted.
-    /// Otherwise, if data parameter is `None`, any/all value(s) for specified key will be deleted.
+    /// Otherwise, if data parameter is [None], any/all value(s) for specified key will be deleted.
     pub fn del(&self, key: impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
@@ -230,7 +231,7 @@ impl<'txn> Database<'txn, RW> {
     /// Drops the database from the environment.
     ///
     /// # Safety
-    /// Do close ALL other `Database` and `Cursor` instances pointing to the same dbi BEFORE calling this function.
+    /// Caller must close ALL other [Database] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_db(self) -> Result<()> {
         mdbx_result(ffi::mdbx_drop(self.txn, self.dbi(), true))?;
 

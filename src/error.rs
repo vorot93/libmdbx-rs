@@ -38,7 +38,7 @@ pub enum Error {
 }
 
 impl Error {
-    /// Converts a raw error code to an `Error`.
+    /// Converts a raw error code to an [Error].
     pub fn from_err_code(err_code: c_int) -> Error {
         match err_code {
             ffi::MDBX_KEYEXIST => Error::KeyExist,
@@ -70,7 +70,7 @@ impl Error {
         }
     }
 
-    /// Converts an `Error` to the raw error code.
+    /// Converts an [Error] to the raw error code.
     pub fn to_err_code(self) -> c_int {
         match self {
             Error::KeyExist => ffi::MDBX_KEYEXIST,
@@ -125,6 +125,17 @@ pub fn mdbx_result(err_code: c_int) -> Result<bool> {
     }
 }
 
+#[macro_export]
+macro_rules! mdbx_try_optional {
+    ($expr:expr) => {{
+        match $expr {
+            Err(Error::NotFound) => return Ok(None),
+            Err(e) => return Err(e),
+            Ok(v) => v,
+        }
+    }};
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -132,6 +143,6 @@ mod test {
     #[test]
     fn test_description() {
         assert_eq!("Permission denied", Error::from_err_code(13).to_string());
-        assert_eq!("MDBX_NOTFOUND: No matching key/data pair found", Error::NotFound.to_string());
+        assert_eq!("MDBX_INVALID: File is not an MDBX file", Error::Invalid.to_string());
     }
 }

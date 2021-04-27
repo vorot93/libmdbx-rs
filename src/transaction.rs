@@ -116,11 +116,11 @@ where
 
     /// Opens a handle to an MDBX database.
     ///
-    /// If `name` is `None`, then the returned handle will be for the default database.
+    /// If `name` is [None], then the returned handle will be for the default database.
     ///
-    /// If `name` is not `None`, then the returned handle will be for a named database. In this
+    /// If `name` is not [None], then the returned handle will be for a named database. In this
     /// case the environment must be configured to allow named databases through
-    /// `EnvironmentBuilder::set_max_dbs`.
+    /// [EnvironmentBuilder::set_max_dbs()](crate::EnvironmentBuilder::set_max_dbs).
     ///
     /// The returned database handle may be shared among any transaction in the environment.
     ///
@@ -142,13 +142,13 @@ where
     ///
     /// If the database is already created, the given option flags will be added to it.
     ///
-    /// If `name` is `None`, then the returned handle will be for the default database.
+    /// If `name` is [None], then the returned handle will be for the default database.
     ///
-    /// If `name` is not `None`, then the returned handle will be for a named database. In this
+    /// If `name` is not [None], then the returned handle will be for a named database. In this
     /// case the environment must be configured to allow named databases through
-    /// `EnvironmentBuilder::set_max_dbs`.
+    /// [EnvironmentBuilder::set_max_dbs()](crate::EnvironmentBuilder::set_max_dbs).
     ///
-    /// This function will fail with `Error::BadRslot` if called by a thread with an open
+    /// This function will fail with [Error::BadRslot](crate::error::Error::BadRslot) if called by a thread with an open
     /// transaction.
     pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
         self.open_db_with_flags(name, flags | DatabaseFlags::CREATE)
@@ -233,13 +233,13 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        assert_eq!(b"val1", &*db.get(b"key1").unwrap());
-        assert_eq!(b"val2", &*db.get(b"key2").unwrap());
-        assert_eq!(b"val3", &*db.get(b"key3").unwrap());
-        assert_eq!(db.get(b"key").unwrap_err(), Error::NotFound);
+        assert_eq!(b"val1", &*db.get(b"key1").unwrap().unwrap());
+        assert_eq!(b"val2", &*db.get(b"key2").unwrap().unwrap());
+        assert_eq!(b"val3", &*db.get(b"key3").unwrap().unwrap());
+        assert_eq!(db.get(b"key").unwrap(), None);
 
         db.del(b"key1", None).unwrap();
-        assert_eq!(db.get(b"key1").unwrap_err(), Error::NotFound);
+        assert_eq!(db.get(b"key1").unwrap(), None);
     }
 
     #[test]
@@ -305,11 +305,11 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        assert_eq!(Bytes::from(b"val1"), db.get(b"key1").unwrap());
-        assert_eq!(db.get(b"key"), Err(Error::NotFound));
+        assert_eq!(Bytes::from(b"val1"), db.get(b"key1").unwrap().unwrap());
+        assert_eq!(db.get(b"key").unwrap(), None);
 
         db.del(b"key1", None).unwrap();
-        assert_eq!(db.get(b"key1"), Err(Error::NotFound));
+        assert_eq!(db.get(b"key1").unwrap(), None);
     }
 
     #[test]
@@ -324,13 +324,13 @@ mod test {
             let nested = txn.begin_nested_txn().unwrap();
             let db = nested.open_db(None).unwrap();
             db.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
-            assert_eq!(db.get(b"key1").unwrap(), Bytes::from(b"val1"));
-            assert_eq!(db.get(b"key2").unwrap(), Bytes::from(b"val2"));
+            assert_eq!(db.get(b"key1").unwrap().unwrap(), Bytes::from(b"val1"));
+            assert_eq!(db.get(b"key2").unwrap().unwrap(), Bytes::from(b"val2"));
         }
 
         let db = txn.open_db(None).unwrap();
-        assert_eq!(db.get(b"key1").unwrap(), Bytes::from(b"val1"));
-        assert_eq!(db.get(b"key2"), Err(Error::NotFound));
+        assert_eq!(db.get(b"key1").unwrap().unwrap(), Bytes::from(b"val1"));
+        assert_eq!(db.get(b"key2").unwrap(), None);
     }
 
     #[test]
@@ -351,7 +351,7 @@ mod test {
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        assert_eq!(txn.open_db(None).unwrap().get(b"key").unwrap_err(), Error::NotFound);
+        assert_eq!(txn.open_db(None).unwrap().get(b"key").unwrap(), None);
     }
 
     #[test]
@@ -408,14 +408,14 @@ mod test {
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    assert_eq!(db.get(key), Err(Error::NotFound));
+                    assert_eq!(db.get(key), Ok(None));
                 }
                 reader_barrier.wait();
                 reader_barrier.wait();
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    db.get(key).unwrap() == val
+                    db.get(key).unwrap().unwrap() == val
                 }
             }));
         }
@@ -460,7 +460,7 @@ mod test {
         let db = txn.open_db(None).unwrap();
 
         for i in 0..n {
-            assert_eq!(format!("{}{}", val, i).as_bytes(), db.get(&format!("{}{}", key, i)).unwrap());
+            assert_eq!(format!("{}{}", val, i).as_bytes(), db.get(&format!("{}{}", key, i)).unwrap().unwrap());
         }
     }
 

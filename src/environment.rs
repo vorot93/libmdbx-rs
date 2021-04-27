@@ -128,7 +128,7 @@ where
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            lmdb_try!(ffi::mdbx_env_stat_ex(self.env(), ptr::null(), stat.mdb_stat(), size_of::<Stat>()));
+            mdbx_result(ffi::mdbx_env_stat_ex(self.env(), ptr::null(), stat.mdb_stat(), size_of::<Stat>()))?;
             Ok(stat)
         }
     }
@@ -137,14 +137,14 @@ where
     pub fn info(&self) -> Result<Info> {
         unsafe {
             let mut info = Info(mem::zeroed());
-            lmdb_try!(ffi::mdbx_env_info_ex(self.env(), ptr::null(), &mut info.0, size_of::<Info>()));
+            mdbx_result(ffi::mdbx_env_info_ex(self.env(), ptr::null(), &mut info.0, size_of::<Info>()))?;
             Ok(info)
         }
     }
 
     /// Retrieves the total number of pages on the freelist.
     ///
-    /// Along with `Environment::info()`, this can be used to calculate the exact number
+    /// Along with [GenericEnvironment::info()], this can be used to calculate the exact number
     /// of used pages as well as free pages in this environment.
     ///
     /// ```ignore
@@ -384,7 +384,7 @@ where
     pub fn open_with_permissions(&self, path: &Path, mode: ffi::mdbx_mode_t) -> Result<GenericEnvironment<E>> {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
-            lmdb_try!(ffi::mdbx_env_create(&mut env));
+            mdbx_result(ffi::mdbx_env_create(&mut env))?;
             if let Err(e) = (|| {
                 if let Some(geometry) = &self.geometry {
                     let mut min_size = -1;
@@ -400,7 +400,7 @@ where
                         }
                     }
 
-                    lmdb_try!(ffi::mdbx_env_set_geometry(
+                    mdbx_result(ffi::mdbx_env_set_geometry(
                         env,
                         min_size,
                         -1,
@@ -411,17 +411,17 @@ where
                             None => -1,
                             Some(PageSize::MinimalAcceptable) => 0,
                             Some(PageSize::Set(size)) => size as isize,
-                        }
-                    ));
+                        },
+                    ))?;
                 }
                 if let Some(max_dbs) = self.max_dbs {
-                    lmdb_try!(ffi::mdbx_env_set_option(env, ffi::MDBX_opt_max_db, max_dbs as u64));
+                    mdbx_result(ffi::mdbx_env_set_option(env, ffi::MDBX_opt_max_db, max_dbs as u64))?;
                 }
                 let path = match CString::new(path.as_os_str().as_bytes()) {
                     Ok(path) => path,
                     Err(..) => return Err(crate::Error::Invalid),
                 };
-                lmdb_try!(ffi::mdbx_env_open(env, path.as_ptr(), self.flags.make_flags() | E::EXTRA_FLAGS, mode));
+                mdbx_result(ffi::mdbx_env_open(env, path.as_ptr(), self.flags.make_flags() | E::EXTRA_FLAGS, mode))?;
 
                 Ok(())
             })() {
@@ -446,9 +446,7 @@ where
     ///
     /// This defines the number of slots in the lock table that is used to track readers in the
     /// the environment. The default is 126. Starting a read-only transaction normally ties a lock
-    /// table slot to the current thread until the environment closes or the thread exits. If
-    /// `MDB_NOTLS` is in use, `Environment::open_txn` instead ties the slot to the `Transaction`
-    /// object until it or the `Environment` object is destroyed.
+    /// table slot to the [Transaction] object until it or the [GenericEnvironment] object is destroyed.
     pub fn set_max_readers(&mut self, max_readers: c_uint) -> &mut Self {
         self.max_readers = Some(max_readers);
         self
@@ -461,7 +459,7 @@ where
     /// unnamed database can ignore this option.
     ///
     /// Currently a moderate number of slots are cheap but a huge number gets
-    /// expensive: 7-120 words per transaction, and every `Transaction::open_db`
+    /// expensive: 7-120 words per transaction, and every [Transaction::open_db()]
     /// does a linear search of the opened slots.
     pub fn set_max_dbs(&mut self, max_dbs: usize) -> &mut Self {
         self.max_dbs = Some(max_dbs);
