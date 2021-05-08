@@ -57,9 +57,9 @@ pub fn generate() {
 
     let bindings = bindgen::Builder::default()
         .header(mdbx.join("mdbx.h").to_string_lossy())
-        .whitelist_var("^(MDBX|mdbx)_.*")
-        .whitelist_type("^(MDBX|mdbx)_.*")
-        .whitelist_function("^(MDBX|mdbx)_.*")
+        .allowlist_var("^(MDBX|mdbx)_.*")
+        .allowlist_type("^(MDBX|mdbx)_.*")
+        .allowlist_function("^(MDBX|mdbx)_.*")
         .raw_line(
             "
 #[cfg(unix)]
@@ -79,8 +79,8 @@ pub type mdbx_filehandle_t = *mut ::libc::c_void;
         )
         .size_t_is_usize(true)
         .ctypes_prefix("::libc")
-        .blacklist_item("mode_t")
-        .blacklist_item("mdbx_filehandle_t")
+        .blocklist_item("mode_t")
+        .blocklist_item("mdbx_filehandle_t")
         .parse_callbacks(Box::new(Callbacks))
         .layout_tests(false)
         .prepend_enum_name(false)

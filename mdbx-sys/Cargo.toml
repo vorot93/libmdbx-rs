@@ -7,7 +7,8 @@ edition = "2018"
 authors = [
     "Dan Burkert <dan@danburkert.com>",
     "Victor Porof <vporof@mozilla.com>",
-    "Kerollmops <renault.cle@gmail.com>"
+    "Kerollmops <renault.cle@gmail.com>",
+    "Artem Vorotnikov <artem@vorotnikov.me>",
 ]
 license = "Apache-2.0"
 description = "Rust bindings for mdbx."
@@ -29,4 +30,4 @@ libc = "0.2"
 
 [build-dependencies]
 cc = "1.0"
-bindgen = { version = "0.57", default-features = false, optional = true, features = ["runtime"] }
+bindgen = { version = "0.58", default-features = false, optional = true, features = ["runtime"] }
