@@ -18,20 +18,18 @@ keywords = ["LMDB", "MDBX", "database", "storage-engine", "bindings", "library"]
 categories = ["database"]
 
 exclude = [
-  # Exclude CI config files from package.
+  
   "/.appveyor.yml",
   "/.travis.yml",
   "/azure-pipelines-template.yml",
   "/azure-pipelines.yml",
-]
+] # Exclude CI config files from package.
 
 [lib]
 name = "mdbx"
 
 [workspace]
-members = [
-  "mdbx-sys",
-]
+members = ["mdbx-sys"]
 
 [dependencies]
 bitflags = "1"
@@ -39,14 +37,6 @@ byteorder = "1"
 libc = "0.2"
 lifetimed-bytes = { git = "https://github.com/vorot93/lifetimed-bytes" }
 
-# In order to ensure that we test lmdb-rkv in CI against the in-tree version
-# of lmdb-rkv-sys, we specify the dependency as a path here.
-#
-# But we can't publish the lmdb-rkv crate to crates.io with a path dependency,
-# so we have to temporarily change this to point to the current version
-# of lmdb-rkv-sys on crates.io when publishing lmdb-rkv to that crate registry.
-#
-# (See "Publishing to crates.io" in README.md for more information.)
 ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 
 [dev-dependencies]

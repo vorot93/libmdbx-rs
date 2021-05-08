@@ -88,7 +88,7 @@ impl<E> GenericEnvironment<E>
 where
     E: EnvironmentKind,
 {
-    /// Creates a new builder for specifying options for opening an LMDB environment.
+    /// Creates a new builder for specifying options for opening an MDBX environment.
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> EnvironmentBuilder<E> {
         EnvironmentBuilder {
@@ -191,7 +191,7 @@ where
 
 /// Environment statistics.
 ///
-/// Contains information about the size and layout of an LMDB environment or database.
+/// Contains information about the size and layout of an MDBX environment or database.
 #[repr(transparent)]
 pub struct Stat(ffi::MDBX_stat);
 

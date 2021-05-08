@@ -1,7 +1,5 @@
 //! Idiomatic and safe APIs for interacting with the
-//! [Lightning Memory-mapped Database (LMDB)](https://symas.com/lmdb).
-
-#![doc(html_root_url = "https://docs.rs/mdbx/0.1.0")]
+//! [libmdbx](https://erthink.github.io/libmdbx/).
 
 pub use crate::{
     cursor::{
@@ -69,7 +67,7 @@ mod test_utils {
                 size: Some(1_000_000..1_000_000),
                 ..Default::default()
             });
-            builder.open(dir.path()).expect("open lmdb env")
+            builder.open(dir.path()).expect("open mdbx env")
         };
 
         for height in 0..1000 {
