@@ -79,7 +79,13 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" AND
   set(MDBX_AMALGAMATED_SOURCE TRUE)
   set(MDBX_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 else()
-  message(FATAL_ERROR "Please use libmdbx as a git-submodule or the amalgamated source code")
+  message(FATAL_ERROR "\n"
+    "Please don't use tarballs nor zips which are automatically provided by Github!  "
+    "These archives do not contain version information and thus are unfit to build libmdbx.  "
+    "You can vote for ability of disabling auto-creation such unsuitable archives at https://github.community/t/disable-tarball\n"
+    "Instead of above, just clone the git repository, either download a tarball or zip with the properly amalgamated source core.  "
+    "For embedding libmdbx use a git-submodule or the amalgamated source code.\n"
+    "Please, avoid using any other techniques.")
 endif()
 
 if(DEFINED PROJECT_NAME)
@@ -117,11 +123,13 @@ else()
   enable_language(CXX)
 endif()
 
+# Set default build type to Release. This is to ease a User's life.
 if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE MinSizeRel CACHE STRING
+  set(CMAKE_BUILD_TYPE Release CACHE STRING
     "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
     FORCE)
 endif()
+string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPERCASE)
 
 if(NOT_SUBPROJECT AND (CMAKE_CROSSCOMPILING OR IOS))
   set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -164,14 +172,6 @@ if(CMAKE_C_COMPILER_ID STREQUAL "MSVC" AND MSVC_VERSION LESS 1900)
   message(SEND_ERROR "MSVC compiler ${MSVC_VERSION} is too old for building MDBX."
     " At least 'Microsoft Visual Studio 2015' is required.")
 endif()
-
-# Set default build type to Release. This is to ease a User's life.
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Release CACHE STRING
-    "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel."
-    FORCE)
-endif()
-string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UPPERCASE)
 
 set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
@@ -449,11 +449,8 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin" OR IOS)
 endif()
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
   if(MDBX_NTDLL_EXTRA_IMPLIB)
-    add_mdbx_option(MDBX_AVOID_CRT "Avoid dependence from MSVC CRT and use ntdll.dll instead" OFF)
+    add_mdbx_option(MDBX_WITHOUT_MSVC_CRT "Avoid dependence from MSVC CRT and use ntdll.dll instead" OFF)
   endif()
-  add_mdbx_option(MDBX_CONFIG_MANUAL_TLS_CALLBACK
-    "Provide mdbx_dll_handler() for manual initialization" OFF)
-  mark_as_advanced(MDBX_CONFIG_MANUAL_TLS_CALLBACK)
 else()
   add_mdbx_option(MDBX_USE_OFDLOCKS "Use Open file description locks (aka OFD locks, non-POSIX)" AUTO)
   mark_as_advanced(MDBX_USE_OFDLOCKS)
@@ -463,9 +460,15 @@ mark_as_advanced(MDBX_LOCKING)
 add_mdbx_option(MDBX_TRUST_RTC "Does a system have battery-backed Real-Time Clock or just a fake" AUTO)
 mark_as_advanced(MDBX_TRUST_RTC)
 option(MDBX_FORCE_ASSERTIONS "Force enable assertion checking" OFF)
+option(MDBX_DISABLE_PAGECHECKS "Disable some checks to reduce an overhead and detection probability of database corruption to a values closer to the LMDB" OFF)
 
 if(NOT MDBX_AMALGAMATED_SOURCE)
-  add_mdbx_option(MDBX_ALLOY_BUILD "Build MDBX library through single/alloyed object file" ON)
+  if(CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE_UPPERCASE STREQUAL "DEBUG")
+    set(MDBX_ALLOY_BUILD_DEFAULT OFF)
+  else()
+    set(MDBX_ALLOY_BUILD_DEFAULT ON)
+  endif()
+  add_mdbx_option(MDBX_ALLOY_BUILD "Build MDBX library through single/alloyed object file" ${MDBX_ALLOY_BUILD_DEFAULT})
 endif()
 
 if((MDBX_BUILD_TOOLS OR MDBX_ENABLE_TESTS) AND MDBX_BUILD_SHARED_LIBRARY)
@@ -478,7 +481,7 @@ if(CMAKE_CXX_COMPILER_LOADED AND MDBX_CXX_STANDARD GREATER_EQUAL 11 AND MDBX_CXX
   if(NOT MDBX_AMALGAMATED_SOURCE)
     option(MDBX_ENABLE_TESTS "Build MDBX tests" ${BUILD_TESTING})
   endif()
-  if(NOT MDBX_AVOID_CRT
+  if(NOT MDBX_WITHOUT_MSVC_CRT
       AND NOT (CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.8)
       AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4)
       AND NOT (MSVC AND MSVC_VERSION LESS 1900))
@@ -561,8 +564,8 @@ endmacro()
 macro(libmdbx_setup_libs TARGET MODE)
   target_link_libraries(${TARGET} ${MODE} Threads::Threads)
   if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    target_link_libraries(${TARGET} ${MODE} ntdll.lib)
-    if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_AVOID_CRT)
+    target_link_libraries(${TARGET} ${MODE} ntdll)
+    if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_WITHOUT_MSVC_CRT)
       target_link_libraries(${TARGET} ${MODE} ntdll_extra)
     endif()
   elseif(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS" OR ${CMAKE_SYSTEM_NAME} STREQUAL "Solaris")
@@ -601,7 +604,7 @@ if(MDBX_BUILD_SHARED_LIBRARY)
   target_setup_options(mdbx)
   libmdbx_setup_libs(mdbx PRIVATE)
   if(MSVC)
-    if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_AVOID_CRT)
+    if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_WITHOUT_MSVC_CRT)
       set_property(TARGET mdbx PROPERTY LINKER_FLAGS "/NODEFAULTLIB")
     else()
       set_property(TARGET mdbx PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
@@ -647,7 +650,7 @@ if(MDBX_BUILD_TOOLS)
     set(WINGETOPT_SRC "")
   endif()
 
-  foreach(TOOL mdbx_chk mdbx_copy mdbx_stat mdbx_dump mdbx_load)
+  foreach(TOOL mdbx_chk mdbx_copy mdbx_stat mdbx_dump mdbx_load mdbx_drop)
     add_executable(${TOOL} mdbx.h ${MDBX_SOURCE_DIR}/${TOOL}.c ${WINGETOPT_SRC})
     if(MDBX_C_STANDARD)
       set_target_properties(${TOOL} PROPERTIES
@@ -703,6 +706,7 @@ if(MDBX_BUILD_TOOLS)
     mdbx_copy
     mdbx_dump
     mdbx_load
+    mdbx_drop
     RUNTIME
     DESTINATION ${MDBX_TOOLS_INSTALL_DESTINATION}
     COMPONENT runtime)
@@ -717,6 +721,7 @@ if(MDBX_BUILD_TOOLS)
       "${MDBX_SOURCE_DIR}/man1/mdbx_copy.1"
       "${MDBX_SOURCE_DIR}/man1/mdbx_dump.1"
       "${MDBX_SOURCE_DIR}/man1/mdbx_load.1"
+      "${MDBX_SOURCE_DIR}/man1/mdbx_drop.1"
       DESTINATION ${MDBX_MAN_INSTALL_DESTINATION}
       COMPONENT doc)
   endif()

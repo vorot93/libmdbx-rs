@@ -73,7 +73,6 @@ _MithrilDB_ is a rightly relevant name.
 
 [![https://t.me/libmdbx](https://raw.githubusercontent.com/wiki/erthink/libmdbx/img/telegram.png)](https://t.me/libmdbx)
 [![GithubCI](https://github.com/erthink/libmdbx/workflows/CI/badge.svg)](https://github.com/erthink/libmdbx/actions?query=workflow%3ACI)
-[![TravisCI](https://travis-ci.org/erthink/libmdbx.svg?branch=master)](https://travis-ci.org/erthink/libmdbx)
 [![AppveyorCI](https://ci.appveyor.com/api/projects/status/ue94mlopn50dqiqg/branch/master?svg=true)](https://ci.appveyor.com/project/leo-yuriev/libmdbx/branch/master)
 [![CircleCI](https://circleci.com/gh/erthink/libmdbx/tree/master.svg?style=svg)](https://circleci.com/gh/erthink/libmdbx/tree/master)
 [![CirrusCI](https://api.cirrus-ci.com/github/erthink/libmdbx.svg)](https://cirrus-ci.com/github/erthink/libmdbx)
@@ -154,11 +153,11 @@ transaction journal. No crash recovery needed. No maintenance is required.
 
 ## Limitations
 
-- **Page size**: a power of 2, maximum `65536` bytes, default `4096` bytes.
-- **Key size**: minimum 0, maximum ≈¼ pagesize (`1300` bytes for default 4K pagesize, `21780` bytes for 64K pagesize).
-- **Value size**: minimum 0, maximum `2146435072` (`0x7FF00000`) bytes for maps, ≈¼ pagesize for multimaps (`1348` bytes for default 4K pagesize, `21828` bytes for 64K pagesize).
-- **Write transaction size**: up to `4194301` (`0x3FFFFD`) pages (16 [GiB](https://en.wikipedia.org/wiki/Gibibyte) for default 4K pagesize, 256 [GiB](https://en.wikipedia.org/wiki/Gibibyte) for 64K pagesize).
-- **Database size**: up to `2147483648` pages (8 [TiB](https://en.wikipedia.org/wiki/Tebibyte) for default 4K pagesize, 128 [TiB](https://en.wikipedia.org/wiki/Tebibyte) for 64K pagesize).
+- **Page size**: a power of 2, minimum `256` (mostly for testing), maximum `65536` bytes, default `4096` bytes.
+- **Key size**: minimum `0`, maximum ≈½ pagesize (`2022` bytes for default 4K pagesize, `32742` bytes for 64K pagesize).
+- **Value size**: minimum `0`, maximum `2146435072` (`0x7FF00000`) bytes for maps, ≈½ pagesize for multimaps (`2022` bytes for default 4K pagesize, `32742` bytes for 64K pagesize).
+- **Write transaction size**: up to `1327217884` pages (`4.944272` TiB for default 4K pagesize, `79.108351` TiB for 64K pagesize).
+- **Database size**: up to `2147483648` pages (≈`8.0` TiB for default 4K pagesize, ≈`128.0` TiB for 64K pagesize).
 - **Maximum sub-databases**: `32765`.
 
 ## Gotchas
@@ -201,13 +200,16 @@ the user's point of view.
 ## Added Features
 
 1. Keys could be more than 2 times longer than _LMDB_.
-  > For DB with default page size _libmdbx_ support keys up to 1300 bytes
-  > and up to 21780 bytes for 64K page size. _LMDB_ allows key size up to
+  > For DB with default page size _libmdbx_ support keys up to 2022 bytes
+  > and up to 32742 bytes for 64K page size. _LMDB_ allows key size up to
   > 511 bytes and may silently loses data with large values.
 
-2. Up to 20% faster than _LMDB_ in [CRUD](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete) benchmarks.
+2. Up to 30% faster than _LMDB_ in [CRUD](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete) benchmarks.
   > Benchmarks of the in-[tmpfs](https://en.wikipedia.org/wiki/Tmpfs) scenarios,
-  > that tests the speed of the engine itself, showned that _libmdbx_ 10-20% faster than _LMDB_.
+  > that tests the speed of the engine itself, showned that _libmdbx_ 10-20% faster than _LMDB_,
+  > and up to 30% faster when _libmdbx_ compiled with specific build options
+  > which downgrades several runtime checks to be match with LMDB behaviour.
+  >
   > These and other results could be easily reproduced with [ioArena](https://github.com/pmwkaa/ioarena) just by `make bench-quartet` command,
   > including comparisons with [RockDB](https://en.wikipedia.org/wiki/RocksDB)
   > and [WiredTiger](https://en.wikipedia.org/wiki/WiredTiger).
@@ -221,7 +223,7 @@ the user's point of view.
   > due to its internal limitations and unimplemented functions, i.e. the `MDBX_UNABLE_EXTEND_MAPSIZE` error will be returned.
 
 4. Automatic continuous zero-overhead database compactification.
-  > During each commit _libmdbx_ merges suitable freeing pages into unallocated area
+  > During each commit _libmdbx_ merges a freeing pages which adjacent with the unallocated area
   > at the end of file, and then truncates unused space when a lot enough of.
 
 5. The same database format for 32- and 64-bit builds.
@@ -241,31 +243,32 @@ and/or optimize query execution plans.
 8. `mdbx_chk` utility for database integrity check.
 Since version 0.9.1, the utility supports checking the database using any of the three meta pages and the ability to switch to it.
 
-9. Automated steady sync-to-disk upon several thresholds and/or timeout via cheap polling.
+9. Support for opening databases in the exclusive mode, including on a network share.
 
-10. Sequence generation and three persistent 64-bit markers.
+10. Zero-length for keys and values.
 
-11. Handle-Slow-Readers callback to resolve a database full/overflow issues due to long-lived read transaction(s).
-
-12. Support for opening databases in the exclusive mode, including on a network share.
-
-## Added Abilities
-
-1. Zero-length for keys and values.
-
-2. Ability to determine whether the particular data is on a dirty page
+11. Ability to determine whether the particular data is on a dirty page
 or not, that allows to avoid copy-out before updates.
 
-3. Ability to determine whether the cursor is pointed to a key-value
-pair, to the first, to the last, or not set to anything.
-
-4. Extended information of whole-database, sub-databases, transactions, readers enumeration.
+12. Extended information of whole-database, sub-databases, transactions, readers enumeration.
   > _libmdbx_ provides a lot of information, including dirty and leftover pages
   > for a write transaction, reading lag and holdover space for read transactions.
 
-5. Extended update and delete operations.
+13. Extended update and delete operations.
   > _libmdbx_ allows one _at once_ with getting previous value
   > and addressing the particular item from multi-value with the same key.
+
+14. Useful runtime options for tuning engine to application's requirements and use cases specific.
+
+15. Automated steady sync-to-disk upon several thresholds and/or timeout via cheap polling.
+
+16. Sequence generation and three persistent 64-bit markers.
+
+17. Handle-Slow-Readers callback to resolve a database full/overflow issues due to long-lived read transaction(s).
+
+18. Ability to determine whether the cursor is pointed to a key-value
+pair, to the first, to the last, or not set to anything.
+
 
 ## Other fixes and specifics
 
@@ -340,6 +343,13 @@ Currently, libmdbx is only available in a
 Packages support for common Linux distributions is planned in the future,
 since release the version 1.0.
 
+## Never use tarballs nor zips automatically provided by Github !
+
+Please don't use tarballs nor zips which are automatically provided by Github.
+These archives do not contain version information and thus are unfit to build _libmdbx_.
+Instead of ones just clone the git repository, either download a tarball or zip with the properly amalgamated source core.
+Moreover, please vote for [ability of disabling auto-creation such unsuitable archives](https://github.community/t/disable-tarball).
+
 ## Source code embedding
 
 _libmdbx_ provides two official ways for integration in source code form:
@@ -369,7 +379,9 @@ are completely traditional and have minimal prerequirements like
 `build-essential`, i.e. the non-obsolete C/C++ compiler and a
 [SDK](https://en.wikipedia.org/wiki/Software_development_kit) for the
 target platform. Obviously you need building tools itself, i.e. `git`,
-`cmake` or GNU `make` with `bash`.
+`cmake` or GNU `make` with `bash`. For your convenience, `make help`
+and `make options` are also available for listing existing targets
+and build options respectively.
 
 So just using CMake or GNU Make in your habitual manner and feel free to
 fill an issue or make pull request in the case something will be
@@ -427,11 +439,11 @@ recommended. Otherwise do not forget to add `ntdll.lib` to linking.
 
 Building by MinGW, MSYS or Cygwin is potentially possible. However,
 these scripts are not tested and will probably require you to modify the
-CMakeLists.txt or Makefile respectively.
+`CMakeLists.txt` or `Makefile` respectively.
 
 It should be noted that in _libmdbx_ was efforts to resolve
-runtime dependencies from CRT and other libraries Visual Studio.
-For this is enough to define the `MDBX_AVOID_CRT` during build.
+runtime dependencies from CRT and other MSVC libraries.
+For this is enough to define the `MDBX_WITHOUT_MSVC_CRT` during build.
 
 An example of running a basic test script can be found in the
 [CI-script](appveyor.yml) for [AppVeyor](https://www.appveyor.com/). To
@@ -482,8 +494,10 @@ and/or see the [mdbx.h](mdbx.h) header.
 Bindings
 ========
 
-| Runtime | GitHub | Author |
+| Runtime |  Repo  | Author |
 | ------- | ------ | ------ |
+| Ruby    | [ruby-mdbx](https://rubygems.org/gems/mdbx/) | [Mahlon E. Smith](https://github.com/mahlonsmith) |
+| Go      | [mdbx-go](https://github.com/torquem-ch/mdbx-go) | [Alex Sharov](https://github.com/AskAlexSharov) |
 | [Nim](https://en.wikipedia.org/wiki/Nim_(programming_language)) | [NimDBX](https://github.com/snej/nimdbx) | [Jens Alfke](https://github.com/snej)
 | Rust    | [heed](https://github.com/Kerollmops/heed), [mdbx-rs](https://github.com/Kerollmops/mdbx-rs)   | [Clément Renault](https://github.com/Kerollmops) |
 | Java    | [mdbxjni](https://github.com/castortech/mdbxjni)   | [Castor Technologies](https://castortech.com/) |

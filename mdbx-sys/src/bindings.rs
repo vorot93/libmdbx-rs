@@ -15,7 +15,7 @@ pub type mdbx_filehandle_t = *mut ::libc::c_void;
 
 
 pub const MDBX_VERSION_MAJOR: ::libc::c_uint = 0;
-pub const MDBX_VERSION_MINOR: ::libc::c_uint = 9;
+pub const MDBX_VERSION_MINOR: ::libc::c_uint = 10;
 pub const MDBX_LOCKNAME: &'static [u8; 10usize] = b"/mdbx.lck\0";
 pub const MDBX_DATANAME: &'static [u8; 10usize] = b"/mdbx.dat\0";
 pub const MDBX_LOCK_SUFFIX: &'static [u8; 5usize] = b"-lck\0";
@@ -306,6 +306,7 @@ pub const MDBX_opt_txn_dp_initial: MDBX_option_t = 8;
 pub const MDBX_opt_spill_max_denominator: MDBX_option_t = 9;
 pub const MDBX_opt_spill_min_denominator: MDBX_option_t = 10;
 pub const MDBX_opt_spill_parent4child_denominator: MDBX_option_t = 11;
+pub const MDBX_opt_merge_threshold_16dot16_percent: MDBX_option_t = 12;
 pub type MDBX_option_t = ::libc::c_uint;
 extern "C" {
     pub fn mdbx_env_set_option(
@@ -318,7 +319,7 @@ extern "C" {
     pub fn mdbx_env_get_option(
         env: *const MDBX_env,
         option: MDBX_option_t,
-        value: *mut u64,
+        pvalue: *mut u64,
     ) -> ::libc::c_int;
 }
 extern "C" {
@@ -398,6 +399,7 @@ pub struct MDBX_envinfo {
     pub mi_autosync_period_seconds16dot16: u32,
     pub mi_since_reader_check_seconds16dot16: u32,
     pub mi_mode: u32,
+    pub mi_pgop_stat: MDBX_envinfo__bindgen_ty_3,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -421,6 +423,18 @@ pub struct MDBX_envinfo__bindgen_ty_2 {
 pub struct MDBX_envinfo__bindgen_ty_2__bindgen_ty_1 {
     pub x: u64,
     pub y: u64,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct MDBX_envinfo__bindgen_ty_3 {
+    pub newly: u64,
+    pub cow: u64,
+    pub clone: u64,
+    pub split: u64,
+    pub merge: u64,
+    pub spill: u64,
+    pub unspill: u64,
+    pub wops: u64,
 }
 extern "C" {
     pub fn mdbx_env_info_ex(
@@ -486,6 +500,13 @@ extern "C" {
 }
 extern "C" {
     pub fn mdbx_default_pagesize() -> usize;
+}
+extern "C" {
+    pub fn mdbx_get_sysraminfo(
+        page_size: *mut isize,
+        total_pages: *mut isize,
+        avail_pages: *mut isize,
+    ) -> ::libc::c_int;
 }
 extern "C" {
     pub fn mdbx_env_get_maxkeysize_ex(
