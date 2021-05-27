@@ -25,6 +25,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::CString,
     fmt,
+    fmt::Debug,
     marker::PhantomData,
     mem,
     ops::{
@@ -57,7 +58,7 @@ mod private {
     impl<'env> Sealed for WriteMap {}
 }
 
-pub trait EnvironmentKind: private::Sealed + 'static {
+pub trait EnvironmentKind: private::Sealed + Debug + 'static {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
 }
 

@@ -19,6 +19,7 @@ use crate::{
 };
 use std::{
     fmt,
+    fmt::Debug,
     marker::PhantomData,
     ptr,
     result,
@@ -33,7 +34,7 @@ mod private {
     impl<'env> Sealed for RW {}
 }
 
-pub trait TransactionKind: private::Sealed + 'static {
+pub trait TransactionKind: private::Sealed + Debug + 'static {
     #[doc(hidden)]
     const ONLY_CLEAN: bool;
 
