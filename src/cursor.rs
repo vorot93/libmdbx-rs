@@ -12,7 +12,6 @@ use crate::{
         RW,
     },
     util::freeze_bytes,
-    RO,
 };
 use ffi::{
     MDBX_cursor_op,
@@ -408,7 +407,7 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
     }
 }
 
-unsafe impl<'txn> Send for Cursor<'txn, RO> {}
+unsafe impl<'txn, K> Send for Cursor<'txn, K> where K: TransactionKind {}
 
 impl<'txn, K> IntoIterator for Cursor<'txn, K>
 where
@@ -899,9 +898,13 @@ mod test {
 
         {
             let txn = env.begin_rw_txn().unwrap();
-            let db = txn.open_db(None).unwrap();
-            for (key, data) in &items {
-                db.put(key, data, WriteFlags::empty()).unwrap();
+            for (key, data) in items.clone() {
+                let db = txn.open_db(None).unwrap();
+                crossbeam::thread::scope(move |s| {
+                    s.spawn(move |_| db.put(key, data, WriteFlags::empty())).join().unwrap()
+                })
+                .unwrap()
+                .unwrap();
             }
             txn.commit().unwrap();
         }

@@ -17,14 +17,6 @@ readme = "README.md"
 keywords = ["LMDB", "MDBX", "database", "storage-engine", "bindings", "library"]
 categories = ["database"]
 
-exclude = [
-  
-  "/.appveyor.yml",
-  "/.travis.yml",
-  "/azure-pipelines-template.yml",
-  "/azure-pipelines.yml",
-] # Exclude CI config files from package.
-
 [lib]
 name = "mdbx"
 
@@ -40,6 +32,7 @@ lifetimed-bytes = { git = "https://github.com/vorot93/lifetimed-bytes" }
 ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 
 [dev-dependencies]
+crossbeam = "0.8"
 rand = "0.8"
 rand_xorshift = "0.3"
 tempfile = "3"

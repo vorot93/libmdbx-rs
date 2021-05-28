@@ -10,6 +10,8 @@ use crate::{
         EnvironmentKind,
         GenericEnvironment,
         NoWriteMap,
+        TxnManagerMessage,
+        TxnPtr,
     },
     error::{
         mdbx_result,
@@ -23,6 +25,7 @@ use std::{
     marker::PhantomData,
     ptr,
     result,
+    sync::mpsc::sync_channel,
 };
 
 mod private {
@@ -79,12 +82,16 @@ where
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_txn_begin_ex(env.env(), ptr::null_mut(), K::OPEN_FLAGS, &mut txn, ptr::null_mut()))?;
-            Ok(Self {
-                txn,
-                committed: false,
-                env,
-                _marker: PhantomData,
-            })
+            Ok(Self::new_from_ptr(env, txn))
+        }
+    }
+
+    pub(crate) fn new_from_ptr(env: &'env GenericEnvironment<E>, txn: *mut ffi::MDBX_txn) -> Self {
+        Self {
+            txn,
+            committed: false,
+            env,
+            _marker: PhantomData,
         }
     }
 
@@ -110,7 +117,21 @@ where
     ///
     /// Any pending operations will be saved.
     pub fn commit(mut self) -> Result<bool> {
-        let result = mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()) });
+        let result = if K::ONLY_CLEAN {
+            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()) })
+        } else {
+            let (sender, rx) = sync_channel(0);
+            self.env
+                .txn_manager
+                .as_ref()
+                .unwrap()
+                .send(TxnManagerMessage::Commit {
+                    tx: TxnPtr(self.txn),
+                    sender,
+                })
+                .unwrap();
+            rx.recv().unwrap()
+        };
         self.committed = true;
         result
     }
@@ -159,13 +180,20 @@ where
 impl<'env> Transaction<'env, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
     pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
-        let mut nested: *mut ffi::MDBX_txn = ptr::null_mut();
-        unsafe {
-            let env: *mut ffi::MDBX_env = ffi::mdbx_txn_env(self.txn());
-            ffi::mdbx_txn_begin_ex(env, self.txn(), 0, &mut nested, ptr::null_mut());
-        }
-        Ok(Transaction {
-            txn: nested,
+        let (tx, rx) = sync_channel(0);
+        self.env
+            .txn_manager
+            .as_ref()
+            .unwrap()
+            .send(TxnManagerMessage::Begin {
+                parent: TxnPtr(self.txn()),
+                flags: RW::OPEN_FLAGS,
+                sender: tx,
+            })
+            .unwrap();
+
+        rx.recv().unwrap().map(|ptr| Transaction {
+            txn: ptr.0,
             committed: false,
             env: self.env,
             _marker: PhantomData,
@@ -190,14 +218,33 @@ where
 {
     fn drop(&mut self) {
         if !self.committed {
-            unsafe {
-                ffi::mdbx_txn_abort(self.txn);
+            if K::ONLY_CLEAN {
+                unsafe {
+                    ffi::mdbx_txn_abort(self.txn);
+                }
+            } else {
+                let (sender, rx) = sync_channel(0);
+                self.env
+                    .txn_manager
+                    .as_ref()
+                    .unwrap()
+                    .send(TxnManagerMessage::Abort {
+                        tx: TxnPtr(self.txn),
+                        sender,
+                    })
+                    .unwrap();
+                rx.recv().unwrap().unwrap();
             }
         }
     }
 }
 
-unsafe impl<'env, E> Send for Transaction<'env, RO, E> where E: EnvironmentKind {}
+unsafe impl<'env, K, E> Send for Transaction<'env, K, E>
+where
+    K: TransactionKind,
+    E: EnvironmentKind,
+{
+}
 
 #[cfg(test)]
 mod test {

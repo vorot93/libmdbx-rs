@@ -33,6 +33,8 @@ pub enum Error {
     Multival,
     WannaRecovery,
     KeyMismatch,
+    InvalidValue,
+    Access,
     TooLarge,
     Other(c_int),
 }
@@ -65,6 +67,8 @@ impl Error {
             ffi::MDBX_EMULTIVAL => Error::Multival,
             ffi::MDBX_WANNA_RECOVERY => Error::WannaRecovery,
             ffi::MDBX_EKEYMISMATCH => Error::KeyMismatch,
+            ffi::MDBX_EINVAL => Error::InvalidValue,
+            ffi::MDBX_EACCESS => Error::Access,
             ffi::MDBX_TOO_LARGE => Error::TooLarge,
             other => Error::Other(other),
         }
@@ -97,6 +101,8 @@ impl Error {
             Error::Multival => ffi::MDBX_EMULTIVAL,
             Error::WannaRecovery => ffi::MDBX_WANNA_RECOVERY,
             Error::KeyMismatch => ffi::MDBX_EKEYMISMATCH,
+            Error::InvalidValue => ffi::MDBX_EINVAL,
+            Error::Access => ffi::MDBX_EACCESS,
             Error::TooLarge => ffi::MDBX_TOO_LARGE,
             Error::Other(err_code) => err_code,
         }
