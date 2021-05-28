@@ -246,6 +246,13 @@ where
 {
 }
 
+unsafe impl<'env, K, E> Sync for Transaction<'env, K, E>
+where
+    K: TransactionKind,
+    E: EnvironmentKind,
+{
+}
+
 #[cfg(test)]
 mod test {
     use crate::{

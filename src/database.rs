@@ -239,3 +239,4 @@ impl<'txn> Database<'txn, RW> {
 }
 
 unsafe impl<'txn, K> Send for Database<'txn, K> where K: TransactionKind {}
+unsafe impl<'txn, K> Sync for Database<'txn, K> where K: TransactionKind {}
