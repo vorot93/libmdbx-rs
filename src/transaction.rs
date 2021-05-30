@@ -33,6 +33,7 @@ use std::{
     marker::PhantomData,
     ptr,
     result,
+    slice,
     sync::mpsc::sync_channel,
 };
 
@@ -252,6 +253,33 @@ where
 
         Ok(())
     }
+
+    /// Returns a buffer which can be used to write a value into the item at the
+    /// given key and with the given length. The buffer must be completely
+    /// filled by the caller.
+    pub fn reserve<'txn>(
+        &'txn self,
+        db: &Database<'txn, RW>,
+        key: impl AsRef<[u8]>,
+        len: usize,
+        flags: WriteFlags,
+    ) -> Result<&'txn mut [u8]> {
+        let key = key.as_ref();
+        let key_val: ffi::MDBX_val = ffi::MDBX_val {
+            iov_len: key.len(),
+            iov_base: key.as_ptr() as *mut c_void,
+        };
+        let mut data_val: ffi::MDBX_val = ffi::MDBX_val {
+            iov_len: len,
+            iov_base: ptr::null_mut::<c_void>(),
+        };
+        unsafe {
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_put(txn, db.dbi(), &key_val, &mut data_val, flags.bits() | ffi::MDBX_RESERVE)
+            }))?;
+            Ok(slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len))
+        }
+    }
 }
 
 impl<'env> Transaction<'env, RW, NoWriteMap> {
@@ -429,7 +457,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         {
-            let mut writer = db.reserve(b"key1", 4, WriteFlags::empty()).unwrap();
+            let mut writer = txn.reserve(&db, b"key1", 4, WriteFlags::empty()).unwrap();
             writer.write_all(b"val1").unwrap();
         }
         txn.commit().unwrap();

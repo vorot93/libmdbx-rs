@@ -4,10 +4,7 @@ use crate::{
         mdbx_result,
         Result,
     },
-    flags::{
-        DatabaseFlags,
-        WriteFlags,
-    },
+    flags::DatabaseFlags,
     transaction::{
         txn_execute,
         TransactionKind,
@@ -27,7 +24,6 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ptr,
-    slice,
 };
 
 /// A handle to an individual database in an environment.
@@ -120,27 +116,6 @@ where
 }
 
 impl<'txn> Database<'txn, RW> {
-    /// Returns a buffer which can be used to write a value into the item at the
-    /// given key and with the given length. The buffer must be completely
-    /// filled by the caller.
-    pub fn reserve(&self, key: impl AsRef<[u8]>, len: usize, flags: WriteFlags) -> Result<&'txn mut [u8]> {
-        let key = key.as_ref();
-        let key_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: key.len(),
-            iov_base: key.as_ptr() as *mut c_void,
-        };
-        let mut data_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: len,
-            iov_base: ptr::null_mut::<c_void>(),
-        };
-        unsafe {
-            mdbx_result(txn_execute(self.txn, |txn| {
-                ffi::mdbx_put(txn, self.dbi(), &key_val, &mut data_val, flags.bits() | ffi::MDBX_RESERVE)
-            }))?;
-            Ok(slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len))
-        }
-    }
-
     /// Delete items from a database.
     /// This function removes key/data pairs from the database.
     ///
