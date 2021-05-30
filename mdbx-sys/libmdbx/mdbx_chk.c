@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY dfe0671435fed2948a861ec25f1adbf99a470c88be69bcc27b32ca9a7ffc6787_v0_10_0_27_g2b161db6
+#define MDBX_BUILD_SOURCERY 517b3e8cada12b033dc855029388aa6e1c7aa20ad04c1f914b81793472e108d8_v0_10_1_5_g18bc28be
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -4609,7 +4609,6 @@ int main(int argc, char *argv[]) {
       quiet = true;
       break;
     case 'n':
-      envflags |= MDBX_NOSUBDIR;
       break;
     case 'w':
       envflags &= ~MDBX_RDONLY;
@@ -4872,11 +4871,6 @@ int main(int argc, char *argv[]) {
           "of may by large than the database itself,\n                     "
           "until it will be closed or reopened in read-write mode.\n");
 #endif
-    print(" - transactions: recent %" PRIu64 ", latter reader %" PRIu64
-          ", lag %" PRIi64 "\n",
-          envinfo.mi_recent_txnid, envinfo.mi_latter_reader_txnid,
-          envinfo.mi_recent_txnid - envinfo.mi_latter_reader_txnid);
-
     verbose_meta(0, envinfo.mi_meta0_txnid, envinfo.mi_meta0_sign,
                  envinfo.mi_bootid.meta0.x, envinfo.mi_bootid.meta0.y);
     verbose_meta(1, envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign,
@@ -4885,52 +4879,70 @@ int main(int argc, char *argv[]) {
                  envinfo.mi_bootid.meta2.x, envinfo.mi_bootid.meta2.y);
   }
 
-  if (verbose > 1)
-    print(" - performs check for meta-pages clashes\n");
-  if (meta_eq(envinfo.mi_meta0_txnid, envinfo.mi_meta0_sign,
-              envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign)) {
-    print(" ! meta-%d and meta-%d are clashed\n", 0, 1);
-    ++problems_meta;
-  }
-  if (meta_eq(envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign,
-              envinfo.mi_meta2_txnid, envinfo.mi_meta2_sign)) {
-    print(" ! meta-%d and meta-%d are clashed\n", 1, 2);
-    ++problems_meta;
-  }
-  if (meta_eq(envinfo.mi_meta2_txnid, envinfo.mi_meta2_sign,
-              envinfo.mi_meta0_txnid, envinfo.mi_meta0_sign)) {
-    print(" ! meta-%d and meta-%d are clashed\n", 2, 0);
-    ++problems_meta;
-  }
+  if (stuck_meta >= 0) {
+    if (verbose) {
+      print(" - skip checking meta-pages since the %u"
+            " is selected for verification\n",
+            stuck_meta);
+      print(" - transactions: recent %" PRIu64
+            ", selected for verification %" PRIu64 ", lag %" PRIi64 "\n",
+            envinfo.mi_recent_txnid, get_meta_txnid(stuck_meta),
+            envinfo.mi_recent_txnid - get_meta_txnid(stuck_meta));
+    }
+  } else {
+    if (verbose > 1)
+      print(" - performs check for meta-pages clashes\n");
+    if (meta_eq(envinfo.mi_meta0_txnid, envinfo.mi_meta0_sign,
+                envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign)) {
+      print(" ! meta-%d and meta-%d are clashed\n", 0, 1);
+      ++problems_meta;
+    }
+    if (meta_eq(envinfo.mi_meta1_txnid, envinfo.mi_meta1_sign,
+                envinfo.mi_meta2_txnid, envinfo.mi_meta2_sign)) {
+      print(" ! meta-%d and meta-%d are clashed\n", 1, 2);
+      ++problems_meta;
+    }
+    if (meta_eq(envinfo.mi_meta2_txnid, envinfo.mi_meta2_sign,
+                envinfo.mi_meta0_txnid, envinfo.mi_meta0_sign)) {
+      print(" ! meta-%d and meta-%d are clashed\n", 2, 0);
+      ++problems_meta;
+    }
 
-  const unsigned steady_meta_id = meta_recent(true);
-  const uint64_t steady_meta_txnid = get_meta_txnid(steady_meta_id);
-  const unsigned weak_meta_id = meta_recent(false);
-  const uint64_t weak_meta_txnid = get_meta_txnid(weak_meta_id);
-  if (envflags & MDBX_EXCLUSIVE) {
-    if (verbose > 1)
-      print(" - performs full check recent-txn-id with meta-pages\n");
-    if (steady_meta_txnid != envinfo.mi_recent_txnid) {
-      print(" ! steady meta-%d txn-id mismatch recent-txn-id (%" PRIi64
-            " != %" PRIi64 ")\n",
-            steady_meta_id, steady_meta_txnid, envinfo.mi_recent_txnid);
-      ++problems_meta;
+    const unsigned steady_meta_id = meta_recent(true);
+    const uint64_t steady_meta_txnid = get_meta_txnid(steady_meta_id);
+    const unsigned weak_meta_id = meta_recent(false);
+    const uint64_t weak_meta_txnid = get_meta_txnid(weak_meta_id);
+    if (envflags & MDBX_EXCLUSIVE) {
+      if (verbose > 1)
+        print(" - performs full check recent-txn-id with meta-pages\n");
+      if (steady_meta_txnid != envinfo.mi_recent_txnid) {
+        print(" ! steady meta-%d txn-id mismatch recent-txn-id (%" PRIi64
+              " != %" PRIi64 ")\n",
+              steady_meta_id, steady_meta_txnid, envinfo.mi_recent_txnid);
+        ++problems_meta;
+      }
+    } else if (write_locked) {
+      if (verbose > 1)
+        print(" - performs lite check recent-txn-id with meta-pages (not a "
+              "monopolistic mode)\n");
+      if (weak_meta_txnid != envinfo.mi_recent_txnid) {
+        print(" ! weak meta-%d txn-id mismatch recent-txn-id (%" PRIi64
+              " != %" PRIi64 ")\n",
+              weak_meta_id, weak_meta_txnid, envinfo.mi_recent_txnid);
+        ++problems_meta;
+      }
+    } else if (verbose) {
+      print(" - skip check recent-txn-id with meta-pages (monopolistic or "
+            "read-write mode only)\n");
     }
-  } else if (write_locked) {
-    if (verbose > 1)
-      print(" - performs lite check recent-txn-id with meta-pages (not a "
-            "monopolistic mode)\n");
-    if (weak_meta_txnid != envinfo.mi_recent_txnid) {
-      print(" ! weak meta-%d txn-id mismatch recent-txn-id (%" PRIi64
-            " != %" PRIi64 ")\n",
-            weak_meta_id, weak_meta_txnid, envinfo.mi_recent_txnid);
-      ++problems_meta;
-    }
-  } else if (verbose) {
-    print(" - skip check recent-txn-id with meta-pages (monopolistic or "
-          "read-write mode only)\n");
+    total_problems += problems_meta;
+
+    if (verbose)
+      print(" - transactions: recent %" PRIu64 ", latter reader %" PRIu64
+            ", lag %" PRIi64 "\n",
+            envinfo.mi_recent_txnid, envinfo.mi_latter_reader_txnid,
+            envinfo.mi_recent_txnid - envinfo.mi_latter_reader_txnid);
   }
-  total_problems += problems_meta;
 
   if (!dont_traversal) {
     struct problem *saved_list;
@@ -5099,7 +5111,7 @@ int main(int argc, char *argv[]) {
 
   if (rc == 0 && total_problems == 1 && problems_meta == 1 && !dont_traversal &&
       (envflags & MDBX_RDONLY) == 0 && !only_subdb && stuck_meta < 0 &&
-      steady_meta_txnid < envinfo.mi_recent_txnid) {
+      get_meta_txnid(meta_recent(true)) < envinfo.mi_recent_txnid) {
     print("Perform sync-to-disk for make steady checkpoint at txn-id #%" PRIi64
           "\n",
           envinfo.mi_recent_txnid);
