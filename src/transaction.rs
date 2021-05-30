@@ -3,6 +3,8 @@ use ffi::{
     MDBX_TXN_RDONLY,
     MDBX_TXN_READWRITE,
 };
+use libc::c_void;
+use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
 
 use crate::{
@@ -19,6 +21,8 @@ use crate::{
         Result,
     },
     flags::DatabaseFlags,
+    util::freeze_bytes,
+    Error,
 };
 use std::{
     fmt,
@@ -116,6 +120,34 @@ where
     /// Returns the transaction id.
     pub fn id(&self) -> u64 {
         txn_execute(&self.txn, |txn| unsafe { ffi::mdbx_txn_id(txn) })
+    }
+
+    /// Gets an item from a database.
+    ///
+    /// This function retrieves the data associated with the given key in the
+    /// database. If the database supports duplicate keys
+    /// ([DatabaseFlags::DUP_SORT]) then the first data item for the key will be
+    /// returned. Retrieval of other items requires the use of
+    /// [Cursor]. If the item is not in the database, then
+    /// [None] will be returned.
+    pub fn get<'txn>(&'txn self, db: &Database<'txn, K>, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
+        let key = key.as_ref();
+        let key_val: ffi::MDBX_val = ffi::MDBX_val {
+            iov_len: key.len(),
+            iov_base: key.as_ptr() as *mut c_void,
+        };
+        let mut data_val: ffi::MDBX_val = ffi::MDBX_val {
+            iov_len: 0,
+            iov_base: ptr::null_mut(),
+        };
+
+        txn_execute(&self.txn, |txn| unsafe {
+            match ffi::mdbx_get(txn, db.dbi(), &key_val, &mut data_val) {
+                ffi::MDBX_SUCCESS => freeze_bytes::<K>(txn, &data_val).map(Some),
+                ffi::MDBX_NOTFOUND => Ok(None),
+                err_code => Err(Error::from_err_code(err_code)),
+            }
+        })
     }
 
     /// Commits the transaction.
@@ -299,13 +331,13 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        assert_eq!(b"val1", &*db.get(b"key1").unwrap().unwrap());
-        assert_eq!(b"val2", &*db.get(b"key2").unwrap().unwrap());
-        assert_eq!(b"val3", &*db.get(b"key3").unwrap().unwrap());
-        assert_eq!(db.get(b"key").unwrap(), None);
+        assert_eq!(b"val1", &*txn.get(&db, b"key1").unwrap().unwrap());
+        assert_eq!(b"val2", &*txn.get(&db, b"key2").unwrap().unwrap());
+        assert_eq!(b"val3", &*txn.get(&db, b"key3").unwrap().unwrap());
+        assert_eq!(txn.get(&db, b"key").unwrap(), None);
 
         db.del(b"key1", None).unwrap();
-        assert_eq!(db.get(b"key1").unwrap(), None);
+        assert_eq!(txn.get(&db, b"key1").unwrap(), None);
     }
 
     #[test]
@@ -371,11 +403,11 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        assert_eq!(Bytes::from(b"val1"), db.get(b"key1").unwrap().unwrap());
-        assert_eq!(db.get(b"key").unwrap(), None);
+        assert_eq!(Bytes::from(b"val1"), txn.get(&db, b"key1").unwrap().unwrap());
+        assert_eq!(txn.get(&db, b"key").unwrap(), None);
 
         db.del(b"key1", None).unwrap();
-        assert_eq!(db.get(b"key1").unwrap(), None);
+        assert_eq!(txn.get(&db, b"key1").unwrap(), None);
     }
 
     #[test]
@@ -390,13 +422,13 @@ mod test {
             let nested = txn.begin_nested_txn().unwrap();
             let db = nested.open_db(None).unwrap();
             db.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
-            assert_eq!(db.get(b"key1").unwrap().unwrap(), Bytes::from(b"val1"));
-            assert_eq!(db.get(b"key2").unwrap().unwrap(), Bytes::from(b"val2"));
+            assert_eq!(nested.get(&db, b"key1").unwrap().unwrap(), Bytes::from(b"val1"));
+            assert_eq!(nested.get(&db, b"key2").unwrap().unwrap(), Bytes::from(b"val2"));
         }
 
         let db = txn.open_db(None).unwrap();
-        assert_eq!(db.get(b"key1").unwrap().unwrap(), Bytes::from(b"val1"));
-        assert_eq!(db.get(b"key2").unwrap(), None);
+        assert_eq!(txn.get(&db, b"key1").unwrap().unwrap(), Bytes::from(b"val1"));
+        assert_eq!(txn.get(&db, b"key2").unwrap(), None);
     }
 
     #[test]
@@ -417,7 +449,7 @@ mod test {
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        assert_eq!(txn.open_db(None).unwrap().get(b"key").unwrap(), None);
+        assert_eq!(txn.get(&txn.open_db(None).unwrap(), b"key").unwrap(), None);
     }
 
     #[test]
@@ -474,14 +506,14 @@ mod test {
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    assert_eq!(db.get(key), Ok(None));
+                    assert_eq!(txn.get(&db, key), Ok(None));
                 }
                 reader_barrier.wait();
                 reader_barrier.wait();
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    db.get(key).unwrap().unwrap() == val
+                    txn.get(&db, key).unwrap().unwrap() == val
                 }
             }));
         }
@@ -526,7 +558,7 @@ mod test {
         let db = txn.open_db(None).unwrap();
 
         for i in 0..n {
-            assert_eq!(format!("{}{}", val, i).as_bytes(), db.get(&format!("{}{}", key, i)).unwrap().unwrap());
+            assert_eq!(format!("{}{}", val, i).as_bytes(), txn.get(&db, &format!("{}{}", key, i)).unwrap().unwrap());
         }
     }
 

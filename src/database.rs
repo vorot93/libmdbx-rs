@@ -13,9 +13,7 @@ use crate::{
         TransactionKind,
         RW,
     },
-    util::freeze_bytes,
     Cursor,
-    Error,
     Stat,
     Transaction,
 };
@@ -23,7 +21,6 @@ use libc::{
     c_uint,
     c_void,
 };
-use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
 use std::{
     ffi::CString,
@@ -92,34 +89,6 @@ where
 
     pub(crate) fn txn(&self) -> &'txn Mutex<*mut ffi::MDBX_txn> {
         self.txn
-    }
-
-    /// Gets an item from a database.
-    ///
-    /// This function retrieves the data associated with the given key in the
-    /// database. If the database supports duplicate keys
-    /// ([DatabaseFlags::DUP_SORT]) then the first data item for the key will be
-    /// returned. Retrieval of other items requires the use of
-    /// [Cursor]. If the item is not in the database, then
-    /// [None] will be returned.
-    pub fn get(&self, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
-        let key = key.as_ref();
-        let key_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: key.len(),
-            iov_base: key.as_ptr() as *mut c_void,
-        };
-        let mut data_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: 0,
-            iov_base: ptr::null_mut(),
-        };
-
-        txn_execute(self.txn(), |txn| unsafe {
-            match ffi::mdbx_get(txn, self.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => freeze_bytes::<K>(txn, &data_val).map(Some),
-                ffi::MDBX_NOTFOUND => Ok(None),
-                err_code => Err(Error::from_err_code(err_code)),
-            }
-        })
     }
 
     /// Open a new cursor on the given database.

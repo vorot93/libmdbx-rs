@@ -31,7 +31,7 @@ fn bench_get_rand(b: &mut Bencher) {
     b.iter(|| {
         let mut i = 0usize;
         for key in &keys {
-            i += db.get(key).unwrap().unwrap().len();
+            i += txn.get(&db, key).unwrap().unwrap().len();
         }
         black_box(i);
     });
