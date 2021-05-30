@@ -8,6 +8,7 @@ use crate::{
     flags::*,
     mdbx_try_optional,
     transaction::{
+        txn_execute,
         TransactionKind,
         RW,
     },
@@ -64,8 +65,9 @@ where
 {
     pub(crate) fn new(db: &Database<'txn, K>) -> Result<Self> {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
+
         unsafe {
-            mdbx_result(ffi::mdbx_cursor_open(db.txn(), db.dbi(), &mut cursor))?;
+            mdbx_result(txn_execute(db.txn(), |txn| ffi::mdbx_cursor_open(txn, db.dbi(), &mut cursor)))?;
         }
         Ok(Self {
             cursor,

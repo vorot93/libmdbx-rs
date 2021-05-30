@@ -9,6 +9,7 @@ use crate::{
         WriteFlags,
     },
     transaction::{
+        txn_execute,
         TransactionKind,
         RW,
     },
@@ -23,6 +24,7 @@ use libc::{
     c_void,
 };
 use lifetimed_bytes::Bytes;
+use parking_lot::Mutex;
 use std::{
     ffi::CString,
     marker::PhantomData,
@@ -40,7 +42,7 @@ where
     K: TransactionKind,
 {
     dbi: ffi::MDBX_dbi,
-    txn: *mut ffi::MDBX_txn,
+    txn: &'txn Mutex<*mut ffi::MDBX_txn>,
     _marker: PhantomData<&'txn K>,
 }
 
@@ -64,11 +66,10 @@ where
             ptr::null()
         };
         let mut dbi: ffi::MDBX_dbi = 0;
-        let txn = txn.txn();
-        mdbx_result(unsafe { ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi) })?;
+        mdbx_result(txn_execute(txn.txn_mutex(), |txn| unsafe { ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi) }))?;
         Ok(Database {
             dbi,
-            txn,
+            txn: txn.txn_mutex(),
             _marker: PhantomData,
         })
     }
@@ -76,7 +77,7 @@ where
     pub(crate) fn freelist_db<'env, E: EnvironmentKind>(txn: &'txn Transaction<'env, K, E>) -> Self {
         Database {
             dbi: 0,
-            txn: txn.txn(),
+            txn: txn.txn_mutex(),
             _marker: PhantomData,
         }
     }
@@ -89,7 +90,7 @@ where
         self.dbi
     }
 
-    pub(crate) fn txn(&self) -> *mut ffi::MDBX_txn {
+    pub(crate) fn txn(&self) -> &'txn Mutex<*mut ffi::MDBX_txn> {
         self.txn
     }
 
@@ -111,13 +112,14 @@ where
             iov_len: 0,
             iov_base: ptr::null_mut(),
         };
-        unsafe {
-            match ffi::mdbx_get(self.txn, self.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => freeze_bytes::<K>(self.txn, &data_val).map(Some),
+
+        txn_execute(self.txn(), |txn| unsafe {
+            match ffi::mdbx_get(txn, self.dbi(), &key_val, &mut data_val) {
+                ffi::MDBX_SUCCESS => freeze_bytes::<K>(txn, &data_val).map(Some),
                 ffi::MDBX_NOTFOUND => Ok(None),
                 err_code => Err(Error::from_err_code(err_code)),
             }
-        }
+        })
     }
 
     /// Open a new cursor on the given database.
@@ -129,7 +131,9 @@ where
     pub fn db_flags(&self) -> Result<DatabaseFlags> {
         let mut flags: c_uint = 0;
         unsafe {
-            mdbx_result(ffi::mdbx_dbi_flags_ex(self.txn, self.dbi(), &mut flags, ptr::null_mut()))?;
+            mdbx_result(txn_execute(self.txn, |txn| {
+                ffi::mdbx_dbi_flags_ex(txn, self.dbi(), &mut flags, ptr::null_mut())
+            }))?;
         }
         Ok(DatabaseFlags::from_bits_truncate(flags))
     }
@@ -138,7 +142,9 @@ where
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            mdbx_result(ffi::mdbx_dbi_stat(self.txn, self.dbi(), stat.mdb_stat(), size_of::<Stat>()))?;
+            mdbx_result(txn_execute(self.txn, |txn| {
+                ffi::mdbx_dbi_stat(txn, self.dbi(), stat.mdb_stat(), size_of::<Stat>())
+            }))?;
             Ok(stat)
         }
     }
@@ -162,7 +168,9 @@ impl<'txn> Database<'txn, RW> {
             iov_len: data.len(),
             iov_base: data.as_ptr() as *mut c_void,
         };
-        mdbx_result(unsafe { ffi::mdbx_put(self.txn, self.dbi(), &key_val, &mut data_val, flags.bits()) })?;
+        mdbx_result(txn_execute(self.txn, |txn| unsafe {
+            ffi::mdbx_put(txn, self.dbi(), &key_val, &mut data_val, flags.bits())
+        }))?;
 
         Ok(())
     }
@@ -181,13 +189,9 @@ impl<'txn> Database<'txn, RW> {
             iov_base: ptr::null_mut::<c_void>(),
         };
         unsafe {
-            mdbx_result(ffi::mdbx_put(
-                self.txn,
-                self.dbi(),
-                &key_val,
-                &mut data_val,
-                flags.bits() | ffi::MDBX_RESERVE,
-            ))?;
+            mdbx_result(txn_execute(self.txn, |txn| {
+                ffi::mdbx_put(txn, self.dbi(), &key_val, &mut data_val, flags.bits() | ffi::MDBX_RESERVE)
+            }))?;
             Ok(slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len))
         }
     }
@@ -210,11 +214,13 @@ impl<'txn> Database<'txn, RW> {
         });
 
         mdbx_result({
-            if let Some(d) = data_val {
-                unsafe { ffi::mdbx_del(self.txn, self.dbi(), &key_val, &d) }
-            } else {
-                unsafe { ffi::mdbx_del(self.txn, self.dbi(), &key_val, ptr::null()) }
-            }
+            txn_execute(self.txn, |txn| {
+                if let Some(d) = data_val {
+                    unsafe { ffi::mdbx_del(txn, self.dbi(), &key_val, &d) }
+                } else {
+                    unsafe { ffi::mdbx_del(txn, self.dbi(), &key_val, ptr::null()) }
+                }
+            })
         })?;
 
         Ok(())
@@ -222,7 +228,7 @@ impl<'txn> Database<'txn, RW> {
 
     /// Empties the given database. All items will be removed.
     pub fn clear_db(&self) -> Result<()> {
-        mdbx_result(unsafe { ffi::mdbx_drop(self.txn, self.dbi(), false) })?;
+        mdbx_result(txn_execute(self.txn, |txn| unsafe { ffi::mdbx_drop(txn, self.dbi(), false) }))?;
 
         Ok(())
     }
@@ -232,7 +238,7 @@ impl<'txn> Database<'txn, RW> {
     /// # Safety
     /// Caller must close ALL other [Database] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_db(self) -> Result<()> {
-        mdbx_result(ffi::mdbx_drop(self.txn, self.dbi(), true))?;
+        mdbx_result(txn_execute(self.txn, |txn| ffi::mdbx_drop(txn, self.dbi(), true)))?;
 
         Ok(())
     }

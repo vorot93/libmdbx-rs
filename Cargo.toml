@@ -28,6 +28,7 @@ bitflags = "1"
 byteorder = "1"
 libc = "0.2"
 lifetimed-bytes = { git = "https://github.com/vorot93/lifetimed-bytes" }
+parking_lot = "0.11"
 
 ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 

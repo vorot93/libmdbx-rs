@@ -3,6 +3,7 @@ use ffi::{
     MDBX_TXN_RDONLY,
     MDBX_TXN_READWRITE,
 };
+use parking_lot::Mutex;
 
 use crate::{
     database::Database,
@@ -67,7 +68,7 @@ where
     K: TransactionKind,
     E: EnvironmentKind,
 {
-    txn: *mut ffi::MDBX_txn,
+    txn: Mutex<*mut ffi::MDBX_txn>,
     committed: bool,
     env: &'env GenericEnvironment<E>,
     _marker: PhantomData<fn(K)>,
@@ -88,7 +89,7 @@ where
 
     pub(crate) fn new_from_ptr(env: &'env GenericEnvironment<E>, txn: *mut ffi::MDBX_txn) -> Self {
         Self {
-            txn,
+            txn: Mutex::new(txn),
             committed: false,
             env,
             _marker: PhantomData,
@@ -99,8 +100,12 @@ where
     ///
     /// The caller **must** ensure that the pointer is not used after the
     /// lifetime of the transaction.
+    pub(crate) fn txn_mutex(&self) -> &Mutex<*mut ffi::MDBX_txn> {
+        &self.txn
+    }
+
     pub fn txn(&self) -> *mut ffi::MDBX_txn {
-        self.txn
+        *self.txn.lock()
     }
 
     /// Returns a raw pointer to the MDBX environment.
@@ -110,15 +115,17 @@ where
 
     /// Returns the transaction id.
     pub fn id(&self) -> u64 {
-        unsafe { ffi::mdbx_txn_id(self.txn()) }
+        txn_execute(&self.txn, |txn| unsafe { ffi::mdbx_txn_id(txn) })
     }
 
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
     pub fn commit(mut self) -> Result<bool> {
+        let txnlck = self.txn.lock();
+        let txn = *txnlck;
         let result = if K::ONLY_CLEAN {
-            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(self.txn(), ptr::null_mut()) })
+            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
         } else {
             let (sender, rx) = sync_channel(0);
             self.env
@@ -126,7 +133,7 @@ where
                 .as_ref()
                 .unwrap()
                 .send(TxnManagerMessage::Commit {
-                    tx: TxnPtr(self.txn),
+                    tx: TxnPtr(txn),
                     sender,
                 })
                 .unwrap();
@@ -150,6 +157,11 @@ where
     pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn, K>> {
         Database::new(self, name, 0)
     }
+}
+
+pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(txn: &Mutex<*mut ffi::MDBX_txn>, f: F) -> T {
+    let lck = txn.lock();
+    (f)(*lck)
 }
 
 impl<'env, E> Transaction<'env, RW, E>
@@ -180,23 +192,20 @@ where
 impl<'env> Transaction<'env, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
     pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
-        let (tx, rx) = sync_channel(0);
-        self.env
-            .txn_manager
-            .as_ref()
-            .unwrap()
-            .send(TxnManagerMessage::Begin {
-                parent: TxnPtr(self.txn()),
-                flags: RW::OPEN_FLAGS,
-                sender: tx,
-            })
-            .unwrap();
+        txn_execute(&self.txn, |txn| {
+            let (tx, rx) = sync_channel(0);
+            self.env
+                .txn_manager
+                .as_ref()
+                .unwrap()
+                .send(TxnManagerMessage::Begin {
+                    parent: TxnPtr(txn),
+                    flags: RW::OPEN_FLAGS,
+                    sender: tx,
+                })
+                .unwrap();
 
-        rx.recv().unwrap().map(|ptr| Transaction {
-            txn: ptr.0,
-            committed: false,
-            env: self.env,
-            _marker: PhantomData,
+            rx.recv().unwrap().map(|ptr| Transaction::new_from_ptr(self.env, ptr.0))
         })
     }
 }
@@ -217,25 +226,27 @@ where
     E: EnvironmentKind,
 {
     fn drop(&mut self) {
-        if !self.committed {
-            if K::ONLY_CLEAN {
-                unsafe {
-                    ffi::mdbx_txn_abort(self.txn);
+        txn_execute(&self.txn, |txn| {
+            if !self.committed {
+                if K::ONLY_CLEAN {
+                    unsafe {
+                        ffi::mdbx_txn_abort(txn);
+                    }
+                } else {
+                    let (sender, rx) = sync_channel(0);
+                    self.env
+                        .txn_manager
+                        .as_ref()
+                        .unwrap()
+                        .send(TxnManagerMessage::Abort {
+                            tx: TxnPtr(txn),
+                            sender,
+                        })
+                        .unwrap();
+                    rx.recv().unwrap().unwrap();
                 }
-            } else {
-                let (sender, rx) = sync_channel(0);
-                self.env
-                    .txn_manager
-                    .as_ref()
-                    .unwrap()
-                    .send(TxnManagerMessage::Abort {
-                        tx: TxnPtr(self.txn),
-                        sender,
-                    })
-                    .unwrap();
-                rx.recv().unwrap().unwrap();
             }
-        }
+        })
     }
 }
 
