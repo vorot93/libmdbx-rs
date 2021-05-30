@@ -280,6 +280,36 @@ where
             Ok(slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len))
         }
     }
+
+    /// Delete items from a database.
+    /// This function removes key/data pairs from the database.
+    ///
+    /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
+    /// If the data parameter is non-NULL only the matching data item will be deleted.
+    /// Otherwise, if data parameter is [None], any/all value(s) for specified key will be deleted.
+    pub fn del<'txn>(&'txn self, db: &Database<'txn, RW>, key: impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
+        let key = key.as_ref();
+        let key_val: ffi::MDBX_val = ffi::MDBX_val {
+            iov_len: key.len(),
+            iov_base: key.as_ptr() as *mut c_void,
+        };
+        let data_val: Option<ffi::MDBX_val> = data.map(|data| ffi::MDBX_val {
+            iov_len: data.len(),
+            iov_base: data.as_ptr() as *mut c_void,
+        });
+
+        mdbx_result({
+            txn_execute(&self.txn, |txn| {
+                if let Some(d) = data_val {
+                    unsafe { ffi::mdbx_del(txn, db.dbi(), &key_val, &d) }
+                } else {
+                    unsafe { ffi::mdbx_del(txn, db.dbi(), &key_val, ptr::null()) }
+                }
+            })
+        })?;
+
+        Ok(())
+    }
 }
 
 impl<'env> Transaction<'env, RW, NoWriteMap> {
@@ -397,7 +427,7 @@ mod test {
         assert_eq!(b"val3", &*txn.get(&db, b"key3").unwrap().unwrap());
         assert_eq!(txn.get(&db, b"key").unwrap(), None);
 
-        db.del(b"key1", None).unwrap();
+        txn.del(&db, b"key1", None).unwrap();
         assert_eq!(txn.get(&db, b"key1").unwrap(), None);
     }
 
@@ -431,8 +461,8 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        db.del(b"key1", Some(b"val2")).unwrap();
-        db.del(b"key2", None).unwrap();
+        txn.del(&db, b"key1", Some(b"val2")).unwrap();
+        txn.del(&db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
@@ -467,7 +497,7 @@ mod test {
         assert_eq!(Bytes::from(b"val1"), txn.get(&db, b"key1").unwrap().unwrap());
         assert_eq!(txn.get(&db, b"key").unwrap(), None);
 
-        db.del(b"key1", None).unwrap();
+        txn.del(&db, b"key1", None).unwrap();
         assert_eq!(txn.get(&db, b"key1").unwrap(), None);
     }
 
@@ -647,8 +677,8 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        db.del(b"key1", None).unwrap();
-        db.del(b"key2", None).unwrap();
+        txn.del(&db, b"key1", None).unwrap();
+        txn.del(&db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         {
@@ -699,8 +729,8 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        db.del(b"key1", Some(b"val2")).unwrap();
-        db.del(b"key2", None).unwrap();
+        txn.del(&db, b"key1", Some(b"val2")).unwrap();
+        txn.del(&db, b"key2", None).unwrap();
         txn.commit().unwrap();
 
         {

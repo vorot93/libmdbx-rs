@@ -14,10 +14,7 @@ use crate::{
     Stat,
     Transaction,
 };
-use libc::{
-    c_uint,
-    c_void,
-};
+use libc::c_uint;
 use parking_lot::Mutex;
 use std::{
     ffi::CString,
@@ -116,36 +113,6 @@ where
 }
 
 impl<'txn> Database<'txn, RW> {
-    /// Delete items from a database.
-    /// This function removes key/data pairs from the database.
-    ///
-    /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
-    /// If the data parameter is non-NULL only the matching data item will be deleted.
-    /// Otherwise, if data parameter is [None], any/all value(s) for specified key will be deleted.
-    pub fn del(&self, key: impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
-        let key = key.as_ref();
-        let key_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: key.len(),
-            iov_base: key.as_ptr() as *mut c_void,
-        };
-        let data_val: Option<ffi::MDBX_val> = data.map(|data| ffi::MDBX_val {
-            iov_len: data.len(),
-            iov_base: data.as_ptr() as *mut c_void,
-        });
-
-        mdbx_result({
-            txn_execute(self.txn, |txn| {
-                if let Some(d) = data_val {
-                    unsafe { ffi::mdbx_del(txn, self.dbi(), &key_val, &d) }
-                } else {
-                    unsafe { ffi::mdbx_del(txn, self.dbi(), &key_val, ptr::null()) }
-                }
-            })
-        })?;
-
-        Ok(())
-    }
-
     /// Empties the given database. All items will be removed.
     pub fn clear_db(&self) -> Result<()> {
         mdbx_result(txn_execute(self.txn, |txn| unsafe { ffi::mdbx_drop(txn, self.dbi(), false) }))?;
