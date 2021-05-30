@@ -44,10 +44,14 @@ impl<'txn> Database<'txn> {
         };
         let mut dbi: ffi::MDBX_dbi = 0;
         mdbx_result(txn_execute(txn.txn_mutex(), |txn| unsafe { ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi) }))?;
-        Ok(Database {
+        Ok(Self::new_from_ptr(dbi))
+    }
+
+    pub(crate) fn new_from_ptr(dbi: ffi::MDBX_dbi) -> Self {
+        Self {
             dbi,
             _marker: PhantomData,
-        })
+        }
     }
 
     pub(crate) fn freelist_db() -> Self {

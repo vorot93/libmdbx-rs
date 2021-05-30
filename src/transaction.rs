@@ -163,7 +163,19 @@ where
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
-    pub fn commit(mut self) -> Result<bool> {
+    pub fn commit(self) -> Result<bool> {
+        self.commit_and_rebind_open_dbs(&[]).map(|v| v.0)
+    }
+
+    /// Commits the transaction and rebinds passed tables to environment.
+    pub fn commit_and_rebind_open_dbs(mut self, dbs: &[Database<'_>]) -> Result<(bool, Vec<Database<'env>>)> {
+        self.commit_and_rebind_open_dbs_inner(dbs)
+    }
+
+    fn commit_and_rebind_open_dbs_inner<'txn>(
+        &'txn mut self,
+        dbs: &[Database<'txn>],
+    ) -> Result<(bool, Vec<Database<'env>>)> {
         let txnlck = self.txn.lock();
         let txn = *txnlck;
         let result = if K::ONLY_CLEAN {
@@ -182,7 +194,7 @@ where
             rx.recv().unwrap()
         };
         self.committed = true;
-        result
+        result.map(|v| (v, dbs.iter().map(|db| Database::new_from_ptr(db.dbi())).collect()))
     }
 
     /// Opens a handle to an MDBX database.
