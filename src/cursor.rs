@@ -13,6 +13,8 @@ use crate::{
         RW,
     },
     util::freeze_bytes,
+    EnvironmentKind,
+    Transaction,
 };
 use ffi::{
     MDBX_cursor_op,
@@ -63,11 +65,11 @@ impl<'txn, K> Cursor<'txn, K>
 where
     K: TransactionKind,
 {
-    pub(crate) fn new(db: &Database<'txn, K>) -> Result<Self> {
+    pub(crate) fn new<E: EnvironmentKind>(txn: &'txn Transaction<K, E>, db: &Database<'txn>) -> Result<Self> {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
 
         unsafe {
-            mdbx_result(txn_execute(db.txn(), |txn| ffi::mdbx_cursor_open(txn, db.dbi(), &mut cursor)))?;
+            mdbx_result(txn_execute(txn.txn_mutex(), |txn| ffi::mdbx_cursor_open(txn, db.dbi(), &mut cursor)))?;
         }
         Ok(Self {
             cursor,
@@ -711,13 +713,13 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
 
-        assert_eq!(None, db.cursor().unwrap().first().unwrap());
+        assert_eq!(None, txn.cursor(&db).unwrap().first().unwrap());
 
         txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
 
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(cursor.first().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
         assert_eq!(cursor.get_current().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
         assert_eq!(cursor.next().unwrap().unwrap(), (b"key2".into(), b"val2".into()));
@@ -742,7 +744,7 @@ mod test {
         txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
 
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(cursor.first().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
         assert_eq!(cursor.first_dup().unwrap().unwrap(), b"val1");
         assert_eq!(cursor.get_current().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
@@ -774,7 +776,7 @@ mod test {
         txn.put(&db, b"key2", b"val5", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
 
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(cursor.first().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
         assert_eq!(cursor.get_multiple().unwrap().unwrap(), b"val1val2val3");
         assert_eq!(cursor.next_multiple().unwrap(), None);
@@ -803,7 +805,7 @@ mod test {
 
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
 
         // Because Result implements FromIterator, we can collect the iterator
         // of items of type Result<_, E> into a Result<Vec<_, E>> by specifying
@@ -844,7 +846,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
 
         assert_eq!(None, cursor.iter().next());
         assert_eq!(None, cursor.iter_start().next());
@@ -862,7 +864,7 @@ mod test {
 
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
 
         assert_eq!(None, cursor.iter().next());
         assert_eq!(None, cursor.iter_start().next());
@@ -909,7 +911,7 @@ mod test {
 
         let txn = env.begin_ro_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         cursor.set(b"b").unwrap();
@@ -958,7 +960,7 @@ mod test {
         {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-            assert_eq!(r, db.cursor().unwrap().iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
+            assert_eq!(r, txn.cursor(&db).unwrap().iter_dup_of(b"a").collect::<Result<Vec<_>>>().unwrap());
             txn.commit().unwrap();
         }
 
@@ -973,7 +975,7 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(items, cursor.iter_dup().flatten().collect::<Result<Vec<_>>>().unwrap());
 
         assert_eq!(
@@ -995,7 +997,7 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
 
         cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
         cursor.put(b"key2", b"val2", WriteFlags::empty()).unwrap();

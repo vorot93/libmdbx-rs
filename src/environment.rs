@@ -222,8 +222,8 @@ where
     pub fn freelist(&self) -> Result<usize> {
         let mut freelist: usize = 0;
         let txn = self.begin_ro_txn()?;
-        let db = Database::freelist_db(&txn);
-        let mut cursor = db.cursor()?;
+        let db = Database::freelist_db();
+        let mut cursor = txn.cursor(&db)?;
 
         for result in cursor.iter() {
             let (_key, value) = result?;
@@ -743,7 +743,7 @@ mod test {
             tx.commit().expect("tx.commit");
         }
         let tx = env.begin_rw_txn().expect("begin_rw_txn");
-        tx.open_db(None).unwrap().clear_db().expect("clear");
+        tx.clear_db(&tx.open_db(None).unwrap()).expect("clear");
         tx.commit().expect("tx.commit");
 
         // Freelist should not be empty after clear_db.

@@ -25,7 +25,7 @@ fn bench_get_seq_iter(b: &mut Bencher) {
     let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let mut cursor = db.cursor().unwrap();
+        let mut cursor = txn.cursor(&db).unwrap();
         let mut i = 0;
         let mut count = 0u32;
 
@@ -62,8 +62,8 @@ fn bench_get_seq_cursor(b: &mut Bencher) {
     let db = txn.open_db(None).unwrap();
 
     b.iter(|| {
-        let (i, count) = db
-            .cursor()
+        let (i, count) = txn
+            .cursor(&db)
             .unwrap()
             .into_iter()
             .map(Result::unwrap)

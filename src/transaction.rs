@@ -3,7 +3,10 @@ use ffi::{
     MDBX_TXN_RDONLY,
     MDBX_TXN_READWRITE,
 };
-use libc::c_void;
+use libc::{
+    c_uint,
+    c_void,
+};
 use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
 
@@ -25,12 +28,15 @@ use crate::{
         WriteFlags,
     },
     util::freeze_bytes,
+    Cursor,
     Error,
+    Stat,
 };
 use std::{
     fmt,
     fmt::Debug,
     marker::PhantomData,
+    mem::size_of,
     ptr,
     result,
     slice,
@@ -134,7 +140,7 @@ where
     /// returned. Retrieval of other items requires the use of
     /// [Cursor]. If the item is not in the database, then
     /// [None] will be returned.
-    pub fn get<'txn>(&'txn self, db: &Database<'txn, K>, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
+    pub fn get<'txn>(&'txn self, db: &Database<'txn>, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -190,8 +196,35 @@ where
     /// The returned database handle may be shared among any transaction in the environment.
     ///
     /// The database name may not contain the null character.
-    pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn, K>> {
+    pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn>> {
         Database::new(self, name, 0)
+    }
+
+    /// Gets the option flags for the given database in the transaction.
+    pub fn db_flags<'txn>(&'txn self, db: &Database<'txn>) -> Result<DatabaseFlags> {
+        let mut flags: c_uint = 0;
+        unsafe {
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_dbi_flags_ex(txn, db.dbi(), &mut flags, ptr::null_mut())
+            }))?;
+        }
+        Ok(DatabaseFlags::from_bits_truncate(flags))
+    }
+
+    /// Retrieves database statistics.
+    pub fn db_stat<'txn>(&'txn self, db: &Database<'txn>) -> Result<Stat> {
+        unsafe {
+            let mut stat = Stat::new();
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_dbi_stat(txn, db.dbi(), stat.mdb_stat(), size_of::<Stat>())
+            }))?;
+            Ok(stat)
+        }
+    }
+
+    /// Open a new cursor on the given database.
+    pub fn cursor<'txn>(&'txn self, db: &Database<'txn>) -> Result<Cursor<'txn, K>> {
+        Cursor::new(self, db)
     }
 }
 
@@ -204,7 +237,7 @@ impl<'env, E> Transaction<'env, RW, E>
 where
     E: EnvironmentKind,
 {
-    fn open_db_with_flags<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
+    fn open_db_with_flags<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn>> {
         Database::new(self, name, flags.bits())
     }
 
@@ -220,7 +253,7 @@ where
     ///
     /// This function will fail with [Error::BadRslot](crate::error::Error::BadRslot) if called by a thread with an open
     /// transaction.
-    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn, RW>> {
+    pub fn create_db<'txn>(&'txn self, name: Option<&str>, flags: DatabaseFlags) -> Result<Database<'txn>> {
         self.open_db_with_flags(name, flags | DatabaseFlags::CREATE)
     }
 
@@ -232,7 +265,7 @@ where
     /// item if duplicates are allowed ([DatabaseFlags::DUP_SORT]).
     pub fn put<'txn>(
         &'txn self,
-        db: &Database<'txn, RW>,
+        db: &Database<'txn>,
         key: impl AsRef<[u8]>,
         data: impl AsRef<[u8]>,
         flags: WriteFlags,
@@ -259,7 +292,7 @@ where
     /// filled by the caller.
     pub fn reserve<'txn>(
         &'txn self,
-        db: &Database<'txn, RW>,
+        db: &Database<'txn>,
         key: impl AsRef<[u8]>,
         len: usize,
         flags: WriteFlags,
@@ -287,7 +320,7 @@ where
     /// The data parameter is NOT ignored regardless the database does support sorted duplicate data items or not.
     /// If the data parameter is non-NULL only the matching data item will be deleted.
     /// Otherwise, if data parameter is [None], any/all value(s) for specified key will be deleted.
-    pub fn del<'txn>(&'txn self, db: &Database<'txn, RW>, key: impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
+    pub fn del<'txn>(&'txn self, db: &Database<'txn>, key: impl AsRef<[u8]>, data: Option<&[u8]>) -> Result<()> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -307,6 +340,23 @@ where
                 }
             })
         })?;
+
+        Ok(())
+    }
+
+    /// Empties the given database. All items will be removed.
+    pub fn clear_db<'txn>(&'txn self, db: &Database<'txn>) -> Result<()> {
+        mdbx_result(txn_execute(&self.txn, |txn| unsafe { ffi::mdbx_drop(txn, db.dbi(), false) }))?;
+
+        Ok(())
+    }
+
+    /// Drops the database from the environment.
+    ///
+    /// # Safety
+    /// Caller must close ALL other [Database] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
+    pub unsafe fn drop_db<'txn>(&'txn self, db: Database<'txn>) -> Result<()> {
+        mdbx_result(txn_execute(&self.txn, |txn| ffi::mdbx_drop(txn, db.dbi(), true)))?;
 
         Ok(())
     }
@@ -452,7 +502,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         {
-            let mut cur = db.cursor().unwrap();
+            let mut cur = txn.cursor(&db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1".into(), b"val2".into(), b"val3".into()] as Vec<Bytes>);
@@ -468,7 +518,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         {
-            let mut cur = db.cursor().unwrap();
+            let mut cur = txn.cursor(&db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(vals, vec![b"val1".into(), b"val3".into()] as Vec<Bytes>);
@@ -535,7 +585,7 @@ mod test {
 
         {
             let txn = env.begin_rw_txn().unwrap();
-            txn.open_db(None).unwrap().clear_db().unwrap();
+            txn.clear_db(&txn.open_db(None).unwrap()).unwrap();
             assert!(!txn.commit().unwrap());
         }
 
@@ -566,7 +616,7 @@ mod test {
                 let txn = env.begin_rw_txn().unwrap();
                 let db = txn.open_db(Some("test")).unwrap();
                 unsafe {
-                    db.drop_db().unwrap();
+                    txn.drop_db(db).unwrap();
                 }
                 assert_eq!(txn.open_db(Some("test")).unwrap_err(), Error::NotFound);
                 assert!(!txn.commit().unwrap());
@@ -671,7 +721,7 @@ mod test {
         {
             let txn = env.begin_ro_txn().unwrap();
             let db = txn.open_db(None).unwrap();
-            let stat = db.stat().unwrap();
+            let stat = txn.db_stat(&db).unwrap();
             assert_eq!(stat.entries(), 3);
         }
 
@@ -684,7 +734,7 @@ mod test {
         {
             let txn = env.begin_ro_txn().unwrap();
             let db = txn.open_db(None).unwrap();
-            let stat = db.stat().unwrap();
+            let stat = txn.db_stat(&db).unwrap();
             assert_eq!(stat.entries(), 1);
         }
 
@@ -698,7 +748,7 @@ mod test {
         {
             let txn = env.begin_ro_txn().unwrap();
             let db = txn.open_db(None).unwrap();
-            let stat = db.stat().unwrap();
+            let stat = txn.db_stat(&db).unwrap();
             assert_eq!(stat.entries(), 4);
         }
     }
@@ -723,7 +773,7 @@ mod test {
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.open_db(None).unwrap().stat().unwrap();
+            let stat = txn.db_stat(&txn.open_db(None).unwrap()).unwrap();
             assert_eq!(stat.entries(), 9);
         }
 
@@ -735,7 +785,7 @@ mod test {
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.open_db(None).unwrap().stat().unwrap();
+            let stat = txn.db_stat(&txn.open_db(None).unwrap()).unwrap();
             assert_eq!(stat.entries(), 5);
         }
 
@@ -748,7 +798,7 @@ mod test {
 
         {
             let txn = env.begin_ro_txn().unwrap();
-            let stat = txn.open_db(None).unwrap().stat().unwrap();
+            let stat = txn.db_stat(&txn.open_db(None).unwrap()).unwrap();
             assert_eq!(stat.entries(), 8);
         }
     }
