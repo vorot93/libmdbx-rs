@@ -713,9 +713,9 @@ mod test {
 
         assert_eq!(None, db.cursor().unwrap().first().unwrap());
 
-        db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
-        db.put(b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
 
         let mut cursor = db.cursor().unwrap();
         assert_eq!(cursor.first().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
@@ -735,12 +735,12 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-        db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
-        db.put(b"key1", b"val2", WriteFlags::empty()).unwrap();
-        db.put(b"key1", b"val3", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val1", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
 
         let mut cursor = db.cursor().unwrap();
         assert_eq!(cursor.first().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
@@ -767,12 +767,12 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED).unwrap();
-        db.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
-        db.put(b"key1", b"val2", WriteFlags::empty()).unwrap();
-        db.put(b"key1", b"val3", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val4", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val5", WriteFlags::empty()).unwrap();
-        db.put(b"key2", b"val6", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val4", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val5", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
 
         let mut cursor = db.cursor().unwrap();
         assert_eq!(cursor.first().unwrap().unwrap(), (b"key1".into(), b"val1".into()));
@@ -796,7 +796,7 @@ mod test {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for (key, data) in &items {
-                db.put(key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
             assert!(!txn.commit().unwrap());
         }
@@ -902,11 +902,7 @@ mod test {
             let txn = env.begin_rw_txn().unwrap();
             for (key, data) in items.clone() {
                 let db = txn.open_db(None).unwrap();
-                crossbeam::thread::scope(move |s| {
-                    s.spawn(move |_| db.put(key, data, WriteFlags::empty())).join().unwrap()
-                })
-                .unwrap()
-                .unwrap();
+                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }
@@ -970,7 +966,7 @@ mod test {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for (key, data) in &items {
-                db.put(key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
             }
             txn.commit().unwrap();
         }

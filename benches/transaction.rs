@@ -85,7 +85,7 @@ fn bench_put_rand(b: &mut Bencher) {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         for &(ref key, ref data) in items.iter() {
-            db.put(key, data, WriteFlags::empty()).unwrap();
+            txn.put(&db, key, data, WriteFlags::empty()).unwrap();
         }
     });
 }

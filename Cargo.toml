@@ -33,7 +33,6 @@ parking_lot = "0.11"
 ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 
 [dev-dependencies]
-crossbeam = "0.8"
 rand = "0.8"
 rand_xorshift = "0.3"
 tempfile = "3"

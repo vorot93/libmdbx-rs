@@ -693,7 +693,7 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.open_db(None).unwrap().put(&value, &value, WriteFlags::default()).expect("tx.put");
+            tx.put(&tx.open_db(None).unwrap(), &value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
 
@@ -739,7 +739,7 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.open_db(None).unwrap().put(&value, &value, WriteFlags::default()).expect("tx.put");
+            tx.put(&tx.open_db(None).unwrap(), &value, &value, WriteFlags::default()).expect("tx.put");
             tx.commit().expect("tx.commit");
         }
         let tx = env.begin_rw_txn().expect("begin_rw_txn");

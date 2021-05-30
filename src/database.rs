@@ -120,30 +120,6 @@ where
 }
 
 impl<'txn> Database<'txn, RW> {
-    /// Stores an item into a database.
-    ///
-    /// This function stores key/data pairs in the database. The default
-    /// behavior is to enter the new key/data pair, replacing any previously
-    /// existing key if duplicates are disallowed, or adding a duplicate data
-    /// item if duplicates are allowed ([DatabaseFlags::DUP_SORT]).
-    pub fn put(&self, key: impl AsRef<[u8]>, data: impl AsRef<[u8]>, flags: WriteFlags) -> Result<()> {
-        let key = key.as_ref();
-        let data = data.as_ref();
-        let key_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: key.len(),
-            iov_base: key.as_ptr() as *mut c_void,
-        };
-        let mut data_val: ffi::MDBX_val = ffi::MDBX_val {
-            iov_len: data.len(),
-            iov_base: data.as_ptr() as *mut c_void,
-        };
-        mdbx_result(txn_execute(self.txn, |txn| unsafe {
-            ffi::mdbx_put(txn, self.dbi(), &key_val, &mut data_val, flags.bits())
-        }))?;
-
-        Ok(())
-    }
-
     /// Returns a buffer which can be used to write a value into the item at the
     /// given key and with the given length. The buffer must be completely
     /// filled by the caller.
