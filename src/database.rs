@@ -1,21 +1,11 @@
 use crate::{
     environment::EnvironmentKind,
-    error::{
-        mdbx_result,
-        Result,
-    },
-    transaction::{
-        txn_execute,
-        TransactionKind,
-    },
+    error::{mdbx_result, Result},
+    transaction::{txn_execute, TransactionKind},
     Transaction,
 };
 use libc::c_uint;
-use std::{
-    ffi::CString,
-    marker::PhantomData,
-    ptr,
-};
+use std::{ffi::CString, marker::PhantomData, ptr};
 
 /// A handle to an individual database in an environment.
 ///
@@ -43,7 +33,9 @@ impl<'txn> Database<'txn> {
             ptr::null()
         };
         let mut dbi: ffi::MDBX_dbi = 0;
-        mdbx_result(txn_execute(txn.txn_mutex(), |txn| unsafe { ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi) }))?;
+        mdbx_result(txn_execute(&*txn.txn_mutex(), |txn| unsafe {
+            ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi)
+        }))?;
         Ok(Self::new_from_ptr(dbi))
     }
 

@@ -6,16 +6,10 @@ mod utils;
 use ffi::*;
 use libc::size_t;
 use mdbx::WriteFlags;
-use rand::{
-    prelude::SliceRandom,
-    SeedableRng,
-};
+use rand::{prelude::SliceRandom, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::ptr;
-use test::{
-    black_box,
-    Bencher,
-};
+use test::{black_box, Bencher};
 use utils::*;
 
 #[bench]
@@ -78,12 +72,16 @@ fn bench_put_rand(b: &mut Bencher) {
     let n = 100u32;
     let (_dir, env) = setup_bench_db(0);
 
+    let txn = env.begin_ro_txn().unwrap();
+    let db = txn.open_db(None).unwrap();
+    txn.prime_for_permaopen(db);
+    let db = txn.commit_and_rebind_open_dbs().unwrap().1.remove(0);
+
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
 
     b.iter(|| {
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.open_db(None).unwrap();
         for &(ref key, ref data) in items.iter() {
             txn.put(&db, key, data, WriteFlags::empty()).unwrap();
         }

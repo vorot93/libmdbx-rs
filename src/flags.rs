@@ -77,9 +77,7 @@ impl Default for SyncMode {
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
     ReadOnly,
-    ReadWrite {
-        sync_mode: SyncMode,
-    },
+    ReadWrite { sync_mode: SyncMode },
 }
 
 impl Default for Mode {
@@ -130,17 +128,15 @@ impl EnvironmentFlags {
         match self.mode {
             Mode::ReadOnly => {
                 flags |= ffi::MDBX_RDONLY;
-            },
-            Mode::ReadWrite {
-                sync_mode,
-            } => {
+            }
+            Mode::ReadWrite { sync_mode } => {
                 flags |= match sync_mode {
                     SyncMode::Durable => ffi::MDBX_SYNC_DURABLE,
                     SyncMode::NoMetaSync => ffi::MDBX_NOMETASYNC,
                     SyncMode::SafeNoSync => ffi::MDBX_SAFE_NOSYNC,
                     SyncMode::UtterlyNoSync => ffi::MDBX_UTTERLY_NOSYNC,
                 };
-            },
+            }
         }
 
         if self.no_rdahead {

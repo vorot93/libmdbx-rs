@@ -2,34 +2,15 @@
 //! [libmdbx](https://erthink.github.io/libmdbx/).
 
 pub use crate::{
-    cursor::{
-        Cursor,
-        Iter,
-        IterDup,
-    },
+    cursor::{Cursor, Iter, IterDup},
     database::Database,
     environment::{
-        Environment,
-        EnvironmentBuilder,
-        EnvironmentKind,
-        GenericEnvironment,
-        Geometry,
-        Info,
-        NoWriteMap,
-        Stat,
-        WriteMap,
+        Environment, EnvironmentBuilder, EnvironmentKind, GenericEnvironment, Geometry, Info,
+        NoWriteMap, Stat, WriteMap,
     },
-    error::{
-        Error,
-        Result,
-    },
+    error::{Error, Result},
     flags::*,
-    transaction::{
-        Transaction,
-        TransactionKind,
-        RO,
-        RW,
-    },
+    transaction::{Transaction, TransactionKind, RO, RW},
 };
 
 mod cursor;
@@ -43,10 +24,7 @@ mod util;
 #[cfg(test)]
 mod test_utils {
 
-    use byteorder::{
-        ByteOrder,
-        LittleEndian,
-    };
+    use byteorder::{ByteOrder, LittleEndian};
     use tempfile::tempdir;
 
     use super::*;
@@ -74,8 +52,11 @@ mod test_utils {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, height);
             let tx = env.begin_rw_txn().expect("begin_rw_txn");
-            let index = tx.create_db(None, DatabaseFlags::DUP_SORT).expect("open index db");
-            tx.put(&index, &HEIGHT_KEY, &value, WriteFlags::empty()).expect("tx.put");
+            let index = tx
+                .create_db(None, DatabaseFlags::DUP_SORT)
+                .expect("open index db");
+            tx.put(&index, &HEIGHT_KEY, &value, WriteFlags::empty())
+                .expect("tx.put");
             tx.commit().expect("tx.commit");
         }
     }

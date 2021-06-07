@@ -4,16 +4,9 @@ extern crate test;
 mod utils;
 
 use ffi::*;
-use mdbx::{
-    Cursor,
-    Result,
-    TransactionKind,
-};
+use mdbx::{Cursor, Result, TransactionKind};
 use std::ptr;
-use test::{
-    black_box,
-    Bencher,
-};
+use test::{black_box, Bencher};
 use utils::*;
 
 /// Benchmark of iterator sequential read performance.
@@ -67,7 +60,9 @@ fn bench_get_seq_cursor(b: &mut Bencher) {
             .unwrap()
             .into_iter()
             .map(Result::unwrap)
-            .fold((0, 0), |(i, count), (key, val)| (i + key.len() + val.len(), count + 1));
+            .fold((0, 0), |(i, count), (key, val)| {
+                (i + key.len() + val.len(), count + 1)
+            });
 
         black_box(i);
         assert_eq!(count, n);

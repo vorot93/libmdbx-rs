@@ -1,23 +1,11 @@
 use crate::{
     database::Database,
-    error::{
-        mdbx_result,
-        Error,
-        Result,
-    },
+    error::{mdbx_result, Error, Result},
     flags::EnvironmentFlags,
-    transaction::{
-        RO,
-        RW,
-    },
-    Mode,
-    Transaction,
-    TransactionKind,
+    transaction::{RO, RW},
+    Mode, Transaction, TransactionKind,
 };
-use byteorder::{
-    ByteOrder,
-    NativeEndian,
-};
+use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
 use mem::size_of;
 #[cfg(windows)]
@@ -30,17 +18,10 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     mem,
-    ops::{
-        Bound,
-        RangeBounds,
-    },
+    ops::{Bound, RangeBounds},
     path::Path,
-    ptr,
-    result,
-    sync::mpsc::{
-        sync_channel,
-        SyncSender,
-    },
+    ptr, result,
+    sync::mpsc::{sync_channel, SyncSender},
     thread::sleep,
     time::Duration,
 };
@@ -182,7 +163,12 @@ where
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            mdbx_result(ffi::mdbx_env_stat_ex(self.env(), ptr::null(), stat.mdb_stat(), size_of::<Stat>()))?;
+            mdbx_result(ffi::mdbx_env_stat_ex(
+                self.env(),
+                ptr::null(),
+                stat.mdb_stat(),
+                size_of::<Stat>(),
+            ))?;
             Ok(stat)
         }
     }
@@ -191,7 +177,12 @@ where
     pub fn info(&self) -> Result<Info> {
         unsafe {
             let mut info = Info(mem::zeroed());
-            mdbx_result(ffi::mdbx_env_info_ex(self.env(), ptr::null(), &mut info.0, size_of::<Info>()))?;
+            mdbx_result(ffi::mdbx_env_info_ex(
+                self.env(),
+                ptr::null(),
+                &mut info.0,
+                size_of::<Info>(),
+            ))?;
             Ok(info)
         }
     }
@@ -430,10 +421,7 @@ where
     pub fn open(&self, path: &Path) -> Result<GenericEnvironment<E>> {
         let mut env = self.open_with_permissions(path, 0o644)?;
 
-        if let Mode::ReadWrite {
-            ..
-        } = self.flags.mode
-        {
+        if let Mode::ReadWrite { .. } = self.flags.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
             let e = EnvPtr(env.env);
             std::thread::spawn(move || loop {
@@ -448,26 +436,30 @@ where
                             sender
                                 .send(
                                     mdbx_result(unsafe {
-                                        ffi::mdbx_txn_begin_ex(e.0, parent.0, flags, &mut txn, ptr::null_mut())
+                                        ffi::mdbx_txn_begin_ex(
+                                            e.0,
+                                            parent.0,
+                                            flags,
+                                            &mut txn,
+                                            ptr::null_mut(),
+                                        )
                                     })
                                     .map(|_| TxnPtr(txn)),
                                 )
                                 .unwrap()
-                        },
-                        TxnManagerMessage::Abort {
-                            tx,
-                            sender,
-                        } => {
-                            sender.send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) })).unwrap();
-                        },
-                        TxnManagerMessage::Commit {
-                            tx,
-                            sender,
-                        } => {
+                        }
+                        TxnManagerMessage::Abort { tx, sender } => {
                             sender
-                                .send(mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut()) }))
+                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
                                 .unwrap();
-                        },
+                        }
+                        TxnManagerMessage::Commit { tx, sender } => {
+                            sender
+                                .send(mdbx_result(unsafe {
+                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
+                                }))
+                                .unwrap();
+                        }
                     },
                     Err(_) => return,
                 }
@@ -485,7 +477,11 @@ where
     ///
     /// The path may not contain the null character, Windows UNC (Uniform Naming Convention)
     /// paths are not supported either.
-    pub fn open_with_permissions(&self, path: &Path, mode: ffi::mdbx_mode_t) -> Result<GenericEnvironment<E>> {
+    pub fn open_with_permissions(
+        &self,
+        path: &Path,
+        mode: ffi::mdbx_mode_t,
+    ) -> Result<GenericEnvironment<E>> {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_env_create(&mut env))?;
@@ -519,13 +515,22 @@ where
                     ))?;
                 }
                 if let Some(max_dbs) = self.max_dbs {
-                    mdbx_result(ffi::mdbx_env_set_option(env, ffi::MDBX_opt_max_db, max_dbs as u64))?;
+                    mdbx_result(ffi::mdbx_env_set_option(
+                        env,
+                        ffi::MDBX_opt_max_db,
+                        max_dbs as u64,
+                    ))?;
                 }
                 let path = match CString::new(path.as_os_str().as_bytes()) {
                     Ok(path) => path,
                     Err(..) => return Err(crate::Error::Invalid),
                 };
-                mdbx_result(ffi::mdbx_env_open(env, path.as_ptr(), self.flags.make_flags() | E::EXTRA_FLAGS, mode))?;
+                mdbx_result(ffi::mdbx_env_open(
+                    env,
+                    path.as_ptr(),
+                    self.flags.make_flags() | E::EXTRA_FLAGS,
+                    mode,
+                ))?;
 
                 Ok(())
             })() {
@@ -578,7 +583,12 @@ where
             _ => None,
         };
         self.geometry = Some(Geometry {
-            size: geometry.size.map(|range| (convert_bound(range.start_bound()), convert_bound(range.end_bound()))),
+            size: geometry.size.map(|range| {
+                (
+                    convert_bound(range.start_bound()),
+                    convert_bound(range.end_bound()),
+                )
+            }),
             growth_step: geometry.growth_step,
             shrink_threshold: geometry.shrink_threshold,
             page_size: geometry.page_size,
@@ -591,10 +601,7 @@ where
 mod test {
     use super::*;
     use crate::flags::*;
-    use byteorder::{
-        ByteOrder,
-        LittleEndian,
-    };
+    use byteorder::{ByteOrder, LittleEndian};
     use tempfile::tempdir;
 
     #[test]
@@ -602,13 +609,19 @@ mod test {
         let dir = tempdir().unwrap();
 
         // opening non-existent env with read-only should fail
-        assert!(Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).is_err());
+        assert!(Environment::new()
+            .set_flags(Mode::ReadOnly.into())
+            .open(dir.path())
+            .is_err());
 
         // opening non-existent env should succeed
         assert!(Environment::new().open(dir.path()).is_ok());
 
         // opening env with read-only should succeed
-        assert!(Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).is_ok());
+        assert!(Environment::new()
+            .set_flags(Mode::ReadOnly.into())
+            .open(dir.path())
+            .is_ok());
     }
 
     #[test]
@@ -625,7 +638,10 @@ mod test {
 
         {
             // read-only environment
-            let env = Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).unwrap();
+            let env = Environment::new()
+                .set_flags(Mode::ReadOnly.into())
+                .open(dir.path())
+                .unwrap();
 
             assert!(env.begin_rw_txn().is_err());
             assert!(env.begin_ro_txn().is_ok());
@@ -649,7 +665,9 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         assert!(txn.open_db(Some("testdb")).is_err());
-        assert!(txn.create_db(Some("testdb"), DatabaseFlags::empty()).is_ok());
+        assert!(txn
+            .create_db(Some("testdb"), DatabaseFlags::empty())
+            .is_ok());
         assert!(txn.open_db(Some("testdb")).is_ok())
     }
 
@@ -671,7 +689,10 @@ mod test {
             env.sync(true).unwrap();
         }
         {
-            let env = Environment::new().set_flags(Mode::ReadOnly.into()).open(dir.path()).unwrap();
+            let env = Environment::new()
+                .set_flags(Mode::ReadOnly.into())
+                .open(dir.path())
+                .unwrap();
             env.sync(true).unwrap_err();
         }
     }
@@ -695,7 +716,13 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.put(&tx.open_db(None).unwrap(), &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.put(
+                &tx.open_db(None).unwrap(),
+                &value,
+                &value,
+                WriteFlags::default(),
+            )
+            .expect("tx.put");
             tx.commit().expect("tx.commit");
         }
 
@@ -741,7 +768,13 @@ mod test {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, i);
             let tx = env.begin_rw_txn().expect("begin_rw_txn");
-            tx.put(&tx.open_db(None).unwrap(), &value, &value, WriteFlags::default()).expect("tx.put");
+            tx.put(
+                &tx.open_db(None).unwrap(),
+                &value,
+                &value,
+                WriteFlags::default(),
+            )
+            .expect("tx.put");
             tx.commit().expect("tx.commit");
         }
         let tx = env.begin_rw_txn().expect("begin_rw_txn");
