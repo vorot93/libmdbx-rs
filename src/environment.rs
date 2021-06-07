@@ -201,8 +201,10 @@ where
     /// Along with [GenericEnvironment::info()], this can be used to calculate the exact number
     /// of used pages as well as free pages in this environment.
     ///
-    /// ```ignore
-    /// let env = Environment::new().open("/tmp/test").unwrap();
+    /// ```
+    /// # use mdbx::Environment;
+    /// let dir = tempfile::tempdir().unwrap();
+    /// let env = Environment::new().open(dir.path()).unwrap();
     /// let info = env.info().unwrap();
     /// let stat = env.stat().unwrap();
     /// let freelist = env.freelist().unwrap();
