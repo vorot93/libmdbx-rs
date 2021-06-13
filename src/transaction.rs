@@ -1,6 +1,6 @@
 use crate::{
     database::Database,
-    environment::{EnvironmentKind, GenericEnvironment, NoWriteMap, TxnManagerMessage, TxnPtr},
+    environment::{Environment, EnvironmentKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
     flags::{DatabaseFlags, WriteFlags},
     util::freeze_bytes,
@@ -62,7 +62,7 @@ where
     txn: Arc<Mutex<*mut ffi::MDBX_txn>>,
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
-    env: &'env GenericEnvironment<E>,
+    env: &'env Environment<E>,
     _marker: PhantomData<fn(K)>,
 }
 
@@ -71,7 +71,7 @@ where
     K: TransactionKind,
     E: EnvironmentKind,
 {
-    pub(crate) fn new(env: &'env GenericEnvironment<E>) -> Result<Self> {
+    pub(crate) fn new(env: &'env Environment<E>) -> Result<Self> {
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_txn_begin_ex(
@@ -85,7 +85,7 @@ where
         }
     }
 
-    pub(crate) fn new_from_ptr(env: &'env GenericEnvironment<E>, txn: *mut ffi::MDBX_txn) -> Self {
+    pub(crate) fn new_from_ptr(env: &'env Environment<E>, txn: *mut ffi::MDBX_txn) -> Self {
         Self {
             txn: Arc::new(Mutex::new(txn)),
             primed_dbis: Mutex::new(IndexSet::new()),
@@ -108,7 +108,7 @@ where
     }
 
     /// Returns a raw pointer to the MDBX environment.
-    pub fn env(&self) -> &GenericEnvironment<E> {
+    pub fn env(&self) -> &Environment<E> {
         self.env
     }
 
@@ -477,7 +477,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{error::*, flags::*, Environment};
+    use crate::{error::*, flags::*, NoWriteMap};
     use lifetimed_bytes::Bytes;
     use std::{
         io::Write,
@@ -485,6 +485,8 @@ mod test {
         thread::{self, JoinHandle},
     };
     use tempfile::tempdir;
+
+    type Environment = crate::Environment<NoWriteMap>;
 
     #[test]
     fn test_put_get_del() {

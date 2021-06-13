@@ -1,4 +1,4 @@
-use mdbx::{Environment, WriteFlags};
+use mdbx::{Environment, NoWriteMap, WriteFlags};
 use tempfile::{tempdir, TempDir};
 
 pub fn get_key(n: u32) -> String {
@@ -9,7 +9,7 @@ pub fn get_data(n: u32) -> String {
     format!("data{}", n)
 }
 
-pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment) {
+pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment<NoWriteMap>) {
     let dir = tempdir().unwrap();
     let env = Environment::new().open(dir.path()).unwrap();
 

@@ -63,8 +63,6 @@ impl EnvironmentKind for WriteMap {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_WRITEMAP;
 }
 
-pub type Environment = GenericEnvironment<NoWriteMap>;
-
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct TxnPtr(pub *mut ffi::MDBX_txn);
 unsafe impl Send for TxnPtr {}
@@ -92,7 +90,7 @@ pub(crate) enum TxnManagerMessage {
 }
 
 /// An environment supports multiple databases, all residing in the same shared-memory map.
-pub struct GenericEnvironment<E>
+pub struct Environment<E>
 where
     E: EnvironmentKind,
 {
@@ -101,7 +99,7 @@ where
     _marker: PhantomData<E>,
 }
 
-impl<E> GenericEnvironment<E>
+impl<E> Environment<E>
 where
     E: EnvironmentKind,
 {
@@ -189,13 +187,14 @@ where
 
     /// Retrieves the total number of pages on the freelist.
     ///
-    /// Along with [GenericEnvironment::info()], this can be used to calculate the exact number
+    /// Along with [Environment::info()], this can be used to calculate the exact number
     /// of used pages as well as free pages in this environment.
     ///
     /// ```
     /// # use mdbx::Environment;
+    /// # use mdbx::NoWriteMap;
     /// let dir = tempfile::tempdir().unwrap();
-    /// let env = Environment::new().open(dir.path()).unwrap();
+    /// let env = Environment::<NoWriteMap>::new().open(dir.path()).unwrap();
     /// let info = env.info().unwrap();
     /// let stat = env.stat().unwrap();
     /// let freelist = env.freelist().unwrap();
@@ -343,10 +342,10 @@ impl Info {
     }
 }
 
-unsafe impl<E> Send for GenericEnvironment<E> where E: EnvironmentKind {}
-unsafe impl<E> Sync for GenericEnvironment<E> where E: EnvironmentKind {}
+unsafe impl<E> Send for Environment<E> where E: EnvironmentKind {}
+unsafe impl<E> Sync for Environment<E> where E: EnvironmentKind {}
 
-impl<E> fmt::Debug for GenericEnvironment<E>
+impl<E> fmt::Debug for Environment<E>
 where
     E: EnvironmentKind,
 {
@@ -355,7 +354,7 @@ where
     }
 }
 
-impl<E> Drop for GenericEnvironment<E>
+impl<E> Drop for Environment<E>
 where
     E: EnvironmentKind,
 {
@@ -418,7 +417,7 @@ where
     ///
     /// The path may not contain the null character, Windows UNC (Uniform Naming Convention)
     /// paths are not supported either.
-    pub fn open(&self, path: &Path) -> Result<GenericEnvironment<E>> {
+    pub fn open(&self, path: &Path) -> Result<Environment<E>> {
         let mut env = self.open_with_permissions(path, 0o644)?;
 
         if let Mode::ReadWrite { .. } = self.flags.mode {
@@ -481,7 +480,7 @@ where
         &self,
         path: &Path,
         mode: ffi::mdbx_mode_t,
-    ) -> Result<GenericEnvironment<E>> {
+    ) -> Result<Environment<E>> {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_env_create(&mut env))?;
@@ -539,7 +538,7 @@ where
                 return Err(e);
             }
         }
-        Ok(GenericEnvironment {
+        Ok(Environment {
             env,
             txn_manager: None,
             _marker: PhantomData,
@@ -556,7 +555,7 @@ where
     ///
     /// This defines the number of slots in the lock table that is used to track readers in the
     /// the environment. The default is 126. Starting a read-only transaction normally ties a lock
-    /// table slot to the [Transaction] object until it or the [GenericEnvironment] object is destroyed.
+    /// table slot to the [Transaction] object until it or the [Environment] object is destroyed.
     pub fn set_max_readers(&mut self, max_readers: c_uint) -> &mut Self {
         self.max_readers = Some(max_readers);
         self
@@ -603,6 +602,8 @@ mod test {
     use crate::flags::*;
     use byteorder::{ByteOrder, LittleEndian};
     use tempfile::tempdir;
+
+    type Environment = crate::Environment<NoWriteMap>;
 
     #[test]
     fn test_open() {

@@ -720,6 +720,8 @@ mod test {
     use crate::environment::*;
     use tempfile::tempdir;
 
+    type Environment = crate::Environment<NoWriteMap>;
+
     #[test]
     fn test_get() {
         let dir = tempdir().unwrap();
