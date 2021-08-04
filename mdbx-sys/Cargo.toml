@@ -27,4 +27,4 @@ libc = "0.2"
 
 [build-dependencies]
 cc = "1.0"
-bindgen = { version = "0.58", default-features = false, features = ["runtime"] }
+bindgen = { version = "0.59", default-features = false, features = ["runtime"] }
