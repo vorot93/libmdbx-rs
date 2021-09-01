@@ -91,7 +91,7 @@ _MithrilDB_ is a rightly relevant name.
     - [Improvements beyond LMDB](#improvements-beyond-lmdb)
     - [History & Acknowledgments](#history)
 - [Usage](#usage)
-    - [Building](#building)
+    - [Building and Testing](#building-and-testing)
     - [API description](#api-description)
     - [Bindings](#bindings)
 - [Performance comparison](#performance-comparison)
@@ -167,9 +167,11 @@ transaction journal. No crash recovery needed. No maintenance is required.
 2. _libmdbx_ is based on [B+ tree](https://en.wikipedia.org/wiki/B%2B_tree), so access to database pages is mostly random.
 Thus SSDs provide a significant performance boost over spinning disks for large databases.
 
-3. _libmdbx_ uses [shadow paging](https://en.wikipedia.org/wiki/Shadow_paging) instead of [WAL](https://en.wikipedia.org/wiki/Write-ahead_logging). Thus syncing data to disk might be a bottleneck for write intensive workload.
+3. _libmdbx_ uses [shadow paging](https://en.wikipedia.org/wiki/Shadow_paging) instead of [WAL](https://en.wikipedia.org/wiki/Write-ahead_logging).
+Thus syncing data to disk might be a bottleneck for write intensive workload.
 
-4. _libmdbx_ uses [copy-on-write](https://en.wikipedia.org/wiki/Copy-on-write) for [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation) during updates, but read transactions prevents recycling an old retired/freed pages, since it read ones. Thus altering of data during a parallel
+4. _libmdbx_ uses [copy-on-write](https://en.wikipedia.org/wiki/Copy-on-write) for [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation) during updates,
+but read transactions prevents recycling an old retired/freed pages, since it read ones. Thus altering of data during a parallel
 long-lived read operation will increase the process work set, may exhaust entire free database space,
 the database can grow quickly, and result in performance degradation.
 Try to avoid long running read transactions.
@@ -369,7 +371,7 @@ The amalgamated source code could be created from the original clone of git
 repository on Linux by executing `make dist`. As a result, the desired
 set of files will be formed in the `dist` subdirectory.
 
-## Building
+## Building and Testing
 
 Both amalgamated and original source code provides build through the use
 [CMake](https://cmake.org/) or [GNU
@@ -387,17 +389,65 @@ So just using CMake or GNU Make in your habitual manner and feel free to
 fill an issue or make pull request in the case something will be
 unexpected or broken down.
 
+### Testing
+The amalgamated source code does not contain any tests for or several reasons.
+Please read [the explanation](https://github.com/erthink/libmdbx/issues/214#issuecomment-870717981) and don't ask to alter this.
+So for testing _libmdbx_ itself you need a full source code, i.e. the clone of a git repository, there is no option.
+
+The full source code of _libmdbx_ has a [`test` subdirectory](https://github.com/erthink/libmdbx/tree/master/test) with minimalistic test "framework".
+Actually yonder is a source code of the `mdbx_test` – console utility which has a set of command-line options that allow construct and run a reasonable enough test scenarios.
+This test utility is intended for _libmdbx_'s developers for testing library itself, but not for use by users.
+Therefore, only basic information is provided:
+
+   - There are few CRUD-based test cases (hill, TTL, nested, append, jitter, etc),
+     which can be combined to test the concurrent operations within shared database in a multi-processes environment.
+     This is the `basic` test scenario.
+   - The `Makefile` provide several self-described targets for testing: `smoke`, `test`, `check`, `memcheck`, `test-valgrind`,
+     `test-asan`, `test-leak`, `test-ubsan`, `cross-gcc`, `cross-qemu`, `gcc-analyzer`, `smoke-fault`, `smoke-singleprocess`,
+     `test-singleprocess`, 'long-test'. Please run `make --help` if doubt.
+   - In addition to the `mdbx_test` utility, there is the script [`long_stochastic.sh`](https://github.com/erthink/libmdbx/blob/master/test/long_stochastic.sh),
+     which calls `mdbx_test` by going through set of modes and options, with gradually increasing the number of operations and the size of transactions.
+     This script is used for mostly of all automatic testing, including `Makefile` targets and Continuous Integration.
+   - Brief information of available command-line options is available by `--help`.
+     However, you should dive into source code to get all, there is no option.
+
+Anyway, no matter how thoroughly the _libmdbx_ is tested, you should rely only on your own tests for a few reasons:
+
+1. Mostly of all use cases are unique.
+   So it is no warranty that your use case was properly tested, even the _libmdbx_'s tests engages stochastic approach.
+2. If there are problems, then your test on the one hand will help to verify whether you are using _libmdbx_ correctly,
+   on the other hand it will allow to reproduce the problem and insure against regression in a future.
+3. Actually you should rely on than you checked by yourself or take a risk.
+
 ### Common important details
 
 #### Build reproducibility
 By default _libmdbx_ track build time via `MDBX_BUILD_TIMESTAMP` build option and macro.
-So for a [reproducible builds](https://en.wikipedia.org/wiki/Reproducible_builds) you should predefine/override it to known fixed string value. For instance:
+So for a [reproducible builds](https://en.wikipedia.org/wiki/Reproducible_builds) you should predefine/override it to known fixed string value.
+For instance:
 
  - for reproducible build with make: `make MDBX_BUILD_TIMESTAMP=unknown ` ...
  - or during configure by CMake: `cmake -DMDBX_BUILD_TIMESTAMP:STRING=unknown ` ...
 
 Of course, in addition to this, your toolchain must ensure the reproducibility of builds.
 For more information please refer to [reproducible-builds.org](https://reproducible-builds.org/).
+
+#### Containers
+There are no special traits nor quirks if you use libmdbx ONLY inside the single container.
+But in a cross-container cases or with a host-container(s) mix the two major things MUST be
+guaranteed:
+
+1. Coherence of memory mapping content and unified page cache inside OS kernel for host and all container(s) operated with a some DB.
+Basically this means must be only a single physical copy of each memory mapped DB' page in the system memory.
+
+2. Uniqueness of PID values and/or a common space for ones:
+    - for POSIX systems: PID uniqueness for all processes operated with a DB.
+      I.e. the `--pid=host` is required for run DB-aware processes inside Docker,
+      either without host interaction a `--pid=container:<name|id>` with the same name/id.
+    - for non-POSIX (i.e. Windows) systems: inter-visibility of processes handles.
+      I.e. the `OpenProcess(SYNCHRONIZE, ..., PID)` must return reasonable error,
+      including `ERROR_ACCESS_DENIED`,
+      but not the `ERROR_INVALID_PARAMETER` as for an invalid/non-existent PID.
 
 #### DSO/DLL unloading and destructors of Thread-Local-Storage objects
 When building _libmdbx_ as a shared library or use static _libmdbx_ as a
@@ -508,6 +558,9 @@ Bindings
 
 | Runtime |  Repo  | Author |
 | ------- | ------ | ------ |
+| Python (draft) | [python-bindings](https://github.com/erthink/libmdbx/commits/python-bindings) branch | [Noel Kuntze](https://github.com/Thermi)
+| NodeJS  | [lmdbx-store](https://github.com/kriszyp/lmdbx-store) | [Kris Zyp](https://github.com/kriszyp/)
+| NodeJS  | [node-mdbx](https://www.npmjs.com/package/node-mdbx/) | [Сергей Федотов](mailto:sergey.fedotov@corp.mail.ru) |
 | Ruby    | [ruby-mdbx](https://rubygems.org/gems/mdbx/) | [Mahlon E. Smith](https://github.com/mahlonsmith) |
 | Go      | [mdbx-go](https://github.com/torquem-ch/mdbx-go) | [Alex Sharov](https://github.com/AskAlexSharov) |
 | [Nim](https://en.wikipedia.org/wiki/Nim_(programming_language)) | [NimDBX](https://github.com/snej/nimdbx) | [Jens Alfke](https://github.com/snej)
@@ -622,7 +675,9 @@ records.
  execution time of transactions. Each interval shows minimal and maximum
  execution time, cross marks standard deviation.
 
-**1,000,000 transactions in async-write mode**. In case of a crash all data is consistent and conforms to the one of last successful transactions, but lost transaction count is much higher than in
+**1,000,000 transactions in async-write mode**.
+In case of a crash all data is consistent and conforms to the one of last successful transactions,
+but lost transaction count is much higher than in
 lazy-write mode. All DB engines in this mode do as little writes as
 possible on persistent storage. _libmdbx_ uses
 [msync(MS_ASYNC)](https://linux.die.net/man/2/msync) in this mode.

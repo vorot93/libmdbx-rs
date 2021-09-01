@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 517b3e8cada12b033dc855029388aa6e1c7aa20ad04c1f914b81793472e108d8_v0_10_1_5_g18bc28be
+#define MDBX_BUILD_SOURCERY 4c0edad9e694f89ccb919dbe9a40cc1c9570bde6d8b72ba610260ffb4f5c608f_v0_10_2_0_g70933d81
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -315,7 +315,7 @@
 #       elif defined(__GNUC__) || __has_attribute(__hot__)
 #           define __hot __attribute__((__hot__)) __optimize("O3")
 #       else
-#           define __hot  __optimize("O3")
+#           define __hot __optimize("O3")
 #       endif
 #   else
 #       define __hot
@@ -429,11 +429,6 @@
 #   define ARRAY_END(array) (&array[ARRAY_LENGTH(array)])
 #endif /* ARRAY_END */
 
-#ifndef STRINGIFY
-#   define STRINGIFY_HELPER(x) #x
-#   define STRINGIFY(x) STRINGIFY_HELPER(x)
-#endif /* STRINGIFY */
-
 #define CONCAT(a,b) a##b
 #define XCONCAT(a,b) CONCAT(a,b)
 
@@ -451,7 +446,7 @@
 
 #define MDBX_STRING_TETRAD(str) MDBX_TETRAD(str[0], str[1], str[2], str[3])
 
-#define FIXME "FIXME: " __FILE__ ", " STRINGIFY(__LINE__)
+#define FIXME "FIXME: " __FILE__ ", " MDBX_STRINGIFY(__LINE__)
 
 #ifndef STATIC_ASSERT_MSG
 #   if defined(static_assert)
@@ -1005,8 +1000,8 @@ typedef struct mdbx_mmap_param {
   mdbx_filehandle_t fd;
   size_t limit;   /* mapping length, but NOT a size of file nor DB */
   size_t current; /* mapped region size, i.e. the size of file and DB */
-#if defined(_WIN32) || defined(_WIN64)
   uint64_t filesize /* in-process cache of a file size */;
+#if defined(_WIN32) || defined(_WIN64)
   HANDLE section; /* memory-mapped section handle */
 #endif
 } mdbx_mmap_t;
@@ -1240,8 +1235,10 @@ MDBX_INTERNAL_FUNC int mdbx_mmap(const int flags, mdbx_mmap_t *map,
                                  const size_t must, const size_t limit,
                                  const unsigned options);
 MDBX_INTERNAL_FUNC int mdbx_munmap(mdbx_mmap_t *map);
-MDBX_INTERNAL_FUNC int mdbx_mresize(int flags, mdbx_mmap_t *map, size_t current,
-                                    size_t wanna, const bool may_move);
+#define MDBX_MRESIZE_MAY_MOVE 0x00000100
+#define MDBX_MRESIZE_MAY_UNMAP 0x00000200
+MDBX_INTERNAL_FUNC int mdbx_mresize(const int flags, mdbx_mmap_t *map,
+                                    size_t size, size_t limit);
 #if defined(_WIN32) || defined(_WIN64)
 typedef struct {
   unsigned limit, count;
@@ -1590,18 +1587,18 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_ENV_CHECKPID 1
 #endif
-#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" STRINGIFY(MDBX_ENV_CHECKPID)
+#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #else
-#define MDBX_ENV_CHECKPID_CONFIG STRINGIFY(MDBX_ENV_CHECKPID)
+#define MDBX_ENV_CHECKPID_CONFIG MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #endif /* MDBX_ENV_CHECKPID */
 
 /** Controls checking transaction owner thread against misuse transactions from
  * other threads. */
 #ifndef MDBX_TXN_CHECKOWNER
 #define MDBX_TXN_CHECKOWNER 1
-#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" STRINGIFY(MDBX_TXN_CHECKOWNER)
+#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #else
-#define MDBX_TXN_CHECKOWNER_CONFIG STRINGIFY(MDBX_TXN_CHECKOWNER)
+#define MDBX_TXN_CHECKOWNER_CONFIG MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #endif /* MDBX_TXN_CHECKOWNER */
 
 /** Does a system have battery-backed Real-Time Clock or just a fake. */
@@ -1612,9 +1609,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_TRUST_RTC 1
 #endif
-#define MDBX_TRUST_RTC_CONFIG "AUTO=" STRINGIFY(MDBX_TRUST_RTC)
+#define MDBX_TRUST_RTC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #else
-#define MDBX_TRUST_RTC_CONFIG STRINGIFY(MDBX_TRUST_RTC)
+#define MDBX_TRUST_RTC_CONFIG MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #endif /* MDBX_TRUST_RTC */
 
 /** Controls online database auto-compactification during write-transactions. */
@@ -1789,9 +1786,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_LOCKING MDBX_LOCKING_SYSV
 #endif
-#define MDBX_LOCKING_CONFIG "AUTO=" STRINGIFY(MDBX_LOCKING)
+#define MDBX_LOCKING_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_LOCKING)
 #else
-#define MDBX_LOCKING_CONFIG STRINGIFY(MDBX_LOCKING)
+#define MDBX_LOCKING_CONFIG MDBX_STRINGIFY(MDBX_LOCKING)
 #endif /* MDBX_LOCKING */
 #endif /* !Windows */
 
@@ -1804,9 +1801,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_USE_OFDLOCKS 0
 #endif
-#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" STRINGIFY(MDBX_USE_OFDLOCKS)
+#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #else
-#define MDBX_USE_OFDLOCKS_CONFIG STRINGIFY(MDBX_USE_OFDLOCKS)
+#define MDBX_USE_OFDLOCKS_CONFIG MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #endif /* MDBX_USE_OFDLOCKS */
 
 /** Advanced: Using sendfile() syscall (autodetection by default). */
@@ -1877,9 +1874,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_64BIT_ATOMIC 0
 #endif
-#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_ATOMIC)
+#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #else
-#define MDBX_64BIT_ATOMIC_CONFIG STRINGIFY(MDBX_64BIT_ATOMIC)
+#define MDBX_64BIT_ATOMIC_CONFIG MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #endif /* MDBX_64BIT_ATOMIC */
 
 #ifndef MDBX_64BIT_CAS
@@ -1906,9 +1903,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_64BIT_CAS MDBX_64BIT_ATOMIC
 #endif
-#define MDBX_64BIT_CAS_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_CAS)
+#define MDBX_64BIT_CAS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_CAS)
 #else
-#define MDBX_64BIT_CAS_CONFIG STRINGIFY(MDBX_64BIT_CAS)
+#define MDBX_64BIT_CAS_CONFIG MDBX_STRINGIFY(MDBX_64BIT_CAS)
 #endif /* MDBX_64BIT_CAS */
 
 #ifndef MDBX_UNALIGNED_OK
@@ -2601,15 +2598,13 @@ typedef struct MDBX_lockinfo {
 
 #if MDBX_WORDBITS >= 64
 #define MAX_MAPSIZE MAX_MAPSIZE64
-#define MDBX_READERS_LIMIT                                                     \
-  ((MAX_PAGESIZE - sizeof(MDBX_lockinfo)) / sizeof(MDBX_reader))
 #define MDBX_PGL_LIMIT ((size_t)MAX_PAGENO)
 #else
-#define MDBX_READERS_LIMIT 1024
 #define MAX_MAPSIZE MAX_MAPSIZE32
 #define MDBX_PGL_LIMIT (MAX_MAPSIZE32 / MIN_PAGESIZE)
 #endif /* MDBX_WORDBITS */
 
+#define MDBX_READERS_LIMIT 32767
 #define MDBX_RADIXSORT_THRESHOLD 333
 
 /*----------------------------------------------------------------------------*/
@@ -2931,7 +2926,7 @@ struct MDBX_env {
   mdbx_thread_key_t me_txkey; /* thread-key for readers */
   char *me_pathname;          /* path to the DB files */
   void *me_pbuf;              /* scratch area for DUPSORT put() */
-  MDBX_txn *me_txn0;          /* prealloc'd write transaction */
+  MDBX_txn *me_txn0;          /* preallocated write transaction */
 
   MDBX_dbx *me_dbxs;    /* array of static DB info */
   uint16_t *me_dbflags; /* array of flags from MDBX_db.md_flags */
@@ -3432,6 +3427,20 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
 }
 #endif
 
+#define MDBX_ASAN_POISON_MEMORY_REGION(addr, size)                             \
+  do {                                                                         \
+    mdbx_trace("POISON_MEMORY_REGION(%p, %zu) at %u", (void *)(addr),          \
+               (size_t)(size), __LINE__);                                      \
+    ASAN_POISON_MEMORY_REGION(addr, size);                                     \
+  } while (0)
+
+#define MDBX_ASAN_UNPOISON_MEMORY_REGION(addr, size)                           \
+  do {                                                                         \
+    mdbx_trace("UNPOISON_MEMORY_REGION(%p, %zu) at %u", (void *)(addr),        \
+               (size_t)(size), __LINE__);                                      \
+    ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
+  } while (0)
+
 typedef struct flagbit {
   int bit;
   const char *name;
@@ -3607,7 +3616,7 @@ struct problem {
 };
 
 struct problem *problems_list;
-uint64_t total_problems;
+unsigned total_problems, data_tree_problems, gc_tree_problems;
 
 static void MDBX_PRINTF_ARGS(1, 2) print(const char *msg, ...) {
   if (!quiet) {
@@ -3794,14 +3803,20 @@ static int pgvisitor(const uint64_t pgno, const unsigned pgnumber,
                      const size_t nentries, const size_t payload_bytes,
                      const size_t header_bytes, const size_t unused_bytes) {
   (void)ctx;
+  const bool is_gc_tree = dbi_name_or_tag == MDBX_PGWALK_GC;
   if (deep > 42) {
     problem_add("deep", deep, "too large", nullptr);
+    data_tree_problems += !is_gc_tree;
+    gc_tree_problems += is_gc_tree;
     return MDBX_CORRUPTED /* avoid infinite loop/recursion */;
   }
 
   walk_dbi_t *dbi = pagemap_lookup_dbi(dbi_name_or_tag, false);
-  if (!dbi)
+  if (!dbi) {
+    data_tree_problems += !is_gc_tree;
+    gc_tree_problems += is_gc_tree;
     return MDBX_ENOMEM;
+  }
 
   const size_t page_bytes = payload_bytes + header_bytes + unused_bytes;
   walk.pgcount += pgnumber;
@@ -3814,13 +3829,19 @@ static int pgvisitor(const uint64_t pgno, const unsigned pgnumber,
                 (unsigned)pagetype, deep);
     pagetype_caption = "unknown";
     dbi->pages.other += pgnumber;
+    data_tree_problems += !is_gc_tree;
+    gc_tree_problems += is_gc_tree;
     break;
   case MDBX_page_broken:
     pagetype_caption = "broken";
     dbi->pages.other += pgnumber;
+    data_tree_problems += !is_gc_tree;
+    gc_tree_problems += is_gc_tree;
     break;
   case MDBX_subpage_broken:
     pagetype_caption = "broken-subpage";
+    data_tree_problems += !is_gc_tree;
+    gc_tree_problems += is_gc_tree;
     break;
   case MDBX_page_meta:
     pagetype_caption = "meta";
@@ -3870,17 +3891,21 @@ static int pgvisitor(const uint64_t pgno, const unsigned pgnumber,
     bool already_used = false;
     for (unsigned n = 0; n < pgnumber; ++n) {
       uint64_t spanpgno = pgno + n;
-      if (spanpgno >= alloc_pages)
+      if (spanpgno >= alloc_pages) {
         problem_add("page", spanpgno, "wrong page-no",
                     "%s-page: %" PRIu64 " > %" PRIu64 ", deep %i",
                     pagetype_caption, spanpgno, alloc_pages, deep);
-      else if (walk.pagemap[spanpgno]) {
+        data_tree_problems += !is_gc_tree;
+        gc_tree_problems += is_gc_tree;
+      } else if (walk.pagemap[spanpgno]) {
         walk_dbi_t *coll_dbi = &walk.dbi[walk.pagemap[spanpgno] - 1];
         problem_add("page", spanpgno,
                     (branch && coll_dbi == dbi) ? "loop" : "already used",
                     "%s-page: by %s, deep %i", pagetype_caption, coll_dbi->name,
                     deep);
         already_used = true;
+        data_tree_problems += !is_gc_tree;
+        gc_tree_problems += is_gc_tree;
       } else {
         walk.pagemap[spanpgno] = (short)(dbi - walk.dbi + 1);
         dbi->pages.total += 1;
@@ -3894,18 +3919,26 @@ static int pgvisitor(const uint64_t pgno, const unsigned pgnumber,
 
   if (MDBX_IS_ERROR(err)) {
     problem_add("page", pgno, "invalid/corrupted", "%s-page", pagetype_caption);
+    data_tree_problems += !is_gc_tree;
+    gc_tree_problems += is_gc_tree;
   } else {
-    if (unused_bytes > page_size)
+    if (unused_bytes > page_size) {
       problem_add("page", pgno, "illegal unused-bytes",
                   "%s-page: %u < %" PRIuPTR " < %u", pagetype_caption, 0,
                   unused_bytes, envinfo.mi_dxb_pagesize);
+      data_tree_problems += !is_gc_tree;
+      gc_tree_problems += is_gc_tree;
+    }
 
     if (header_bytes < (int)sizeof(long) ||
-        (size_t)header_bytes >= envinfo.mi_dxb_pagesize - sizeof(long))
+        (size_t)header_bytes >= envinfo.mi_dxb_pagesize - sizeof(long)) {
       problem_add("page", pgno, "illegal header-length",
                   "%s-page: %" PRIuPTR " < %" PRIuPTR " < %" PRIuPTR,
                   pagetype_caption, sizeof(long), header_bytes,
                   envinfo.mi_dxb_pagesize - sizeof(long));
+      data_tree_problems += !is_gc_tree;
+      gc_tree_problems += is_gc_tree;
+    }
     if (payload_bytes < 1) {
       if (nentries > 1) {
         problem_add("page", pgno, "zero size-of-entry",
@@ -3915,12 +3948,16 @@ static int pgvisitor(const uint64_t pgno, const unsigned pgnumber,
           // LY: hush a misuse error
           page_bytes = page_size;
         } */
+        data_tree_problems += !is_gc_tree;
+        gc_tree_problems += is_gc_tree;
       } else {
         problem_add("page", pgno, "empty",
                     "%s-page: payload %" PRIuPTR " bytes, %" PRIuPTR
                     " entries, deep %i",
                     pagetype_caption, payload_bytes, nentries, deep);
         dbi->pages.empty += 1;
+        data_tree_problems += !is_gc_tree;
+        gc_tree_problems += is_gc_tree;
       }
     }
 
@@ -3933,6 +3970,8 @@ static int pgvisitor(const uint64_t pgno, const unsigned pgnumber,
                     payload_bytes, unused_bytes, deep);
         if (page_size > page_bytes)
           dbi->lost_bytes += page_size - page_bytes;
+        data_tree_problems += !is_gc_tree;
+        gc_tree_problems += is_gc_tree;
       } else {
         dbi->payload_bytes += payload_bytes + header_bytes;
         walk.total_payload_bytes += payload_bytes + header_bytes;
@@ -4302,8 +4341,9 @@ static int process_db(MDBX_dbi dbi_handle, char *dbi_name, visitor *handler,
       bad_data = true;
     }
 
-    if (prev_key.iov_base && !bad_data) {
-      if ((flags & MDBX_DUPFIXED) && prev_data.iov_len != data.iov_len) {
+    if (prev_key.iov_base) {
+      if (prev_data.iov_base && !bad_data && (flags & MDBX_DUPFIXED) &&
+          prev_data.iov_len != data.iov_len) {
         problem_add("entry", record_count, "different data length",
                     "%" PRIuPTR " != %" PRIuPTR, prev_data.iov_len,
                     data.iov_len);
@@ -4316,11 +4356,11 @@ static int process_db(MDBX_dbi dbi_handle, char *dbi_name, visitor *handler,
           ++dups;
           if ((flags & MDBX_DUPSORT) == 0) {
             problem_add("entry", record_count, "duplicated entries", nullptr);
-            if (data.iov_len == prev_data.iov_len &&
+            if (prev_data.iov_base && data.iov_len == prev_data.iov_len &&
                 memcmp(data.iov_base, prev_data.iov_base, data.iov_len) == 0) {
               problem_add("entry", record_count, "complete duplicate", nullptr);
             }
-          } else if (!bad_data) {
+          } else if (!bad_data && prev_data.iov_base) {
             cmp = mdbx_dcmp(txn, dbi_handle, &data, &prev_data);
             if (cmp == 0) {
               problem_add("entry", record_count, "complete duplicate", nullptr);
@@ -4333,11 +4373,6 @@ static int process_db(MDBX_dbi dbi_handle, char *dbi_name, visitor *handler,
           problem_add("entry", record_count, "wrong order of entries", nullptr);
         }
       }
-    } else if (verbose) {
-      if (flags & MDBX_INTEGERKEY)
-        print(" - fixed key-size %" PRIuPTR "\n", key.iov_len);
-      if (flags & (MDBX_INTEGERDUP | MDBX_DUPFIXED))
-        print(" - fixed data-size %" PRIuPTR "\n", data.iov_len);
     }
 
     if (handler) {
@@ -4350,10 +4385,17 @@ static int process_db(MDBX_dbi dbi_handle, char *dbi_name, visitor *handler,
     key_bytes += key.iov_len;
     data_bytes += data.iov_len;
 
-    if (!bad_key)
+    if (!bad_key) {
+      if (verbose && (flags & MDBX_INTEGERKEY) && !prev_key.iov_base)
+        print(" - fixed key-size %" PRIuPTR "\n", key.iov_len);
       prev_key = key;
-    if (!bad_data)
+    }
+    if (!bad_data) {
+      if (verbose && (flags & (MDBX_INTEGERDUP | MDBX_DUPFIXED)) &&
+          !prev_data.iov_base)
+        print(" - fixed data-size %" PRIuPTR "\n", data.iov_len);
       prev_data = data;
+    }
     rc = mdbx_cursor_get(mc, &key, &data, MDBX_NEXT);
   }
   if (rc != MDBX_NOTFOUND)
@@ -4410,7 +4452,7 @@ static __inline bool meta_ot(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
 
 static __inline bool meta_eq(txnid_t txn_a, uint64_t sign_a, txnid_t txn_b,
                              uint64_t sign_b) {
-  if (txn_a != txn_b)
+  if (!txn_a || txn_a != txn_b)
     return false;
 
   if (SIGN_IS_STEADY(sign_a) != SIGN_IS_STEADY(sign_b))
@@ -4528,7 +4570,7 @@ int main(int argc, char *argv[]) {
   int rc;
   char *prog = argv[0];
   char *envname;
-  int problems_maindb = 0, problems_freedb = 0, problems_meta = 0;
+  unsigned problems_maindb = 0, problems_freedb = 0, problems_meta = 0;
   bool write_locked = false;
   bool turn_meta = false;
   bool force_turn_meta = false;
@@ -5053,8 +5095,19 @@ int main(int argc, char *argv[]) {
 
   if (!verbose)
     print("Iterating DBIs...\n");
-  problems_maindb = process_db(~0u, /* MAIN_DBI */ nullptr, nullptr, false);
-  problems_freedb = process_db(FREE_DBI, "@GC", handle_freedb, false);
+  if (data_tree_problems) {
+    print("Skip processing %s since tree is corrupted (%u problems)\n", "@MAIN",
+          data_tree_problems);
+    problems_maindb = data_tree_problems;
+  } else
+    problems_maindb = process_db(~0u, /* MAIN_DBI */ nullptr, nullptr, false);
+
+  if (gc_tree_problems) {
+    print("Skip processing %s since tree is corrupted (%u problems)\n", "@GC",
+          gc_tree_problems);
+    problems_freedb = gc_tree_problems;
+  } else
+    problems_freedb = process_db(FREE_DBI, "@GC", handle_freedb, false);
 
   if (verbose) {
     uint64_t value = envinfo.mi_mapsize / envinfo.mi_dxb_pagesize;
@@ -5181,8 +5234,8 @@ bailout:
 #endif /* !WINDOWS */
 
   if (total_problems) {
-    print("Total %" PRIu64 " error%s detected, elapsed %.3f seconds.\n",
-          total_problems, (total_problems > 1) ? "s are" : " is", elapsed);
+    print("Total %u error%s detected, elapsed %.3f seconds.\n", total_problems,
+          (total_problems > 1) ? "s are" : " is", elapsed);
     if (problems_meta || problems_maindb || problems_freedb)
       return EXIT_FAILURE_CHECK_MAJOR;
     return EXIT_FAILURE_CHECK_MINOR;

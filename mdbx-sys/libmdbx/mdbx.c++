@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 517b3e8cada12b033dc855029388aa6e1c7aa20ad04c1f914b81793472e108d8_v0_10_1_5_g18bc28be
+#define MDBX_BUILD_SOURCERY 4c0edad9e694f89ccb919dbe9a40cc1c9570bde6d8b72ba610260ffb4f5c608f_v0_10_2_0_g70933d81
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -293,7 +293,7 @@
 #       elif defined(__GNUC__) || __has_attribute(__hot__)
 #           define __hot __attribute__((__hot__)) __optimize("O3")
 #       else
-#           define __hot  __optimize("O3")
+#           define __hot __optimize("O3")
 #       endif
 #   else
 #       define __hot
@@ -407,11 +407,6 @@
 #   define ARRAY_END(array) (&array[ARRAY_LENGTH(array)])
 #endif /* ARRAY_END */
 
-#ifndef STRINGIFY
-#   define STRINGIFY_HELPER(x) #x
-#   define STRINGIFY(x) STRINGIFY_HELPER(x)
-#endif /* STRINGIFY */
-
 #define CONCAT(a,b) a##b
 #define XCONCAT(a,b) CONCAT(a,b)
 
@@ -429,7 +424,7 @@
 
 #define MDBX_STRING_TETRAD(str) MDBX_TETRAD(str[0], str[1], str[2], str[3])
 
-#define FIXME "FIXME: " __FILE__ ", " STRINGIFY(__LINE__)
+#define FIXME "FIXME: " __FILE__ ", " MDBX_STRINGIFY(__LINE__)
 
 #ifndef STATIC_ASSERT_MSG
 #   if defined(static_assert)
@@ -983,8 +978,8 @@ typedef struct mdbx_mmap_param {
   mdbx_filehandle_t fd;
   size_t limit;   /* mapping length, but NOT a size of file nor DB */
   size_t current; /* mapped region size, i.e. the size of file and DB */
-#if defined(_WIN32) || defined(_WIN64)
   uint64_t filesize /* in-process cache of a file size */;
+#if defined(_WIN32) || defined(_WIN64)
   HANDLE section; /* memory-mapped section handle */
 #endif
 } mdbx_mmap_t;
@@ -1218,8 +1213,10 @@ MDBX_INTERNAL_FUNC int mdbx_mmap(const int flags, mdbx_mmap_t *map,
                                  const size_t must, const size_t limit,
                                  const unsigned options);
 MDBX_INTERNAL_FUNC int mdbx_munmap(mdbx_mmap_t *map);
-MDBX_INTERNAL_FUNC int mdbx_mresize(int flags, mdbx_mmap_t *map, size_t current,
-                                    size_t wanna, const bool may_move);
+#define MDBX_MRESIZE_MAY_MOVE 0x00000100
+#define MDBX_MRESIZE_MAY_UNMAP 0x00000200
+MDBX_INTERNAL_FUNC int mdbx_mresize(const int flags, mdbx_mmap_t *map,
+                                    size_t size, size_t limit);
 #if defined(_WIN32) || defined(_WIN64)
 typedef struct {
   unsigned limit, count;
@@ -1568,18 +1565,18 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_ENV_CHECKPID 1
 #endif
-#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" STRINGIFY(MDBX_ENV_CHECKPID)
+#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #else
-#define MDBX_ENV_CHECKPID_CONFIG STRINGIFY(MDBX_ENV_CHECKPID)
+#define MDBX_ENV_CHECKPID_CONFIG MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #endif /* MDBX_ENV_CHECKPID */
 
 /** Controls checking transaction owner thread against misuse transactions from
  * other threads. */
 #ifndef MDBX_TXN_CHECKOWNER
 #define MDBX_TXN_CHECKOWNER 1
-#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" STRINGIFY(MDBX_TXN_CHECKOWNER)
+#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #else
-#define MDBX_TXN_CHECKOWNER_CONFIG STRINGIFY(MDBX_TXN_CHECKOWNER)
+#define MDBX_TXN_CHECKOWNER_CONFIG MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #endif /* MDBX_TXN_CHECKOWNER */
 
 /** Does a system have battery-backed Real-Time Clock or just a fake. */
@@ -1590,9 +1587,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_TRUST_RTC 1
 #endif
-#define MDBX_TRUST_RTC_CONFIG "AUTO=" STRINGIFY(MDBX_TRUST_RTC)
+#define MDBX_TRUST_RTC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #else
-#define MDBX_TRUST_RTC_CONFIG STRINGIFY(MDBX_TRUST_RTC)
+#define MDBX_TRUST_RTC_CONFIG MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #endif /* MDBX_TRUST_RTC */
 
 /** Controls online database auto-compactification during write-transactions. */
@@ -1767,9 +1764,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_LOCKING MDBX_LOCKING_SYSV
 #endif
-#define MDBX_LOCKING_CONFIG "AUTO=" STRINGIFY(MDBX_LOCKING)
+#define MDBX_LOCKING_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_LOCKING)
 #else
-#define MDBX_LOCKING_CONFIG STRINGIFY(MDBX_LOCKING)
+#define MDBX_LOCKING_CONFIG MDBX_STRINGIFY(MDBX_LOCKING)
 #endif /* MDBX_LOCKING */
 #endif /* !Windows */
 
@@ -1782,9 +1779,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_USE_OFDLOCKS 0
 #endif
-#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" STRINGIFY(MDBX_USE_OFDLOCKS)
+#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #else
-#define MDBX_USE_OFDLOCKS_CONFIG STRINGIFY(MDBX_USE_OFDLOCKS)
+#define MDBX_USE_OFDLOCKS_CONFIG MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #endif /* MDBX_USE_OFDLOCKS */
 
 /** Advanced: Using sendfile() syscall (autodetection by default). */
@@ -1855,9 +1852,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_64BIT_ATOMIC 0
 #endif
-#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_ATOMIC)
+#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #else
-#define MDBX_64BIT_ATOMIC_CONFIG STRINGIFY(MDBX_64BIT_ATOMIC)
+#define MDBX_64BIT_ATOMIC_CONFIG MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #endif /* MDBX_64BIT_ATOMIC */
 
 #ifndef MDBX_64BIT_CAS
@@ -1884,9 +1881,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_64BIT_CAS MDBX_64BIT_ATOMIC
 #endif
-#define MDBX_64BIT_CAS_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_CAS)
+#define MDBX_64BIT_CAS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_CAS)
 #else
-#define MDBX_64BIT_CAS_CONFIG STRINGIFY(MDBX_64BIT_CAS)
+#define MDBX_64BIT_CAS_CONFIG MDBX_STRINGIFY(MDBX_64BIT_CAS)
 #endif /* MDBX_64BIT_CAS */
 
 #ifndef MDBX_UNALIGNED_OK
@@ -2579,15 +2576,13 @@ typedef struct MDBX_lockinfo {
 
 #if MDBX_WORDBITS >= 64
 #define MAX_MAPSIZE MAX_MAPSIZE64
-#define MDBX_READERS_LIMIT                                                     \
-  ((MAX_PAGESIZE - sizeof(MDBX_lockinfo)) / sizeof(MDBX_reader))
 #define MDBX_PGL_LIMIT ((size_t)MAX_PAGENO)
 #else
-#define MDBX_READERS_LIMIT 1024
 #define MAX_MAPSIZE MAX_MAPSIZE32
 #define MDBX_PGL_LIMIT (MAX_MAPSIZE32 / MIN_PAGESIZE)
 #endif /* MDBX_WORDBITS */
 
+#define MDBX_READERS_LIMIT 32767
 #define MDBX_RADIXSORT_THRESHOLD 333
 
 /*----------------------------------------------------------------------------*/
@@ -2909,7 +2904,7 @@ struct MDBX_env {
   mdbx_thread_key_t me_txkey; /* thread-key for readers */
   char *me_pathname;          /* path to the DB files */
   void *me_pbuf;              /* scratch area for DUPSORT put() */
-  MDBX_txn *me_txn0;          /* prealloc'd write transaction */
+  MDBX_txn *me_txn0;          /* preallocated write transaction */
 
   MDBX_dbx *me_dbxs;    /* array of static DB info */
   uint16_t *me_dbflags; /* array of flags from MDBX_db.md_flags */
@@ -3409,6 +3404,20 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
 #ifdef __cplusplus
 }
 #endif
+
+#define MDBX_ASAN_POISON_MEMORY_REGION(addr, size)                             \
+  do {                                                                         \
+    mdbx_trace("POISON_MEMORY_REGION(%p, %zu) at %u", (void *)(addr),          \
+               (size_t)(size), __LINE__);                                      \
+    ASAN_POISON_MEMORY_REGION(addr, size);                                     \
+  } while (0)
+
+#define MDBX_ASAN_UNPOISON_MEMORY_REGION(addr, size)                           \
+  do {                                                                         \
+    mdbx_trace("UNPOISON_MEMORY_REGION(%p, %zu) at %u", (void *)(addr),        \
+               (size_t)(size), __LINE__);                                      \
+    ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
+  } while (0)
 //
 // Copyright (c) 2020-2021, Leonid Yuriev <leo@yuriev.ru>.
 // SPDX-License-Identifier: Apache-2.0
@@ -3532,7 +3541,7 @@ public:
 
 //------------------------------------------------------------------------------
 
-__cold std::string format_va(const char *fmt, va_list ap) {
+__cold  std::string format_va(const char *fmt, va_list ap) {
   va_list ones;
   va_copy(ones, ap);
 #ifdef _MSC_VER
@@ -3553,7 +3562,7 @@ __cold std::string format_va(const char *fmt, va_list ap) {
   return result;
 }
 
-__cold std::string format(const char *fmt, ...) {
+__cold  std::string format(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
   std::string result = format_va(fmt, ap);
@@ -3574,15 +3583,15 @@ public:
   virtual ~bug() noexcept;
 };
 
-__cold bug::bug(const trouble_location &location) noexcept
+__cold  bug::bug(const trouble_location &location) noexcept
     : std::runtime_error(format("mdbx.bug: %s.%s at %s:%u", location.function(),
                                 location.condition(), location.filename(),
                                 location.line())),
       location_(location) {}
 
-__cold bug::~bug() noexcept {}
+__cold  bug::~bug() noexcept {}
 
-[[noreturn]] __cold void raise_bug(const trouble_location &what_and_where) {
+[[noreturn]] __cold  void raise_bug(const trouble_location &what_and_where) {
   throw bug(what_and_where);
 }
 
@@ -3596,7 +3605,7 @@ __cold bug::~bug() noexcept {}
 #define ENSURE(condition)                                                      \
   do                                                                           \
     if (MDBX_UNLIKELY(!(condition)))                                           \
-      RAISE_BUG(__LINE__, #condition, __func__, __FILE__);                     \
+      MDBX_CXX20_UNLIKELY RAISE_BUG(__LINE__, #condition, __func__, __FILE__); \
   while (0)
 
 #define NOT_IMPLEMENTED()                                                      \
@@ -3676,16 +3685,22 @@ namespace mdbx {
 
 [[noreturn]] __cold void throw_max_length_exceeded() {
   throw std::length_error(
-      "mdbx:: exceeded the maximal length of data/slice/buffer");
+      "mdbx:: Exceeded the maximal length of data/slice/buffer.");
 }
 
 [[noreturn]] __cold void throw_too_small_target_buffer() {
-  throw std::length_error("mdbx:: the target buffer is too small");
+  throw std::length_error("mdbx:: The target buffer is too small.");
 }
 
 [[noreturn]] __cold void throw_out_range() {
-  throw std::out_of_range("mdbx:: slice or buffer method was called with "
-                          "an argument that exceeds the length");
+  throw std::out_of_range("mdbx:: Slice or buffer method was called with "
+                          "an argument that exceeds the length.");
+}
+
+[[noreturn]] __cold void throw_allocators_mismatch() {
+  throw std::logic_error(
+      "mdbx:: An allocators mismatch, so an object could not be transferred "
+      "into an incompatible memory allocation scheme.");
 }
 
 __cold exception::exception(const ::mdbx::error &error) noexcept
@@ -3746,7 +3761,7 @@ __cold const char *error::what() const noexcept {
   switch (code()) {
 #define ERROR_CASE(CODE)                                                       \
   case CODE:                                                                   \
-    return STRINGIFY(CODE)
+    return MDBX_STRINGIFY(CODE)
     ERROR_CASE(MDBX_ENODATA);
     ERROR_CASE(MDBX_EINVAL);
     ERROR_CASE(MDBX_EACCESS);
@@ -3882,15 +3897,15 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
       F0, F1, F1, F1, F4, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_, P_  // f0
   };
 
-  if (length() < 1)
-    return false;
+  if (MDBX_UNLIKELY(length() < 1))
+    MDBX_CXX20_UNLIKELY return false;
 
   auto src = byte_ptr();
   const auto end = src + length();
   if (MDBX_UNLIKELY(disable_utf8)) {
     do
       if (MDBX_UNLIKELY((P_ & map[*src]) == 0))
-        return false;
+        MDBX_CXX20_UNLIKELY return false;
     while (++src < end);
     return true;
   }
@@ -3901,35 +3916,35 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
     const auto second_to = range_to[bits & second_range_mask];
     switch (bits >> LS) {
     default:
-      return false;
+      MDBX_CXX20_UNLIKELY return false;
     case 1:
       src += 1;
       continue;
     case 2:
-      if (unlikely(src + 1 >= end))
-        return false;
-      if (unlikely(src[1] < second_from || src[1] > second_to))
-        return false;
+      if (MDBX_UNLIKELY(src + 1 >= end))
+        MDBX_CXX20_UNLIKELY return false;
+      if (MDBX_UNLIKELY(src[1] < second_from || src[1] > second_to))
+        MDBX_CXX20_UNLIKELY return false;
       src += 2;
       continue;
     case 3:
-      if (unlikely(src + 3 >= end))
-        return false;
-      if (unlikely(src[1] < second_from || src[1] > second_to))
-        return false;
-      if (unlikely(src[2] < 0x80 || src[2] > 0xBF))
-        return false;
+      if (MDBX_UNLIKELY(src + 3 >= end))
+        MDBX_CXX20_UNLIKELY return false;
+      if (MDBX_UNLIKELY(src[1] < second_from || src[1] > second_to))
+        MDBX_CXX20_UNLIKELY return false;
+      if (MDBX_UNLIKELY(src[2] < 0x80 || src[2] > 0xBF))
+        MDBX_CXX20_UNLIKELY return false;
       src += 3;
       continue;
     case 4:
-      if (unlikely(src + 4 >= end))
-        return false;
-      if (unlikely(src[1] < second_from || src[1] > second_to))
-        return false;
-      if (unlikely(src[2] < 0x80 || src[2] > 0xBF))
-        return false;
-      if (unlikely(src[3] < 0x80 || src[3] > 0xBF))
-        return false;
+      if (MDBX_UNLIKELY(src + 4 >= end))
+        MDBX_CXX20_UNLIKELY return false;
+      if (MDBX_UNLIKELY(src[1] < second_from || src[1] > second_to))
+        MDBX_CXX20_UNLIKELY return false;
+      if (MDBX_UNLIKELY(src[2] < 0x80 || src[2] > 0xBF))
+        MDBX_CXX20_UNLIKELY return false;
+      if (MDBX_UNLIKELY(src[3] < 0x80 || src[3] > 0xBF))
+        MDBX_CXX20_UNLIKELY return false;
       src += 4;
       continue;
     }
@@ -3940,15 +3955,14 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
 
 //------------------------------------------------------------------------------
 
-char *slice::to_hex(char *__restrict dest, size_t dest_size, bool uppercase,
-                    unsigned wrap_width) const {
-  if (MDBX_UNLIKELY(to_hex_bytes(wrap_width) > dest_size))
-    throw_too_small_target_buffer();
+char *to_hex::write_bytes(char *__restrict dest, size_t dest_size) const {
+  if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
+    MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
-  auto src = byte_ptr();
+  auto src = source.byte_ptr();
   const char alphabase = (uppercase ? 'A' : 'a') - 10;
   auto line = dest;
-  for (const auto end = src + length(); src != end; ++src) {
+  for (const auto end = source.end_byte_ptr(); src != end; ++src) {
     const int8_t hi = *src >> 4;
     const int8_t lo = *src & 15;
     dest[0] = char(alphabase + hi + (((hi - 10) >> 7) & -7));
@@ -3962,16 +3976,15 @@ char *slice::to_hex(char *__restrict dest, size_t dest_size, bool uppercase,
   return dest;
 }
 
-byte *slice::from_hex(byte *__restrict dest, size_t dest_size,
-                      bool ignore_spaces) const {
-  if (MDBX_UNLIKELY(length() % 2 && !ignore_spaces))
-    throw std::domain_error(
+char *from_hex::write_bytes(char *__restrict dest, size_t dest_size) const {
+  if (MDBX_UNLIKELY(source.length() % 2 && !ignore_spaces))
+    MDBX_CXX20_UNLIKELY throw std::domain_error(
         "mdbx::from_hex:: odd length of hexadecimal string");
-  if (MDBX_UNLIKELY(from_hex_bytes() > dest_size))
-    throw_too_small_target_buffer();
+  if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
+    MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
-  auto src = byte_ptr();
-  for (auto left = length(); left > 0;) {
+  auto src = source.byte_ptr();
+  for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
         MDBX_LIKELY(ignore_spaces && isspace(*src))) {
       ++src;
@@ -3980,7 +3993,8 @@ byte *slice::from_hex(byte *__restrict dest, size_t dest_size,
     }
 
     if (MDBX_UNLIKELY(left < 1 || !isxdigit(src[0]) || !isxdigit(src[1])))
-      throw std::domain_error("mdbx::from_hex:: invalid hexadecimal string");
+      MDBX_CXX20_UNLIKELY throw std::domain_error(
+          "mdbx::from_hex:: invalid hexadecimal string");
 
     int8_t hi = src[0];
     hi = (hi | 0x20) - 'a';
@@ -3997,13 +4011,13 @@ byte *slice::from_hex(byte *__restrict dest, size_t dest_size,
   return dest;
 }
 
-bool slice::is_hex(bool ignore_spaces) const noexcept {
-  if (MDBX_UNLIKELY(length() % 2 && !ignore_spaces))
-    return false;
+bool from_hex::is_erroneous() const noexcept {
+  if (MDBX_UNLIKELY(source.length() % 2 && !ignore_spaces))
+    MDBX_CXX20_UNLIKELY return true;
 
   bool got = false;
-  auto src = byte_ptr();
-  for (auto left = length(); left > 0;) {
+  auto src = source.byte_ptr();
+  for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
         MDBX_LIKELY(ignore_spaces && isspace(*src))) {
       ++src;
@@ -4012,13 +4026,13 @@ bool slice::is_hex(bool ignore_spaces) const noexcept {
     }
 
     if (MDBX_UNLIKELY(left < 1 || !isxdigit(src[0]) || !isxdigit(src[1])))
-      return false;
+      MDBX_CXX20_UNLIKELY return true;
 
     got = true;
     src += 2;
     left -= 2;
   }
-  return got;
+  return !got;
 }
 
 //------------------------------------------------------------------------------
@@ -4066,13 +4080,12 @@ static inline char b58_8to11(uint64_t &v) noexcept {
   return b58_alphabet[i];
 }
 
-char *slice::to_base58(char *__restrict dest, size_t dest_size,
-                       unsigned wrap_width) const {
-  if (MDBX_UNLIKELY(to_base58_bytes(wrap_width) > dest_size))
-    throw_too_small_target_buffer();
+char *to_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
+  if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
+    MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
-  auto src = byte_ptr();
-  size_t left = length();
+  auto src = source.byte_ptr();
+  size_t left = source.length();
   auto line = dest;
   while (MDBX_LIKELY(left > 7)) {
     left -= 8;
@@ -4149,13 +4162,12 @@ static inline signed char b58_11to8(uint64_t &v, const byte c) noexcept {
   return m;
 }
 
-byte *slice::from_base58(byte *__restrict dest, size_t dest_size,
-                         bool ignore_spaces) const {
-  if (MDBX_UNLIKELY(from_base58_bytes() > dest_size))
-    throw_too_small_target_buffer();
+char *from_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
+  if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
+    MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
-  auto src = byte_ptr();
-  for (auto left = length(); left > 0;) {
+  auto src = source.byte_ptr();
+  for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(isspace(*src)) && ignore_spaces) {
       ++src;
       --left;
@@ -4170,7 +4182,7 @@ byte *slice::from_base58(byte *__restrict dest, size_t dest_size,
                          b58_11to8(v, src[6]) | b58_11to8(v, src[7]) |
                          b58_11to8(v, src[8]) | b58_11to8(v, src[9]) |
                          b58_11to8(v, src[10])) < 0))
-        goto bailout;
+        MDBX_CXX20_UNLIKELY goto bailout;
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
       v = bswap64(v);
 #elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -4185,14 +4197,14 @@ byte *slice::from_base58(byte *__restrict dest, size_t dest_size,
     }
 
     constexpr unsigned invalid_length_mask = 1 << 1 | 1 << 4 | 1 << 8;
-    if (invalid_length_mask & (1 << left))
-      goto bailout;
+    if (MDBX_UNLIKELY(invalid_length_mask & (1 << left)))
+      MDBX_CXX20_UNLIKELY goto bailout;
 
     uint64_t v = 1;
     unsigned parrots = 0;
     do {
       if (MDBX_UNLIKELY(b58_11to8(v, *src++) < 0))
-        goto bailout;
+        MDBX_CXX20_UNLIKELY goto bailout;
       parrots += 32;
     } while (--left);
 
@@ -4209,10 +4221,10 @@ bailout:
   throw std::domain_error("mdbx::from_base58:: invalid base58 string");
 }
 
-bool slice::is_base58(bool ignore_spaces) const noexcept {
+bool from_base58::is_erroneous() const noexcept {
   bool got = false;
-  auto src = byte_ptr();
-  for (auto left = length(); left > 0;) {
+  auto src = source.byte_ptr();
+  for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
         MDBX_LIKELY(ignore_spaces && isspace(*src))) {
       ++src;
@@ -4225,7 +4237,7 @@ bool slice::is_base58(bool ignore_spaces) const noexcept {
                          b58_map[src[3]] | b58_map[src[4]] | b58_map[src[5]] |
                          b58_map[src[6]] | b58_map[src[7]] | b58_map[src[8]] |
                          b58_map[src[9]] | b58_map[src[10]]) < 0))
-        return false;
+        MDBX_CXX20_UNLIKELY return true;
       src += 11;
       left -= 11;
       got = true;
@@ -4238,12 +4250,12 @@ bool slice::is_base58(bool ignore_spaces) const noexcept {
 
     do
       if (MDBX_UNLIKELY(b58_map[*src++] < 0))
-        return false;
+        MDBX_CXX20_UNLIKELY return true;
     while (--left);
     got = true;
     break;
   }
-  return got;
+  return !got;
 }
 
 //------------------------------------------------------------------------------
@@ -4262,13 +4274,12 @@ static inline void b64_3to4(const byte x, const byte y, const byte z,
   dest[3] = alphabet[z & 0x3f];
 }
 
-char *slice::to_base64(char *__restrict dest, size_t dest_size,
-                       unsigned wrap_width) const {
-  if (MDBX_UNLIKELY(to_base64_bytes(wrap_width) > dest_size))
-    throw_too_small_target_buffer();
+char *to_base64::write_bytes(char *__restrict dest, size_t dest_size) const {
+  if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
+    MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
-  auto src = byte_ptr();
-  size_t left = length();
+  auto src = source.byte_ptr();
+  size_t left = source.length();
   auto line = dest;
   while (true) {
     switch (left) {
@@ -4318,22 +4329,22 @@ static const signed char b64_map[256] = {
 
 static inline signed char b64_4to3(signed char a, signed char b, signed char c,
                                    signed char d,
-                                   byte *__restrict dest) noexcept {
+                                   char *__restrict dest) noexcept {
   dest[0] = byte((a << 2) + ((b & 0x30) >> 4));
   dest[1] = byte(((b & 0xf) << 4) + ((c & 0x3c) >> 2));
   dest[2] = byte(((c & 0x3) << 6) + d);
   return a | b | c | d;
 }
 
-byte *slice::from_base64(byte *__restrict dest, size_t dest_size,
-                         bool ignore_spaces) const {
-  if (MDBX_UNLIKELY(length() % 4 && !ignore_spaces))
-    throw std::domain_error("mdbx::from_base64:: odd length of base64 string");
-  if (MDBX_UNLIKELY(from_base64_bytes() > dest_size))
-    throw_too_small_target_buffer();
+char *from_base64::write_bytes(char *__restrict dest, size_t dest_size) const {
+  if (MDBX_UNLIKELY(source.length() % 4 && !ignore_spaces))
+    MDBX_CXX20_UNLIKELY throw std::domain_error(
+        "mdbx::from_base64:: odd length of base64 string");
+  if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
+    MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
-  auto src = byte_ptr();
-  for (auto left = length(); left > 0;) {
+  auto src = source.byte_ptr();
+  for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
         MDBX_LIKELY(ignore_spaces && isspace(*src))) {
       ++src;
@@ -4341,10 +4352,11 @@ byte *slice::from_base64(byte *__restrict dest, size_t dest_size,
       continue;
     }
 
-    if (MDBX_UNLIKELY(left < 3)) {
-    bailout:
-      throw std::domain_error("mdbx::from_base64:: invalid base64 string");
-    }
+    if (MDBX_UNLIKELY(left < 3))
+      MDBX_CXX20_UNLIKELY {
+      bailout:
+        throw std::domain_error("mdbx::from_base64:: invalid base64 string");
+      }
     const signed char a = b64_map[src[0]], b = b64_map[src[1]],
                       c = b64_map[src[2]], d = b64_map[src[3]];
     if (MDBX_UNLIKELY(b64_4to3(a, b, c, d, dest) < 0)) {
@@ -4354,7 +4366,7 @@ byte *slice::from_base64(byte *__restrict dest, size_t dest_size,
         if (c == d)
           return dest + 1;
       }
-      goto bailout;
+      MDBX_CXX20_UNLIKELY goto bailout;
     }
     src += 4;
     left -= 4;
@@ -4362,13 +4374,13 @@ byte *slice::from_base64(byte *__restrict dest, size_t dest_size,
   return dest;
 }
 
-bool slice::is_base64(bool ignore_spaces) const noexcept {
-  if (MDBX_UNLIKELY(length() % 4 && !ignore_spaces))
-    return false;
+bool from_base64::is_erroneous() const noexcept {
+  if (MDBX_UNLIKELY(source.length() % 4 && !ignore_spaces))
+    MDBX_CXX20_UNLIKELY return true;
 
   bool got = false;
-  auto src = byte_ptr();
-  for (auto left = length(); left > 0;) {
+  auto src = source.byte_ptr();
+  for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
         MDBX_LIKELY(ignore_spaces && isspace(*src))) {
       ++src;
@@ -4377,19 +4389,20 @@ bool slice::is_base64(bool ignore_spaces) const noexcept {
     }
 
     if (MDBX_UNLIKELY(left < 3))
-      return false;
+      MDBX_CXX20_UNLIKELY return false;
     const signed char a = b64_map[src[0]], b = b64_map[src[1]],
                       c = b64_map[src[2]], d = b64_map[src[3]];
-    if (MDBX_UNLIKELY((a | b | c | d) < 0)) {
-      if (left == 4 && (a | b) >= 0 && d == EQ && (c >= 0 || c == d))
+    if (MDBX_UNLIKELY((a | b | c | d) < 0))
+      MDBX_CXX20_UNLIKELY {
+        if (left == 4 && (a | b) >= 0 && d == EQ && (c >= 0 || c == d))
+          return false;
         return true;
-      return false;
-    }
+      }
     got = true;
     src += 4;
     left -= 4;
   }
-  return got;
+  return !got;
 }
 
 //------------------------------------------------------------------------------
@@ -4593,9 +4606,9 @@ static inline MDBX_env *create_env() {
 }
 
 env_managed::~env_managed() noexcept {
-  if (handle_)
-    error::success_or_panic(::mdbx_env_close(handle_), "mdbx::~env()",
-                            "mdbx_env_close");
+  if (MDBX_UNLIKELY(handle_))
+    MDBX_CXX20_UNLIKELY error::success_or_panic(
+        ::mdbx_env_close(handle_), "mdbx::~env()", "mdbx_env_close");
 }
 
 void env_managed::close(bool dont_sync) {
@@ -4603,12 +4616,12 @@ void env_managed::close(bool dont_sync) {
       static_cast<MDBX_error_t>(::mdbx_env_close_ex(handle_, dont_sync));
   switch (rc.code()) {
   case MDBX_EBADSIGN:
-    handle_ = nullptr;
+    MDBX_CXX20_UNLIKELY handle_ = nullptr;
     __fallthrough /* fall through */;
   default:
-    rc.throw_exception();
+    MDBX_CXX20_UNLIKELY rc.throw_exception();
   case MDBX_SUCCESS:
-    handle_ = nullptr;
+    MDBX_CXX20_LIKELY handle_ = nullptr;
   }
 }
 
@@ -4630,7 +4643,7 @@ __cold env_managed::env_managed(const ::std::filesystem::path &pathname,
 
   if (op.options.nested_write_transactions &&
       !get_options().nested_write_transactions)
-    error::throw_exception(MDBX_INCOMPATIBLE);
+    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_INCOMPATIBLE);
 }
 
 __cold env_managed::env_managed(const ::std::filesystem::path &pathname,
@@ -4646,7 +4659,7 @@ __cold env_managed::env_managed(const ::std::filesystem::path &pathname,
 
   if (op.options.nested_write_transactions &&
       !get_options().nested_write_transactions)
-    error::throw_exception(MDBX_INCOMPATIBLE);
+    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_INCOMPATIBLE);
 }
 #endif /* MDBX_STD_FILESYSTEM_PATH */
 
@@ -4661,7 +4674,7 @@ __cold env_managed::env_managed(const ::std::wstring &pathname,
 
   if (op.options.nested_write_transactions &&
       !get_options().nested_write_transactions)
-    error::throw_exception(MDBX_INCOMPATIBLE);
+    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_INCOMPATIBLE);
 }
 
 __cold env_managed::env_managed(const ::std::wstring &pathname,
@@ -4677,7 +4690,7 @@ __cold env_managed::env_managed(const ::std::wstring &pathname,
 
   if (op.options.nested_write_transactions &&
       !get_options().nested_write_transactions)
-    error::throw_exception(MDBX_INCOMPATIBLE);
+    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_INCOMPATIBLE);
 }
 #endif /* Windows */
 
@@ -4691,7 +4704,7 @@ __cold env_managed::env_managed(const ::std::string &pathname,
 
   if (op.options.nested_write_transactions &&
       !get_options().nested_write_transactions)
-    error::throw_exception(MDBX_INCOMPATIBLE);
+    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_INCOMPATIBLE);
 }
 
 __cold env_managed::env_managed(const ::std::string &pathname,
@@ -4707,7 +4720,7 @@ __cold env_managed::env_managed(const ::std::string &pathname,
 
   if (op.options.nested_write_transactions &&
       !get_options().nested_write_transactions)
-    error::throw_exception(MDBX_INCOMPATIBLE);
+    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_INCOMPATIBLE);
 }
 
 //------------------------------------------------------------------------------
@@ -4722,25 +4735,25 @@ txn_managed txn::start_nested() {
 }
 
 txn_managed::~txn_managed() noexcept {
-  if (handle_)
-    error::success_or_panic(::mdbx_txn_abort(handle_), "mdbx::~txn",
-                            "mdbx_txn_abort");
+  if (MDBX_UNLIKELY(handle_))
+    MDBX_CXX20_UNLIKELY error::success_or_panic(::mdbx_txn_abort(handle_),
+                                                "mdbx::~txn", "mdbx_txn_abort");
 }
 
 void txn_managed::abort() {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_abort(handle_));
   if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
-    handle_ = nullptr;
+    MDBX_CXX20_LIKELY handle_ = nullptr;
   if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
-    err.throw_exception();
+    MDBX_CXX20_UNLIKELY err.throw_exception();
 }
 
 void txn_managed::commit() {
   const error err = static_cast<MDBX_error_t>(::mdbx_txn_commit(handle_));
   if (MDBX_LIKELY(err.code() != MDBX_THREAD_MISMATCH))
-    handle_ = nullptr;
+    MDBX_CXX20_LIKELY handle_ = nullptr;
   if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
-    err.throw_exception();
+    MDBX_CXX20_UNLIKELY err.throw_exception();
 }
 
 //------------------------------------------------------------------------------
@@ -4804,7 +4817,7 @@ __cold ::std::ostream &operator<<(::std::ostream &out, const slice &it) {
     if (root.is_printable())
       (out << "\"").write(root.char_ptr(), root.length()) << "\"";
     else
-      out << root.base58_encode();
+      out << root.encode_base58();
     if (root.length() < it.length())
       out << "...";
   }

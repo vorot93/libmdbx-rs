@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 517b3e8cada12b033dc855029388aa6e1c7aa20ad04c1f914b81793472e108d8_v0_10_1_5_g18bc28be
+#define MDBX_BUILD_SOURCERY 4c0edad9e694f89ccb919dbe9a40cc1c9570bde6d8b72ba610260ffb4f5c608f_v0_10_2_0_g70933d81
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -315,7 +315,7 @@
 #       elif defined(__GNUC__) || __has_attribute(__hot__)
 #           define __hot __attribute__((__hot__)) __optimize("O3")
 #       else
-#           define __hot  __optimize("O3")
+#           define __hot __optimize("O3")
 #       endif
 #   else
 #       define __hot
@@ -429,11 +429,6 @@
 #   define ARRAY_END(array) (&array[ARRAY_LENGTH(array)])
 #endif /* ARRAY_END */
 
-#ifndef STRINGIFY
-#   define STRINGIFY_HELPER(x) #x
-#   define STRINGIFY(x) STRINGIFY_HELPER(x)
-#endif /* STRINGIFY */
-
 #define CONCAT(a,b) a##b
 #define XCONCAT(a,b) CONCAT(a,b)
 
@@ -451,7 +446,7 @@
 
 #define MDBX_STRING_TETRAD(str) MDBX_TETRAD(str[0], str[1], str[2], str[3])
 
-#define FIXME "FIXME: " __FILE__ ", " STRINGIFY(__LINE__)
+#define FIXME "FIXME: " __FILE__ ", " MDBX_STRINGIFY(__LINE__)
 
 #ifndef STATIC_ASSERT_MSG
 #   if defined(static_assert)
@@ -1005,8 +1000,8 @@ typedef struct mdbx_mmap_param {
   mdbx_filehandle_t fd;
   size_t limit;   /* mapping length, but NOT a size of file nor DB */
   size_t current; /* mapped region size, i.e. the size of file and DB */
-#if defined(_WIN32) || defined(_WIN64)
   uint64_t filesize /* in-process cache of a file size */;
+#if defined(_WIN32) || defined(_WIN64)
   HANDLE section; /* memory-mapped section handle */
 #endif
 } mdbx_mmap_t;
@@ -1240,8 +1235,10 @@ MDBX_INTERNAL_FUNC int mdbx_mmap(const int flags, mdbx_mmap_t *map,
                                  const size_t must, const size_t limit,
                                  const unsigned options);
 MDBX_INTERNAL_FUNC int mdbx_munmap(mdbx_mmap_t *map);
-MDBX_INTERNAL_FUNC int mdbx_mresize(int flags, mdbx_mmap_t *map, size_t current,
-                                    size_t wanna, const bool may_move);
+#define MDBX_MRESIZE_MAY_MOVE 0x00000100
+#define MDBX_MRESIZE_MAY_UNMAP 0x00000200
+MDBX_INTERNAL_FUNC int mdbx_mresize(const int flags, mdbx_mmap_t *map,
+                                    size_t size, size_t limit);
 #if defined(_WIN32) || defined(_WIN64)
 typedef struct {
   unsigned limit, count;
@@ -1590,18 +1587,18 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_ENV_CHECKPID 1
 #endif
-#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" STRINGIFY(MDBX_ENV_CHECKPID)
+#define MDBX_ENV_CHECKPID_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #else
-#define MDBX_ENV_CHECKPID_CONFIG STRINGIFY(MDBX_ENV_CHECKPID)
+#define MDBX_ENV_CHECKPID_CONFIG MDBX_STRINGIFY(MDBX_ENV_CHECKPID)
 #endif /* MDBX_ENV_CHECKPID */
 
 /** Controls checking transaction owner thread against misuse transactions from
  * other threads. */
 #ifndef MDBX_TXN_CHECKOWNER
 #define MDBX_TXN_CHECKOWNER 1
-#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" STRINGIFY(MDBX_TXN_CHECKOWNER)
+#define MDBX_TXN_CHECKOWNER_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #else
-#define MDBX_TXN_CHECKOWNER_CONFIG STRINGIFY(MDBX_TXN_CHECKOWNER)
+#define MDBX_TXN_CHECKOWNER_CONFIG MDBX_STRINGIFY(MDBX_TXN_CHECKOWNER)
 #endif /* MDBX_TXN_CHECKOWNER */
 
 /** Does a system have battery-backed Real-Time Clock or just a fake. */
@@ -1612,9 +1609,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_TRUST_RTC 1
 #endif
-#define MDBX_TRUST_RTC_CONFIG "AUTO=" STRINGIFY(MDBX_TRUST_RTC)
+#define MDBX_TRUST_RTC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #else
-#define MDBX_TRUST_RTC_CONFIG STRINGIFY(MDBX_TRUST_RTC)
+#define MDBX_TRUST_RTC_CONFIG MDBX_STRINGIFY(MDBX_TRUST_RTC)
 #endif /* MDBX_TRUST_RTC */
 
 /** Controls online database auto-compactification during write-transactions. */
@@ -1789,9 +1786,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_LOCKING MDBX_LOCKING_SYSV
 #endif
-#define MDBX_LOCKING_CONFIG "AUTO=" STRINGIFY(MDBX_LOCKING)
+#define MDBX_LOCKING_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_LOCKING)
 #else
-#define MDBX_LOCKING_CONFIG STRINGIFY(MDBX_LOCKING)
+#define MDBX_LOCKING_CONFIG MDBX_STRINGIFY(MDBX_LOCKING)
 #endif /* MDBX_LOCKING */
 #endif /* !Windows */
 
@@ -1804,9 +1801,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_USE_OFDLOCKS 0
 #endif
-#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" STRINGIFY(MDBX_USE_OFDLOCKS)
+#define MDBX_USE_OFDLOCKS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #else
-#define MDBX_USE_OFDLOCKS_CONFIG STRINGIFY(MDBX_USE_OFDLOCKS)
+#define MDBX_USE_OFDLOCKS_CONFIG MDBX_STRINGIFY(MDBX_USE_OFDLOCKS)
 #endif /* MDBX_USE_OFDLOCKS */
 
 /** Advanced: Using sendfile() syscall (autodetection by default). */
@@ -1877,9 +1874,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_64BIT_ATOMIC 0
 #endif
-#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_ATOMIC)
+#define MDBX_64BIT_ATOMIC_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #else
-#define MDBX_64BIT_ATOMIC_CONFIG STRINGIFY(MDBX_64BIT_ATOMIC)
+#define MDBX_64BIT_ATOMIC_CONFIG MDBX_STRINGIFY(MDBX_64BIT_ATOMIC)
 #endif /* MDBX_64BIT_ATOMIC */
 
 #ifndef MDBX_64BIT_CAS
@@ -1906,9 +1903,9 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #else
 #define MDBX_64BIT_CAS MDBX_64BIT_ATOMIC
 #endif
-#define MDBX_64BIT_CAS_CONFIG "AUTO=" STRINGIFY(MDBX_64BIT_CAS)
+#define MDBX_64BIT_CAS_CONFIG "AUTO=" MDBX_STRINGIFY(MDBX_64BIT_CAS)
 #else
-#define MDBX_64BIT_CAS_CONFIG STRINGIFY(MDBX_64BIT_CAS)
+#define MDBX_64BIT_CAS_CONFIG MDBX_STRINGIFY(MDBX_64BIT_CAS)
 #endif /* MDBX_64BIT_CAS */
 
 #ifndef MDBX_UNALIGNED_OK
@@ -2601,15 +2598,13 @@ typedef struct MDBX_lockinfo {
 
 #if MDBX_WORDBITS >= 64
 #define MAX_MAPSIZE MAX_MAPSIZE64
-#define MDBX_READERS_LIMIT                                                     \
-  ((MAX_PAGESIZE - sizeof(MDBX_lockinfo)) / sizeof(MDBX_reader))
 #define MDBX_PGL_LIMIT ((size_t)MAX_PAGENO)
 #else
-#define MDBX_READERS_LIMIT 1024
 #define MAX_MAPSIZE MAX_MAPSIZE32
 #define MDBX_PGL_LIMIT (MAX_MAPSIZE32 / MIN_PAGESIZE)
 #endif /* MDBX_WORDBITS */
 
+#define MDBX_READERS_LIMIT 32767
 #define MDBX_RADIXSORT_THRESHOLD 333
 
 /*----------------------------------------------------------------------------*/
@@ -2931,7 +2926,7 @@ struct MDBX_env {
   mdbx_thread_key_t me_txkey; /* thread-key for readers */
   char *me_pathname;          /* path to the DB files */
   void *me_pbuf;              /* scratch area for DUPSORT put() */
-  MDBX_txn *me_txn0;          /* prealloc'd write transaction */
+  MDBX_txn *me_txn0;          /* preallocated write transaction */
 
   MDBX_dbx *me_dbxs;    /* array of static DB info */
   uint16_t *me_dbflags; /* array of flags from MDBX_db.md_flags */
@@ -3431,6 +3426,20 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
 #ifdef __cplusplus
 }
 #endif
+
+#define MDBX_ASAN_POISON_MEMORY_REGION(addr, size)                             \
+  do {                                                                         \
+    mdbx_trace("POISON_MEMORY_REGION(%p, %zu) at %u", (void *)(addr),          \
+               (size_t)(size), __LINE__);                                      \
+    ASAN_POISON_MEMORY_REGION(addr, size);                                     \
+  } while (0)
+
+#define MDBX_ASAN_UNPOISON_MEMORY_REGION(addr, size)                           \
+  do {                                                                         \
+    mdbx_trace("UNPOISON_MEMORY_REGION(%p, %zu) at %u", (void *)(addr),        \
+               (size_t)(size), __LINE__);                                      \
+    ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
+  } while (0)
 
 #include <ctype.h>
 
