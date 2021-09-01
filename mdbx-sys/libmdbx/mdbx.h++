@@ -14,12 +14,14 @@
 
 #pragma once
 
-#if (!defined(__cplusplus) || __cplusplus < 201103L) &&                        \
-    !(defined(                                                                 \
-          _MSC_VER) /* MSVC is mad and don't define __cplusplus properly */    \
-      && _MSC_VER == 1900)
-#error "C++11 or better is required"
-#endif
+#if !defined(__cplusplus) || __cplusplus < 201103L
+#if !defined(_MSC_VER) || _MSC_VER < 1900
+#error "C++11 compiler or better is required"
+#elif _MSC_VER >= 1910
+#error                                                                         \
+    "Please add ` /Zc:__cplusplus` to MSVC compiler options to enforce it conform ISO C++"
+#endif /* MSVC is mad and don't define __cplusplus properly */
+#endif /* __cplusplus < 201103L */
 
 #if (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT
 #error                                                                         \
@@ -41,6 +43,7 @@
 
 #include <algorithm>   // for std::min/max
 #include <cassert>     // for assert()
+#include <climits>     // for CHAR_BIT
 #include <cstring>     // for std::strlen, str:memcmp
 #include <exception>   // for std::exception_ptr
 #include <ostream>     // for std::ostream
@@ -48,12 +51,8 @@
 #include <stdexcept>   // for std::invalid_argument
 #include <string>      // for std::string
 #include <type_traits> // for std::is_pod<>, etc.
+#include <utility>     // for std::make_pair
 #include <vector>      // for std::vector<> as template args
-
-// Unused for now
-// #if defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
-// #include <bit>
-// #endif
 
 #if defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L
 #include <memory_resource>
@@ -68,6 +67,49 @@
 #endif
 
 #include "mdbx.h"
+
+#if (defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L) ||          \
+    (defined(__cpp_lib_endian) && __cpp_lib_endian >= 201907L) ||              \
+    (defined(__cpp_lib_bitops) && __cpp_lib_bitops >= 201907L) ||              \
+    (defined(__cpp_lib_int_pow2) && __cpp_lib_int_pow2 >= 202002L)
+#include <bit>
+#elif !(defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) &&         \
+        defined(__ORDER_BIG_ENDIAN__))
+#if defined(__BYTE_ORDER) && defined(__LITTLE_ENDIAN) && defined(__BIG_ENDIAN)
+#define __ORDER_LITTLE_ENDIAN__ __LITTLE_ENDIAN
+#define __ORDER_BIG_ENDIAN__ __BIG_ENDIAN
+#define __BYTE_ORDER__ __BYTE_ORDER
+#elif defined(_BYTE_ORDER) && defined(_LITTLE_ENDIAN) && defined(_BIG_ENDIAN)
+#define __ORDER_LITTLE_ENDIAN__ _LITTLE_ENDIAN
+#define __ORDER_BIG_ENDIAN__ _BIG_ENDIAN
+#define __BYTE_ORDER__ _BYTE_ORDER
+#else
+#define __ORDER_LITTLE_ENDIAN__ 1234
+#define __ORDER_BIG_ENDIAN__ 4321
+#if defined(__LITTLE_ENDIAN__) ||                                              \
+    (defined(_LITTLE_ENDIAN) && !defined(_BIG_ENDIAN)) ||                      \
+    defined(__ARMEL__) || defined(__THUMBEL__) || defined(__AARCH64EL__) ||    \
+    defined(__MIPSEL__) || defined(_MIPSEL) || defined(__MIPSEL) ||            \
+    defined(_M_ARM) || defined(_M_ARM64) || defined(__e2k__) ||                \
+    defined(__elbrus_4c__) || defined(__elbrus_8c__) || defined(__bfin__) ||   \
+    defined(__BFIN__) || defined(__ia64__) || defined(_IA64) ||                \
+    defined(__IA64__) || defined(__ia64) || defined(_M_IA64) ||                \
+    defined(__itanium__) || defined(__ia32__) || defined(__CYGWIN__) ||        \
+    defined(_WIN64) || defined(_WIN32) || defined(__TOS_WIN__) ||              \
+    defined(__WINDOWS__)
+#define __BYTE_ORDER__ __ORDER_LITTLE_ENDIAN__
+#elif defined(__BIG_ENDIAN__) ||                                               \
+    (defined(_BIG_ENDIAN) && !defined(_LITTLE_ENDIAN)) ||                      \
+    defined(__ARMEB__) || defined(__THUMBEB__) || defined(__AARCH64EB__) ||    \
+    defined(__MIPSEB__) || defined(_MIPSEB) || defined(__MIPSEB) ||            \
+    defined(__m68k__) || defined(M68000) || defined(__hppa__) ||               \
+    defined(__hppa) || defined(__HPPA__) || defined(__sparc__) ||              \
+    defined(__sparc) || defined(__370__) || defined(__THW_370__) ||            \
+    defined(__s390__) || defined(__s390x__) || defined(__SYSC_ZARCH__)
+#define __BYTE_ORDER__ __ORDER_BIG_ENDIAN__
+#endif
+#endif
+#endif /* Byte Order */
 
 #if defined(DOXYGEN) ||                                                        \
     defined(__cpp_constexpr) && __cpp_constexpr >= 201603L &&                  \
@@ -118,6 +160,12 @@
 #endif
 #endif /* MDBX_UNLIKELY */
 
+#if defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606L
+#define MDBX_IF_CONSTEXPR constexpr
+#else
+#define MDBX_IF_CONSTEXPR
+#endif /* MDBX_IF_CONSTEXPR */
+
 #if defined(DOXYGEN) ||                                                        \
     (__has_cpp_attribute(fallthrough) &&                                       \
      (!defined(__clang__) || __clang__ > 4)) ||                                \
@@ -127,22 +175,47 @@
 #define MDBX_CXX17_FALLTHROUGH
 #endif /* MDBX_CXX17_FALLTHROUGH */
 
-#if defined(DOXYGEN) || __has_cpp_attribute(likely)
+#if defined(DOXYGEN) || (__has_cpp_attribute(likely) >= 201803L &&             \
+                         (!defined(__GNUC__) || __GNUC__ > 9))
 #define MDBX_CXX20_LIKELY [[likely]]
 #else
 #define MDBX_CXX20_LIKELY
 #endif /* MDBX_CXX20_LIKELY */
 
 #ifndef MDBX_CXX20_UNLIKELY
-#if defined(DOXYGEN) || __has_cpp_attribute(unlikely)
+#if defined(DOXYGEN) || (__has_cpp_attribute(unlikely) >= 201803L &&           \
+                         (!defined(__GNUC__) || __GNUC__ > 9))
 #define MDBX_CXX20_UNLIKELY [[unlikely]]
 #else
 #define MDBX_CXX20_UNLIKELY
 #endif
 #endif /* MDBX_CXX20_UNLIKELY */
 
+#ifndef MDBX_CXX20_CONCEPT
+#if defined(DOXYGEN) ||                                                        \
+    (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
+     (!defined(__clang__) || __clang_major__ >= 12))
+#define MDBX_CXX20_CONCEPT(CONCEPT, NAME) CONCEPT NAME
+#else
+#define MDBX_CXX20_CONCEPT(CONCEPT, NAME) typename NAME
+#endif
+#endif /* MDBX_CXX20_CONCEPT */
+
+#ifndef MDBX_ASSERT_CXX20_CONCEPT_SATISFIED
+#if defined(DOXYGEN) ||                                                        \
+    (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
+     (!defined(__clang__) || __clang_major__ >= 12))
+#define MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(CONCEPT, TYPE)                     \
+  static_assert(CONCEPT<TYPE>)
+#else
+#define MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(CONCEPT, NAME)                     \
+  static_assert(true, MDBX_STRINGIFY(CONCEPT) "<" MDBX_STRINGIFY(TYPE) ">")
+#endif
+#endif /* MDBX_ASSERT_CXX20_CONCEPT_SATISFIED */
+
 #ifdef _MSC_VER
 #pragma warning(push, 4)
+#pragma warning(disable : 4127) /* conditional expression is constant */
 #pragma warning(disable : 4251) /* 'std::FOO' needs to have dll-interface to   \
                                    be used by clients of 'mdbx::BAR' */
 #pragma warning(disable : 4275) /* non dll-interface 'std::FOO' used as        \
@@ -170,6 +243,20 @@ using byte = char8_t;
 using byte = unsigned char;
 #endif /* __cpp_char8_t >= 201811*/
 
+#if defined(__cpp_lib_endian) && __cpp_lib_endian >= 201907L
+using endian = ::std::endian;
+#elif defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) &&           \
+    defined(__ORDER_BIG_ENDIAN__)
+enum class endian {
+  little = __ORDER_LITTLE_ENDIAN__,
+  big = __ORDER_BIG_ENDIAN__,
+  native = __BYTE_ORDER__
+};
+#else
+#error                                                                         \
+    "Please use a C++ compiler provides byte order information or C++20 support"
+#endif /* Byte Order enum */
+
 /// \copydoc MDBX_version_info
 using version_info = ::MDBX_version_info;
 /// \brief Returns libmdbx version information.
@@ -182,17 +269,21 @@ MDBX_CXX11_CONSTEXPR const build_info &get_build() noexcept;
 /// \brief constexpr-compatible strlen().
 static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept;
 
+/// \brief Legacy default allocator
+/// but it is recommended to use \ref polymorphic_allocator.
+using legacy_allocator = ::std::string::allocator_type;
+
 struct slice;
+struct default_capacity_policy;
+template <class ALLOCATOR = legacy_allocator,
+          class CAPACITY_POLICY = default_capacity_policy>
+class buffer;
 class env;
 class env_managed;
 class txn;
 class txn_managed;
 class cursor;
 class cursor_managed;
-
-/// \brief Legacy default allocator
-/// but it is recommended to use \ref polymorphic_allocator.
-using legacy_allocator = ::std::string::allocator_type;
 
 #if defined(DOXYGEN) ||                                                        \
     defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L
@@ -311,7 +402,7 @@ public:
   exception &operator=(const exception &) = default;
   exception &operator=(exception &&) = default;
   virtual ~exception() noexcept;
-  const mdbx::error error() const noexcept { return error_; }
+  const ::mdbx::error error() const noexcept { return error_; }
 };
 
 /// \brief Fatal exception that lead termination anyway
@@ -368,9 +459,72 @@ MDBX_DECLARE_EXCEPTION(transaction_overlapping);
 [[noreturn]] LIBMDBX_API void throw_too_small_target_buffer();
 [[noreturn]] LIBMDBX_API void throw_max_length_exceeded();
 [[noreturn]] LIBMDBX_API void throw_out_range();
-MDBX_CXX14_CONSTEXPR size_t check_length(size_t bytes);
-
+[[noreturn]] LIBMDBX_API void throw_allocators_mismatch();
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t bytes);
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom,
+                                                size_t payload);
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom, size_t payload,
+                                                size_t tailroom);
+static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept;
+static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
+                                         size_t bytes) noexcept;
 //------------------------------------------------------------------------------
+
+#if defined(DOXYGEN) ||                                                        \
+    (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
+     (!defined(__clang__) || __clang_major__ >= 12))
+
+template <typename T>
+concept MutableByteProducer = requires(T a, char array[42]) {
+  { a.is_empty() }
+  ->std::same_as<bool>;
+  { a.envisage_result_length() }
+  ->std::same_as<size_t>;
+  { a.write_bytes(&array[0], size_t(42)) }
+  ->std::same_as<char *>;
+};
+
+template <typename T>
+concept ImmutableByteProducer = requires(const T &a, char array[42]) {
+  { a.is_empty() }
+  ->std::same_as<bool>;
+  { a.envisage_result_length() }
+  ->std::same_as<size_t>;
+  { a.write_bytes(&array[0], size_t(42)) }
+  ->std::same_as<char *>;
+};
+
+template <typename T>
+concept SliceTranscoder =
+    ImmutableByteProducer<T> &&requires(const slice &source, const T &a) {
+  T(source);
+  { a.is_erroneous() }
+  ->std::same_as<bool>;
+};
+
+#endif /* __cpp_concepts >= 201907L*/
+
+template <class ALLOCATOR = legacy_allocator,
+          typename CAPACITY_POLICY = default_capacity_policy,
+          MDBX_CXX20_CONCEPT(MutableByteProducer, PRODUCER)>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+make_buffer(PRODUCER &producer, const ALLOCATOR &allocator = ALLOCATOR());
+
+template <class ALLOCATOR = legacy_allocator,
+          typename CAPACITY_POLICY = default_capacity_policy,
+          MDBX_CXX20_CONCEPT(ImmutableByteProducer, PRODUCER)>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+make_buffer(const PRODUCER &producer, const ALLOCATOR &allocator = ALLOCATOR());
+
+template <class ALLOCATOR = legacy_allocator,
+          MDBX_CXX20_CONCEPT(MutableByteProducer, PRODUCER)>
+inline string<ALLOCATOR> make_string(PRODUCER &producer,
+                                     const ALLOCATOR &allocator = ALLOCATOR());
+
+template <class ALLOCATOR = legacy_allocator,
+          MDBX_CXX20_CONCEPT(ImmutableByteProducer, PRODUCER)>
+inline string<ALLOCATOR> make_string(const PRODUCER &producer,
+                                     const ALLOCATOR &allocator = ALLOCATOR());
 
 /// \brief References a data located outside the slice.
 ///
@@ -398,35 +552,33 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
 
   /// \brief Create a slice that refers to text[0,strlen(text)-1].
   template <size_t SIZE>
-  MDBX_CXX14_CONSTEXPR slice(const char (&text)[SIZE]) noexcept
-      : slice(text, SIZE - 1) {
+  MDBX_CXX14_CONSTEXPR slice(const char (&text)[SIZE]) : slice(text, SIZE - 1) {
     MDBX_CONSTEXPR_ASSERT(SIZE > 0 && text[SIZE - 1] == '\0');
   }
   /// \brief Create a slice that refers to c_str[0,strlen(c_str)-1].
   explicit MDBX_CXX17_CONSTEXPR slice(const char *c_str);
 
   /// \brief Create a slice that refers to the contents of "str".
-  /* 'explicit' to avoid reference to the temporary std::string instance */
-  template <class C, class T, class A>
-  explicit MDBX_CXX20_CONSTEXPR slice(const ::std::basic_string<C, T, A> &str)
-      : slice(str.data(), str.length() * sizeof(C)) {}
+  /// \note 'explicit' to avoid reference to the temporary std::string instance.
+  template <class CHAR, class T, class A>
+  explicit MDBX_CXX20_CONSTEXPR
+  slice(const ::std::basic_string<CHAR, T, A> &str)
+      : slice(str.data(), str.length() * sizeof(CHAR)) {}
 
   MDBX_CXX14_CONSTEXPR slice(const MDBX_val &src);
   MDBX_CXX11_CONSTEXPR slice(const slice &) noexcept = default;
-#if defined(DOXYGEN) ||                                                        \
-    (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  /// \brief Create a slice that refers to the same contents as "sv"
-  template <class C, class T>
-  explicit MDBX_CXX14_CONSTEXPR slice(const ::std::basic_string_view<C, T> &sv)
-      : slice(sv.data(), sv.data() + sv.length()) {}
-#endif /* __cpp_lib_string_view >= 201606L */
+  MDBX_CXX14_CONSTEXPR slice(MDBX_val &&src);
+  MDBX_CXX14_CONSTEXPR slice(slice &&src) noexcept;
 
-  inline slice(MDBX_val &&src);
-  inline slice(slice &&src) noexcept;
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  slice(::std::basic_string_view<C, T> &&sv) : slice(sv) {
+  /// \brief Create a slice that refers to the same contents as "string_view"
+  template <class CHAR, class T>
+  MDBX_CXX14_CONSTEXPR slice(const ::std::basic_string_view<CHAR, T> &sv)
+      : slice(sv.data(), sv.data() + sv.length()) {}
+
+  template <class CHAR, class T>
+  slice(::std::basic_string_view<CHAR, T> &&sv) : slice(sv) {
     sv = {};
   }
 #endif /* __cpp_lib_string_view >= 201606L */
@@ -439,7 +591,7 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   template <typename POD>
   MDBX_CXX14_CONSTEXPR static slice wrap(const POD &pod) {
     static_assert(::std::is_standard_layout<POD>::value &&
-                      !std::is_pointer<POD>::value,
+                      !::std::is_pointer<POD>::value,
                   "Must be a standard layout type!");
     return slice(&pod, sizeof(pod));
   }
@@ -450,19 +602,19 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   inline slice &assign(slice &&src) noexcept;
   inline slice &assign(::MDBX_val &&src);
   inline slice &assign(const void *begin, const void *end);
-  template <class C, class T, class A>
-  slice &assign(const ::std::basic_string<C, T, A> &str) {
-    return assign(str.data(), str.length() * sizeof(C));
+  template <class CHAR, class T, class ALLOCATOR>
+  slice &assign(const ::std::basic_string<CHAR, T, ALLOCATOR> &str) {
+    return assign(str.data(), str.length() * sizeof(CHAR));
   }
   inline slice &assign(const char *c_str);
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  slice &assign(const ::std::basic_string_view<C, T> &view) {
+  template <class CHAR, class T>
+  slice &assign(const ::std::basic_string_view<CHAR, T> &view) {
     return assign(view.begin(), view.end());
   }
-  template <class C, class T>
-  slice &assign(::std::basic_string_view<C, T> &&view) {
+  template <class CHAR, class T>
+  slice &assign(::std::basic_string_view<CHAR, T> &&view) {
     assign(view);
     view = {};
     return *this;
@@ -472,141 +624,115 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   slice &operator=(const slice &) noexcept = default;
   inline slice &operator=(slice &&src) noexcept;
   inline slice &operator=(::MDBX_val &&src);
+
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  slice &operator=(const ::std::basic_string_view<C, T> &view) {
+  template <class CHAR, class T>
+  slice &operator=(const ::std::basic_string_view<CHAR, T> &view) {
     return assign(view);
   }
-  template <class C, class T>
-  slice &operator=(::std::basic_string_view<C, T> &&view) {
+
+  template <class CHAR, class T>
+  slice &operator=(::std::basic_string_view<CHAR, T> &&view) {
     return assign(view);
+  }
+
+  /// \brief Return a string_view that references the same data as this slice.
+  template <class CHAR = char, class T = ::std::char_traits<CHAR>>
+  MDBX_CXX11_CONSTEXPR ::std::basic_string_view<CHAR, T>
+  string_view() const noexcept {
+    static_assert(sizeof(CHAR) == 1, "Must be single byte characters");
+    return ::std::basic_string_view<CHAR, T>(char_ptr(), length());
+  }
+
+  /// \brief Return a string_view that references the same data as this slice.
+  template <class CHAR, class T>
+  MDBX_CXX11_CONSTEXPR explicit
+  operator ::std::basic_string_view<CHAR, T>() const noexcept {
+    return this->string_view<CHAR, T>();
   }
 #endif /* __cpp_lib_string_view >= 201606L */
 
-  template <class C = char, class T = ::std::char_traits<C>,
-            class A = legacy_allocator>
-  MDBX_CXX20_CONSTEXPR ::std::basic_string<C, T, A>
-  string(const A &allocator = A()) const {
-    static_assert(sizeof(C) == 1, "Must be single byte characters");
-    return ::std::basic_string<C, T, A>(char_ptr(), length(), allocator);
+  template <class CHAR = char, class T = ::std::char_traits<CHAR>,
+            class ALLOCATOR = legacy_allocator>
+  MDBX_CXX20_CONSTEXPR ::std::basic_string<CHAR, T, ALLOCATOR>
+  as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    static_assert(sizeof(CHAR) == 1, "Must be single byte characters");
+    return ::std::basic_string<CHAR, T, ALLOCATOR>(char_ptr(), length(),
+                                                   allocator);
   }
 
-  template <class C, class T, class A>
-  MDBX_CXX20_CONSTEXPR operator ::std::basic_string<C, T, A>() const {
-    return this->string<C, T, A>();
-  }
-
-  /// \brief Fills the buffer by hexadecimal data dump of slice content.
-  /// \throws std::length_error if given buffer is too small.
-  char *to_hex(char *dest, size_t dest_size, bool uppercase = false,
-               unsigned wrap_width = 0) const;
-
-  /// \brief Returns the buffer size in bytes needed for hexadecimal data dump
-  /// of slice content.
-  MDBX_CXX11_CONSTEXPR size_t
-  to_hex_bytes(unsigned wrap_width = 0) const noexcept {
-    const size_t bytes = length() << 1;
-    return wrap_width ? bytes + bytes / wrap_width : bytes;
-  }
-
-  /// \brief Fills the buffer with data converted from hexadecimal dump
-  /// from slice content.
-  /// \throws std::length_error if given buffer is too small.
-  byte *from_hex(byte *dest, size_t dest_size,
-                 bool ignore_spaces = false) const;
-
-  /// \brief Returns the buffer size in bytes needed for conversion
-  /// hexadecimal dump from slice content to data.
-  MDBX_CXX11_CONSTEXPR size_t from_hex_bytes() const noexcept {
-    return length() >> 1;
-  }
-
-  /// \brief Fills the buffer by [Base58](https://en.wikipedia.org/wiki/Base58)
-  /// data dump of slice content.
-  /// \throws std::length_error if given buffer is too small.
-  char *to_base58(char *dest, size_t dest_size, unsigned wrap_width = 0) const;
-
-  /// \brief Returns the buffer size in bytes needed for
-  /// [Base58](https://en.wikipedia.org/wiki/Base58) data dump of slice content.
-  MDBX_CXX11_CONSTEXPR size_t
-  to_base58_bytes(unsigned wrap_width = 0) const noexcept {
-    const size_t bytes = length() / 8 * 11 + (length() % 8 * 43 + 31) / 32;
-    return wrap_width ? bytes + bytes / wrap_width : bytes;
-  }
-
-  /// \brief Fills the buffer with data converted from
-  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump from slice content.
-  /// \throws std::length_error if given buffer is too small.
-  byte *from_base58(byte *dest, size_t dest_size,
-                    bool ignore_spaces = false) const;
-
-  /// \brief Returns the buffer size in bytes needed for conversion
-  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump to data.
-  MDBX_CXX11_CONSTEXPR size_t from_base58_bytes() const noexcept {
-    return length() / 11 * 8 + length() % 11 * 32 / 43;
-  }
-
-  /// \brief Fills the buffer by [Base64](https://en.wikipedia.org/wiki/Base64)
-  /// data dump.
-  /// \throws std::length_error if given buffer is too small.
-  char *to_base64(char *dest, size_t dest_size, unsigned wrap_width = 0) const;
-
-  /// \brief Returns the buffer size in bytes needed for
-  /// [Base64](https://en.wikipedia.org/wiki/Base64) data dump.
-  MDBX_CXX11_CONSTEXPR size_t
-  to_base64_bytes(unsigned wrap_width = 0) const noexcept {
-    const size_t bytes = (length() + 2) / 3 * 4;
-    return wrap_width ? bytes + bytes / wrap_width : bytes;
-  }
-
-  /// \brief Fills the buffer with data converted from
-  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump.
-  /// \throws std::length_error if given buffer is too small.
-  byte *from_base64(byte *dest, size_t dest_size,
-                    bool ignore_spaces = false) const;
-
-  /// \brief Returns the buffer size in bytes needed for conversion
-  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump to data.
-  MDBX_CXX11_CONSTEXPR size_t from_base64_bytes() const noexcept {
-    return (length() + 3) / 4 * 3;
+  template <class CHAR, class T, class ALLOCATOR>
+  MDBX_CXX20_CONSTEXPR explicit
+  operator ::std::basic_string<CHAR, T, ALLOCATOR>() const {
+    return as_string<CHAR, T, ALLOCATOR>();
   }
 
   /// \brief Returns a string with a hexadecimal dump of the slice content.
   template <class ALLOCATOR = legacy_allocator>
-  inline ::mdbx::string<ALLOCATOR>
-  hex_encode(bool uppercase = false,
-             const ALLOCATOR &allocator = ALLOCATOR()) const;
-
-  /// \brief Decodes hexadecimal dump from the slice content into returned data
-  /// string.
-  template <class ALLOCATOR = legacy_allocator>
-  inline ::mdbx::string<ALLOCATOR>
-  hex_decode(const ALLOCATOR &allocator = ALLOCATOR()) const;
+  inline string<ALLOCATOR>
+  as_hex_string(bool uppercase = false, unsigned wrap_width = 0,
+                const ALLOCATOR &allocator = ALLOCATOR()) const;
 
   /// \brief Returns a string with a
   /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of the slice content.
   template <class ALLOCATOR = legacy_allocator>
-  inline ::mdbx::string<ALLOCATOR>
-  base58_encode(const ALLOCATOR &allocator = ALLOCATOR()) const;
-
-  /// \brief Decodes [Base58](https://en.wikipedia.org/wiki/Base58) dump
-  /// from the slice content into returned data string.
-  template <class ALLOCATOR = legacy_allocator>
-  inline ::mdbx::string<ALLOCATOR>
-  base58_decode(const ALLOCATOR &allocator = ALLOCATOR()) const;
+  inline string<ALLOCATOR>
+  as_base58_string(unsigned wrap_width = 0,
+                   const ALLOCATOR &allocator = ALLOCATOR()) const;
 
   /// \brief Returns a string with a
-  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of the slice content.
+  /// [Base58](https://en.wikipedia.org/wiki/Base64) dump of the slice content.
   template <class ALLOCATOR = legacy_allocator>
-  inline ::mdbx::string<ALLOCATOR>
-  base64_encode(const ALLOCATOR &allocator = ALLOCATOR()) const;
+  inline string<ALLOCATOR>
+  as_base64_string(unsigned wrap_width = 0,
+                   const ALLOCATOR &allocator = ALLOCATOR()) const;
+
+  /// \brief Returns a buffer with a hexadecimal dump of the slice content.
+  template <class ALLOCATOR = legacy_allocator,
+            class CAPACITY_POLICY = default_capacity_policy>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  encode_hex(bool uppercase = false, unsigned wrap_width = 0,
+             const ALLOCATOR &allocator = ALLOCATOR()) const;
+
+  /// \brief Returns a buffer with a
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of the slice content.
+  template <class ALLOCATOR = legacy_allocator,
+            class CAPACITY_POLICY = default_capacity_policy>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  encode_base58(unsigned wrap_width = 0,
+                const ALLOCATOR &allocator = ALLOCATOR()) const;
+
+  /// \brief Returns a buffer with a
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of the slice content.
+  template <class ALLOCATOR = legacy_allocator,
+            class CAPACITY_POLICY = default_capacity_policy>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  encode_base64(unsigned wrap_width = 0,
+                const ALLOCATOR &allocator = ALLOCATOR()) const;
+
+  /// \brief Decodes hexadecimal dump from the slice content to returned buffer.
+  template <class ALLOCATOR = legacy_allocator,
+            class CAPACITY_POLICY = default_capacity_policy>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  hex_decode(bool ignore_spaces = false,
+             const ALLOCATOR &allocator = ALLOCATOR()) const;
+
+  /// \brief Decodes [Base58](https://en.wikipedia.org/wiki/Base58) dump
+  /// from the slice content to returned buffer.
+  template <class ALLOCATOR = legacy_allocator,
+            class CAPACITY_POLICY = default_capacity_policy>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  base58_decode(bool ignore_spaces = false,
+                const ALLOCATOR &allocator = ALLOCATOR()) const;
 
   /// \brief Decodes [Base64](https://en.wikipedia.org/wiki/Base64) dump
-  /// from the slice content into returned data string.
-  template <class ALLOCATOR = legacy_allocator>
-  inline ::mdbx::string<ALLOCATOR>
-  base64_decode(const ALLOCATOR &allocator = ALLOCATOR()) const;
+  /// from the slice content to returned buffer.
+  template <class ALLOCATOR = legacy_allocator,
+            class CAPACITY_POLICY = default_capacity_policy>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  base64_decode(bool ignore_spaces = false,
+                const ALLOCATOR &allocator = ALLOCATOR()) const;
 
   /// \brief Checks whether the content of the slice is printable.
   /// \param [in] disable_utf8 By default if `disable_utf8` is `false` function
@@ -620,51 +746,33 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   /// \param [in] ignore_spaces If `true` function will skips spaces surrounding
   /// (before, between and after) a encoded bytes. However, spaces should not
   /// break a pair of characters encoding a single byte.
-  MDBX_NOTHROW_PURE_FUNCTION bool
+  inline MDBX_NOTHROW_PURE_FUNCTION bool
   is_hex(bool ignore_spaces = false) const noexcept;
-  MDBX_NOTHROW_PURE_FUNCTION bool
 
   /// \brief Checks whether the content of the slice is a
   /// [Base58](https://en.wikipedia.org/wiki/Base58) dump.
   /// \param [in] ignore_spaces If `true` function will skips spaces surrounding
   /// (before, between and after) a encoded bytes. However, spaces should not
   /// break a code group of characters.
+  inline MDBX_NOTHROW_PURE_FUNCTION bool
   is_base58(bool ignore_spaces = false) const noexcept;
-  MDBX_NOTHROW_PURE_FUNCTION bool
 
   /// \brief Checks whether the content of the slice is a
   /// [Base64](https://en.wikipedia.org/wiki/Base64) dump.
   /// \param [in] ignore_spaces If `true` function will skips spaces surrounding
   /// (before, between and after) a encoded bytes. However, spaces should not
   /// break a code group of characters.
+  inline MDBX_NOTHROW_PURE_FUNCTION bool
   is_base64(bool ignore_spaces = false) const noexcept;
 
-#if defined(DOXYGEN) ||                                                        \
-    (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  /// \brief Return a string_view that references the same data as this slice.
-  template <class C, class T>
-  MDBX_CXX11_CONSTEXPR explicit
-  operator ::std::basic_string_view<C, T>() const noexcept {
-    static_assert(sizeof(C) == 1, "Must be single byte characters");
-    return ::std::basic_string_view<C, T>(char_ptr(), length());
-  }
-
-  /// \brief Return a string_view that references the same data as this slice.
-  template <class C = char, class T = ::std::char_traits<C>>
-  MDBX_CXX11_CONSTEXPR ::std::basic_string_view<C, T>
-  string_view() const noexcept {
-    static_assert(sizeof(C) == 1, "Must be single byte characters");
-    return ::std::basic_string_view<C, T>(char_ptr(), length());
-  }
-#endif /* __cpp_lib_string_view >= 201606L */
-
   inline void swap(slice &other) noexcept;
+
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  void swap(::std::basic_string_view<C, T> &view) noexcept {
-    static_assert(sizeof(C) == 1, "Must be single byte characters");
-    const auto temp = ::std::basic_string_view<C, T>(*this);
+  template <class CHAR, class T>
+  void swap(::std::basic_string_view<CHAR, T> &view) noexcept {
+    static_assert(sizeof(CHAR) == 1, "Must be single byte characters");
+    const auto temp = ::std::basic_string_view<CHAR, T>(*this);
     *this = view;
     view = temp;
   }
@@ -672,15 +780,36 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
 
   /// \brief Returns casted to pointer to byte an address of data.
   MDBX_CXX11_CONSTEXPR const byte *byte_ptr() const noexcept;
+  MDBX_CXX11_CONSTEXPR byte *byte_ptr() noexcept;
+
+  /// \brief Returns casted to pointer to byte an end of data.
+  MDBX_CXX11_CONSTEXPR const byte *end_byte_ptr() const noexcept;
+  MDBX_CXX11_CONSTEXPR byte *end_byte_ptr() noexcept;
 
   /// \brief Returns casted to pointer to char an address of data.
   MDBX_CXX11_CONSTEXPR const char *char_ptr() const noexcept;
+  MDBX_CXX11_CONSTEXPR char *char_ptr() noexcept;
+
+  /// \brief Returns casted to pointer to char an end of data.
+  MDBX_CXX11_CONSTEXPR const char *end_char_ptr() const noexcept;
+  MDBX_CXX11_CONSTEXPR char *end_char_ptr() noexcept;
 
   /// \brief Return a pointer to the beginning of the referenced data.
   MDBX_CXX11_CONSTEXPR const void *data() const noexcept;
+  MDBX_CXX11_CONSTEXPR void *data() noexcept;
+
+  /// \brief Return a pointer to the ending of the referenced data.
+  MDBX_CXX11_CONSTEXPR const void *end() const noexcept;
+  MDBX_CXX11_CONSTEXPR void *end() noexcept;
 
   /// \brief Returns the number of bytes.
   MDBX_CXX11_CONSTEXPR size_t length() const noexcept;
+
+  /// \brief Set slice length.
+  MDBX_CXX14_CONSTEXPR slice &set_length(size_t bytes);
+
+  /// \brief Sets the length by specifying the end of the slice data.
+  MDBX_CXX14_CONSTEXPR slice &set_end(const void *ptr);
 
   /// \brief Checks whether the slice is empty.
   MDBX_CXX11_CONSTEXPR bool empty() const noexcept;
@@ -695,10 +824,10 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   MDBX_CXX11_CONSTEXPR operator bool() const noexcept;
 
   /// \brief Depletes content of slice and make it invalid.
-  inline void invalidate() noexcept;
+  MDBX_CXX14_CONSTEXPR void invalidate() noexcept;
 
   /// \brief Makes the slice empty and referencing to nothing.
-  inline void clear() noexcept;
+  MDBX_CXX14_CONSTEXPR void clear() noexcept;
 
   /// \brief Drops the first "n" bytes from this slice.
   /// \pre REQUIRES: `n <= size()`
@@ -717,44 +846,44 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   inline void safe_remove_suffix(size_t n);
 
   /// \brief Checks if the data starts with the given prefix.
-  MDBX_NOTHROW_PURE_FUNCTION inline bool
+  MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
   starts_with(const slice &prefix) const noexcept;
 
   /// \brief Checks if the data ends with the given suffix.
-  MDBX_NOTHROW_PURE_FUNCTION inline bool
+  MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
   ends_with(const slice &suffix) const noexcept;
 
   /// \brief Returns the nth byte in the referenced data.
   /// \pre REQUIRES: `n < size()`
-  inline byte operator[](size_t n) const noexcept;
+  MDBX_CXX11_CONSTEXPR byte operator[](size_t n) const noexcept;
 
   /// \brief Returns the nth byte in the referenced data with bounds checking.
   /// \throws std::out_of_range if `n >= size()`
-  inline byte at(size_t n) const;
+  MDBX_CXX11_CONSTEXPR byte at(size_t n) const;
 
   /// \brief Returns the first "n" bytes of the slice.
   /// \pre REQUIRES: `n <= size()`
-  inline slice head(size_t n) const noexcept;
+  MDBX_CXX14_CONSTEXPR slice head(size_t n) const noexcept;
 
   /// \brief Returns the last "n" bytes of the slice.
   /// \pre REQUIRES: `n <= size()`
-  inline slice tail(size_t n) const noexcept;
+  MDBX_CXX14_CONSTEXPR slice tail(size_t n) const noexcept;
 
   /// \brief Returns the middle "n" bytes of the slice.
   /// \pre REQUIRES: `from + n <= size()`
-  inline slice middle(size_t from, size_t n) const noexcept;
+  MDBX_CXX14_CONSTEXPR slice middle(size_t from, size_t n) const noexcept;
 
   /// \brief Returns the first "n" bytes of the slice.
   /// \throws std::out_of_range if `n >= size()`
-  inline slice safe_head(size_t n) const;
+  MDBX_CXX14_CONSTEXPR slice safe_head(size_t n) const;
 
   /// \brief Returns the last "n" bytes of the slice.
   /// \throws std::out_of_range if `n >= size()`
-  inline slice safe_tail(size_t n) const;
+  MDBX_CXX14_CONSTEXPR slice safe_tail(size_t n) const;
 
   /// \brief Returns the middle "n" bytes of the slice.
   /// \throws std::out_of_range if `from + n >= size()`
-  inline slice safe_middle(size_t from, size_t n) const;
+  MDBX_CXX14_CONSTEXPR slice safe_middle(size_t from, size_t n) const;
 
   /// \brief Returns the hash value of referenced data.
   /// \attention Function implementation and returned hash values may changed
@@ -770,7 +899,7 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   ///   >  0 if "a" longer than "b",
   ///   <  0 if "a" length-equal and lexicographically less than "b",
   ///   >  0 if "a" length-equal and lexicographically great than "b".
-  MDBX_NOTHROW_PURE_FUNCTION static inline intptr_t
+  MDBX_NOTHROW_PURE_FUNCTION static MDBX_CXX14_CONSTEXPR intptr_t
   compare_fast(const slice &a, const slice &b) noexcept;
 
   /// \brief Three-way lexicographically comparison.
@@ -778,14 +907,20 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
   ///   <  0 if "a" <  "b",
   ///   == 0 if "a" == "b",
   ///   >  0 if "a" >  "b".
-  MDBX_NOTHROW_PURE_FUNCTION static inline intptr_t
+  MDBX_NOTHROW_PURE_FUNCTION static MDBX_CXX14_CONSTEXPR intptr_t
   compare_lexicographically(const slice &a, const slice &b) noexcept;
-  friend inline bool operator==(const slice &a, const slice &b) noexcept;
-  friend inline bool operator<(const slice &a, const slice &b) noexcept;
-  friend inline bool operator>(const slice &a, const slice &b) noexcept;
-  friend inline bool operator<=(const slice &a, const slice &b) noexcept;
-  friend inline bool operator>=(const slice &a, const slice &b) noexcept;
-  friend inline bool operator!=(const slice &a, const slice &b) noexcept;
+  friend MDBX_CXX14_CONSTEXPR bool operator==(const slice &a,
+                                              const slice &b) noexcept;
+  friend MDBX_CXX14_CONSTEXPR bool operator<(const slice &a,
+                                             const slice &b) noexcept;
+  friend MDBX_CXX14_CONSTEXPR bool operator>(const slice &a,
+                                             const slice &b) noexcept;
+  friend MDBX_CXX14_CONSTEXPR bool operator<=(const slice &a,
+                                              const slice &b) noexcept;
+  friend MDBX_CXX14_CONSTEXPR bool operator>=(const slice &a,
+                                              const slice &b) noexcept;
+  friend MDBX_CXX14_CONSTEXPR bool operator!=(const slice &a,
+                                              const slice &b) noexcept;
 
   /// \brief Checks the slice is not refers to null address or has zero length.
   MDBX_CXX11_CONSTEXPR bool is_valid() const noexcept {
@@ -794,7 +929,9 @@ struct LIBMDBX_API_TYPE slice : public ::MDBX_val {
 
   /// \brief Build an invalid slice which non-zero length and refers to null
   /// address.
-  inline static slice invalid() noexcept { return slice(size_t(-1)); }
+  MDBX_CXX14_CONSTEXPR static slice invalid() noexcept {
+    return slice(size_t(-1));
+  }
 
 protected:
   MDBX_CXX11_CONSTEXPR slice(size_t invalid_length) noexcept
@@ -803,29 +940,943 @@ protected:
 
 //------------------------------------------------------------------------------
 
+namespace allocation_aware_details {
+
+template <typename A> constexpr bool allocator_is_always_equal() noexcept {
+#if defined(__cpp_lib_allocator_traits_is_always_equal) &&                     \
+    __cpp_lib_allocator_traits_is_always_equal >= 201411L
+  return ::std::allocator_traits<A>::is_always_equal::value;
+#else
+  return ::std::is_empty<A>::value;
+#endif /* __cpp_lib_allocator_traits_is_always_equal */
+}
+
+template <typename T, typename A = typename T::allocator_type,
+          bool PoCMA = ::std::allocator_traits<
+              A>::propagate_on_container_move_assignment::value>
+struct move_assign_alloc;
+
+template <typename T, typename A> struct move_assign_alloc<T, A, false> {
+  static constexpr bool is_nothrow() noexcept {
+    return allocator_is_always_equal<A>();
+  }
+  static MDBX_CXX20_CONSTEXPR bool is_moveable(T *target, T &source) noexcept {
+    return allocator_is_always_equal<A>() ||
+           target->get_allocator() == source.get_allocator();
+  }
+  static MDBX_CXX20_CONSTEXPR void propagate(T *target, T &source) noexcept {
+    assert(target->get_allocator() != source.get_allocator());
+    (void)target;
+    (void)source;
+  }
+};
+
+template <typename T, typename A> struct move_assign_alloc<T, A, true> {
+  static constexpr bool is_nothrow() noexcept {
+    return allocator_is_always_equal<A>() ||
+           ::std::is_nothrow_move_assignable<A>::value;
+  }
+  static constexpr bool is_moveable(T *, T &) noexcept { return true; }
+  static MDBX_CXX20_CONSTEXPR void propagate(T *target, T &source) {
+    assert(target->get_allocator() != source.get_allocator());
+    target->get_allocator() = ::std::move(source.get_allocator());
+  }
+};
+
+template <typename T, typename A = typename T::allocator_type,
+          bool PoCCA = ::std::allocator_traits<
+              A>::propagate_on_container_copy_assignment::value>
+struct copy_assign_alloc;
+
+template <typename T, typename A> struct copy_assign_alloc<T, A, false> {
+  static constexpr bool is_nothrow() noexcept { return false; }
+  static MDBX_CXX20_CONSTEXPR void propagate(T *target,
+                                             const T &source) noexcept {
+    assert(target->get_allocator() != source.get_allocator());
+    (void)target;
+    (void)source;
+  }
+};
+
+template <typename T, typename A> struct copy_assign_alloc<T, A, true> {
+  static constexpr bool is_nothrow() noexcept {
+    return allocator_is_always_equal<A>() ||
+           ::std::is_nothrow_copy_assignable<A>::value;
+  }
+  static MDBX_CXX20_CONSTEXPR void
+  propagate(T *target, const T &source) noexcept(is_nothrow()) {
+    if MDBX_IF_CONSTEXPR (!allocator_is_always_equal<A>()) {
+      if (MDBX_UNLIKELY(target->get_allocator() != source.get_allocator()))
+        MDBX_CXX20_UNLIKELY target->get_allocator() =
+            ::std::allocator_traits<A>::select_on_container_copy_construction(
+                source.get_allocator());
+    } else {
+      /* gag for buggy compilers */
+      (void)target;
+      (void)source;
+    }
+  }
+};
+
+template <typename T, typename A = typename T::allocator_type,
+          bool PoCS =
+              ::std::allocator_traits<A>::propagate_on_container_swap::value>
+struct swap_alloc;
+
+template <typename T, typename A> struct swap_alloc<T, A, false> {
+  static constexpr bool is_nothrow() noexcept {
+    return allocator_is_always_equal<A>();
+  }
+  static MDBX_CXX20_CONSTEXPR void propagate(T *target,
+                                             T &source) noexcept(is_nothrow()) {
+    if MDBX_IF_CONSTEXPR (!allocator_is_always_equal<A>()) {
+      if (MDBX_UNLIKELY(target->get_allocator() != source.get_allocator()))
+        MDBX_CXX20_UNLIKELY throw_allocators_mismatch();
+    } else {
+      /* gag for buggy compilers */
+      (void)target;
+      (void)source;
+    }
+  }
+};
+
+template <typename T, typename A> struct swap_alloc<T, A, true> {
+  static constexpr bool is_nothrow() noexcept {
+    return allocator_is_always_equal<A>() ||
+#if defined(__cpp_lib_is_swappable) && __cpp_lib_is_swappable >= 201603L
+           ::std::is_nothrow_swappable<A>() ||
+#endif /* __cpp_lib_is_swappable >= 201603L */
+           (::std::is_nothrow_move_constructible<A>::value &&
+            ::std::is_nothrow_move_assignable<A>::value);
+  }
+  static MDBX_CXX20_CONSTEXPR void propagate(T *target,
+                                             T &source) noexcept(is_nothrow()) {
+    if MDBX_IF_CONSTEXPR (!allocator_is_always_equal<A>()) {
+      if (MDBX_UNLIKELY(target->get_allocator() != source.get_allocator()))
+        MDBX_CXX20_UNLIKELY ::std::swap(*target, source);
+    } else {
+      /* gag for buggy compilers */
+      (void)target;
+      (void)source;
+    }
+  }
+};
+
+} // namespace allocation_aware_details
+
+struct default_capacity_policy {
+  enum : size_t {
+    extra_inplace_storage = 0,
+    pettiness_threshold = 64,
+    max_reserve = 65536
+  };
+
+  static MDBX_CXX11_CONSTEXPR size_t round(const size_t value) {
+    static_assert((pettiness_threshold & (pettiness_threshold - 1)) == 0,
+                  "pettiness_threshold must be a power of 2");
+    static_assert(pettiness_threshold % 2 == 0,
+                  "pettiness_threshold must be even");
+    static_assert(pettiness_threshold >= sizeof(uint64_t),
+                  "pettiness_threshold must be > 7");
+    constexpr const auto pettiness_mask = ~size_t(pettiness_threshold - 1);
+    return (value + pettiness_threshold - 1) & pettiness_mask;
+  }
+
+  static MDBX_CXX11_CONSTEXPR size_t advise(const size_t current,
+                                            const size_t wanna) {
+    static_assert(max_reserve % pettiness_threshold == 0,
+                  "max_reserve must be a multiple of pettiness_threshold");
+    static_assert(max_reserve / 3 > pettiness_threshold,
+                  "max_reserve must be > pettiness_threshold * 3");
+    if (wanna > current)
+      /* doubling capacity, but don't made reserve more than max_reserve */
+      return round(wanna + ::std::min(size_t(max_reserve), current));
+
+    if (current - wanna >
+        /* shrink if reserve will more than half of current or max_reserve,
+         * but not less than pettiness_threshold */
+        ::std::min(wanna + pettiness_threshold, size_t(max_reserve)))
+      return round(wanna);
+
+    /* keep unchanged */
+    return current;
+  }
+};
+
+/// \brief Hexadecimal encoder which satisfy \ref SliceTranscoder concept.
+struct LIBMDBX_API to_hex {
+  const slice source;
+  const bool uppercase = false;
+  const unsigned wrap_width = 0;
+  MDBX_CXX11_CONSTEXPR to_hex(const slice &source, bool uppercase = false,
+                              unsigned wrap_width = 0) noexcept
+      : source(source), uppercase(uppercase), wrap_width(wrap_width) {
+    MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(SliceTranscoder, to_hex);
+  }
+
+  /// \brief Returns a string with a hexadecimal dump of a passed slice.
+  template <class ALLOCATOR = legacy_allocator>
+  string<ALLOCATOR> as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_string<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns a buffer with a hexadecimal dump of a passed slice.
+  template <class ALLOCATOR = legacy_allocator,
+            typename CAPACITY_POLICY = default_capacity_policy>
+  buffer<ALLOCATOR, CAPACITY_POLICY>
+  as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_buffer<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns the buffer size in bytes needed for hexadecimal
+  /// dump of a passed slice.
+  MDBX_CXX11_CONSTEXPR size_t envisage_result_length() const noexcept {
+    const size_t bytes = source.length() << 1;
+    return wrap_width ? bytes + bytes / wrap_width : bytes;
+  }
+
+  /// \brief Fills the buffer by hexadecimal dump of a passed slice.
+  /// \throws std::length_error if given buffer is too small.
+  char *write_bytes(char *dest, size_t dest_size) const;
+
+  /// \brief Checks whether a passed slice is empty,
+  /// and therefore there will be no output bytes.
+  bool is_empty() const noexcept { return source.empty(); }
+
+  /// \brief Checks whether the content of a passed slice is a valid data
+  /// and could be encoded or unexpectedly not.
+  bool is_erroneous() const noexcept { return false; }
+};
+
+/// \brief [Base58](https://en.wikipedia.org/wiki/Base58) encoder which satisfy
+/// \ref SliceTranscoder concept.
+struct LIBMDBX_API to_base58 {
+  const slice source;
+  const unsigned wrap_width = 0;
+  MDBX_CXX11_CONSTEXPR
+  to_base58(const slice &source, unsigned wrap_width = 0) noexcept
+      : source(source), wrap_width(wrap_width) {
+    MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(SliceTranscoder, to_base58);
+  }
+
+  /// \brief Returns a string with a
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of a passed slice.
+  template <class ALLOCATOR = legacy_allocator>
+  string<ALLOCATOR> as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_string<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns a buffer with a
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of a passed slice.
+  template <class ALLOCATOR = legacy_allocator,
+            typename CAPACITY_POLICY = default_capacity_policy>
+  buffer<ALLOCATOR, CAPACITY_POLICY>
+  as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_buffer<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns the buffer size in bytes needed for
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of passed slice.
+  MDBX_CXX11_CONSTEXPR size_t envisage_result_length() const noexcept {
+    const size_t bytes =
+        source.length() / 8 * 11 + (source.length() % 8 * 43 + 31) / 32;
+    return wrap_width ? bytes + bytes / wrap_width : bytes;
+  }
+
+  /// \brief Fills the buffer by [Base58](https://en.wikipedia.org/wiki/Base58)
+  /// dump of passed slice.
+  /// \throws std::length_error if given buffer is too small.
+  char *write_bytes(char *dest, size_t dest_size) const;
+
+  /// \brief Checks whether a passed slice is empty,
+  /// and therefore there will be no output bytes.
+  bool is_empty() const noexcept { return source.empty(); }
+
+  /// \brief Checks whether the content of a passed slice is a valid data
+  /// and could be encoded or unexpectedly not.
+  bool is_erroneous() const noexcept { return false; }
+};
+
+/// \brief [Base64](https://en.wikipedia.org/wiki/Base64) encoder which satisfy
+/// \ref SliceTranscoder concept.
+struct LIBMDBX_API to_base64 {
+  const slice source;
+  const unsigned wrap_width = 0;
+  MDBX_CXX11_CONSTEXPR
+  to_base64(const slice &source, unsigned wrap_width = 0) noexcept
+      : source(source), wrap_width(wrap_width) {
+    MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(SliceTranscoder, to_base64);
+  }
+
+  /// \brief Returns a string with a
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of a passed slice.
+  template <class ALLOCATOR = legacy_allocator>
+  string<ALLOCATOR> as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_string<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns a buffer with a
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of a passed slice.
+  template <class ALLOCATOR = legacy_allocator,
+            typename CAPACITY_POLICY = default_capacity_policy>
+  buffer<ALLOCATOR, CAPACITY_POLICY>
+  as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_buffer<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns the buffer size in bytes needed for
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of passed slice.
+  MDBX_CXX11_CONSTEXPR size_t envisage_result_length() const noexcept {
+    const size_t bytes = (source.length() + 2) / 3 * 4;
+    return wrap_width ? bytes + bytes / wrap_width : bytes;
+  }
+
+  /// \brief Fills the buffer by [Base64](https://en.wikipedia.org/wiki/Base64)
+  /// dump of passed slice.
+  /// \throws std::length_error if given buffer is too small.
+  char *write_bytes(char *dest, size_t dest_size) const;
+
+  /// \brief Checks whether a passed slice is empty,
+  /// and therefore there will be no output bytes.
+  bool is_empty() const noexcept { return source.empty(); }
+
+  /// \brief Checks whether the content of a passed slice is a valid data
+  /// and could be encoded or unexpectedly not.
+  bool is_erroneous() const noexcept { return false; }
+};
+
+inline ::std::ostream &operator<<(::std::ostream out, const to_hex &wrapper) {
+  return out << wrapper.as_string();
+}
+inline ::std::ostream &operator<<(::std::ostream out,
+                                  const to_base58 &wrapper) {
+  return out << wrapper.as_string();
+}
+inline ::std::ostream &operator<<(::std::ostream out,
+                                  const to_base64 &wrapper) {
+  return out << wrapper.as_string();
+}
+
+/// \brief Hexadecimal decoder which satisfy \ref SliceTranscoder concept.
+struct LIBMDBX_API from_hex {
+  const slice source;
+  const bool ignore_spaces = false;
+  MDBX_CXX11_CONSTEXPR from_hex(const slice &source,
+                                bool ignore_spaces = false) noexcept
+      : source(source), ignore_spaces(ignore_spaces) {
+    MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(SliceTranscoder, from_hex);
+  }
+
+  /// \brief Decodes hexadecimal dump from a passed slice to returned string.
+  template <class ALLOCATOR = legacy_allocator>
+  string<ALLOCATOR> as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_string<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Decodes hexadecimal dump from a passed slice to returned buffer.
+  template <class ALLOCATOR = legacy_allocator,
+            typename CAPACITY_POLICY = default_capacity_policy>
+  buffer<ALLOCATOR, CAPACITY_POLICY>
+  as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_buffer<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns the number of bytes needed for conversion
+  /// hexadecimal dump from a passed slice to decoded data.
+  MDBX_CXX11_CONSTEXPR size_t envisage_result_length() const noexcept {
+    return source.length() >> 1;
+  }
+
+  /// \brief Fills the destination with data decoded from hexadecimal dump
+  /// from a passed slice.
+  /// \throws std::length_error if given buffer is too small.
+  char *write_bytes(char *dest, size_t dest_size) const;
+
+  /// \brief Checks whether a passed slice is empty,
+  /// and therefore there will be no output bytes.
+  bool is_empty() const noexcept { return source.empty(); }
+
+  /// \brief Checks whether the content of a passed slice is a valid hexadecimal
+  /// dump, and therefore there could be decoded or not.
+  bool is_erroneous() const noexcept;
+};
+
+/// \brief [Base58](https://en.wikipedia.org/wiki/Base58) decoder which satisfy
+/// \ref SliceTranscoder concept.
+struct LIBMDBX_API from_base58 {
+  const slice source;
+  const bool ignore_spaces = false;
+  MDBX_CXX11_CONSTEXPR from_base58(const slice &source,
+                                   bool ignore_spaces = false) noexcept
+      : source(source), ignore_spaces(ignore_spaces) {
+    MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(SliceTranscoder, from_base58);
+  }
+
+  /// \brief Decodes [Base58](https://en.wikipedia.org/wiki/Base58) dump from a
+  /// passed slice to returned string.
+  template <class ALLOCATOR = legacy_allocator>
+  string<ALLOCATOR> as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_string<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Decodes [Base58](https://en.wikipedia.org/wiki/Base58) dump from a
+  /// passed slice to returned buffer.
+  template <class ALLOCATOR = legacy_allocator,
+            typename CAPACITY_POLICY = default_capacity_policy>
+  buffer<ALLOCATOR, CAPACITY_POLICY>
+  as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_buffer<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns the number of bytes needed for conversion
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump from a passed slice to
+  /// decoded data.
+  MDBX_CXX11_CONSTEXPR size_t envisage_result_length() const noexcept {
+    return source.length() / 11 * 8 + source.length() % 11 * 32 / 43;
+  }
+
+  /// \brief Fills the destination with data decoded from
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump from a passed slice.
+  /// \throws std::length_error if given buffer is too small.
+  char *write_bytes(char *dest, size_t dest_size) const;
+
+  /// \brief Checks whether a passed slice is empty,
+  /// and therefore there will be no output bytes.
+  bool is_empty() const noexcept { return source.empty(); }
+
+  /// \brief Checks whether the content of a passed slice is a valid
+  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump, and therefore there
+  /// could be decoded or not.
+  bool is_erroneous() const noexcept;
+};
+
+/// \brief [Base64](https://en.wikipedia.org/wiki/Base64) decoder which satisfy
+/// \ref SliceTranscoder concept.
+struct LIBMDBX_API from_base64 {
+  const slice source;
+  const bool ignore_spaces = false;
+  MDBX_CXX11_CONSTEXPR from_base64(const slice &source,
+                                   bool ignore_spaces = false) noexcept
+      : source(source), ignore_spaces(ignore_spaces) {
+    MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(SliceTranscoder, from_base64);
+  }
+
+  /// \brief Decodes [Base64](https://en.wikipedia.org/wiki/Base64) dump from a
+  /// passed slice to returned string.
+  template <class ALLOCATOR = legacy_allocator>
+  string<ALLOCATOR> as_string(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_string<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Decodes [Base64](https://en.wikipedia.org/wiki/Base64) dump from a
+  /// passed slice to returned buffer.
+  template <class ALLOCATOR = legacy_allocator,
+            typename CAPACITY_POLICY = default_capacity_policy>
+  buffer<ALLOCATOR, CAPACITY_POLICY>
+  as_buffer(const ALLOCATOR &allocator = ALLOCATOR()) const {
+    return make_buffer<ALLOCATOR>(*this, allocator);
+  }
+
+  /// \brief Returns the number of bytes needed for conversion
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump from a passed slice to
+  /// decoded data.
+  MDBX_CXX11_CONSTEXPR size_t envisage_result_length() const noexcept {
+    return (source.length() + 3) / 4 * 3;
+  }
+
+  /// \brief Fills the destination with data decoded from
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump from a passed slice.
+  /// \throws std::length_error if given buffer is too small.
+  char *write_bytes(char *dest, size_t dest_size) const;
+
+  /// \brief Checks whether a passed slice is empty,
+  /// and therefore there will be no output bytes.
+  bool is_empty() const noexcept { return source.empty(); }
+
+  /// \brief Checks whether the content of a passed slice is a valid
+  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump, and therefore there
+  /// could be decoded or not.
+  bool is_erroneous() const noexcept;
+};
+
 /// \brief The chunk of data stored inside the buffer or located outside it.
-template <class ALLOCATOR = legacy_allocator> class buffer {
+template <class ALLOCATOR, typename CAPACITY_POLICY> class buffer {
+public:
+#if !defined(_MSC_VER) || _MSC_VER > 1900
+  using allocator_type = typename ::std::allocator_traits<
+      ALLOCATOR>::template rebind_alloc<uint64_t>;
+#else
+  using allocator_type = typename ALLOCATOR::template rebind<uint64_t>::other;
+#endif /* MSVC is mad */
+  using allocator_traits = ::std::allocator_traits<allocator_type>;
+  using reservation_policy = CAPACITY_POLICY;
+  enum : size_t {
+    max_length = MDBX_MAXDATASIZE,
+    max_capacity = (max_length / 3u * 4u + 1023u) & ~size_t(1023),
+    extra_inplace_storage = reservation_policy::extra_inplace_storage,
+    pettiness_threshold = reservation_policy::pettiness_threshold
+  };
+
+private:
   friend class txn;
-  /* FIXME: replace std::string with custom silo.
-   * The std::string<char> does not guarantee any alignment for allocated
-   * buffer. For instance short values may be stored within internal inplace
-   * buffer, which might odd address. Moreover, allocator for the `char` type
-   * may return unaligned/odd address. This may UB for placing a 32-bit and
-   * 64-bit values.
-   * So seems the std::string<> should be replaced with ad hoc solution. */
-  using silo = ::mdbx::string<ALLOCATOR>;
+  struct silo;
+  using move_assign_alloc =
+      allocation_aware_details::move_assign_alloc<silo, allocator_type>;
+  using copy_assign_alloc =
+      allocation_aware_details::copy_assign_alloc<silo, allocator_type>;
+  using swap_alloc = allocation_aware_details::swap_alloc<silo, allocator_type>;
+  struct silo /* Empty Base Class Optimization */ : public allocator_type {
+    MDBX_CXX20_CONSTEXPR const allocator_type &get_allocator() const noexcept {
+      return *this;
+    }
+    MDBX_CXX20_CONSTEXPR allocator_type &get_allocator() noexcept {
+      return *this;
+    }
+
+    using allocator_pointer = typename allocator_traits::pointer;
+    using allocator_const_pointer = typename allocator_traits::const_pointer;
+
+    MDBX_CXX20_CONSTEXPR ::std::pair<allocator_pointer, size_t>
+    allocate_storage(size_t bytes) {
+      assert(bytes >= sizeof(bin));
+      constexpr size_t unit = sizeof(typename allocator_type::value_type);
+      static_assert((unit & (unit - 1)) == 0,
+                    "size of ALLOCATOR::value_type should be a power of 2");
+      static_assert(unit > 0, "size of ALLOCATOR::value_type must be > 0");
+      const size_t n = (bytes + unit - 1) / unit;
+      return ::std::make_pair(allocator_traits::allocate(get_allocator(), n),
+                              n * unit);
+    }
+    MDBX_CXX20_CONSTEXPR void deallocate_storage(allocator_pointer ptr,
+                                                 size_t bytes) {
+      constexpr size_t unit = sizeof(typename allocator_type::value_type);
+      assert(ptr && bytes >= sizeof(bin) && bytes >= unit && bytes % unit == 0);
+      allocator_traits::deallocate(get_allocator(), ptr, bytes / unit);
+    }
+
+    static MDBX_CXX17_CONSTEXPR void *
+    to_address(allocator_pointer ptr) noexcept {
+#if defined(__cpp_lib_to_address) && __cpp_lib_to_address >= 201711L
+      return static_cast<void *>(::std::to_address(ptr));
+#else
+      return static_cast<void *>(::std::addressof(*ptr));
+#endif /* __cpp_lib_to_address */
+    }
+    static MDBX_CXX17_CONSTEXPR const void *
+    to_address(allocator_const_pointer ptr) noexcept {
+#if defined(__cpp_lib_to_address) && __cpp_lib_to_address >= 201711L
+      return static_cast<const void *>(::std::to_address(ptr));
+#else
+      return static_cast<const void *>(::std::addressof(*ptr));
+#endif /* __cpp_lib_to_address */
+    }
+
+    union bin {
+      struct allocated {
+        allocator_pointer ptr_;
+        size_t capacity_bytes_;
+        constexpr allocated(allocator_pointer ptr, size_t bytes) noexcept
+            : ptr_(ptr), capacity_bytes_(bytes) {}
+        constexpr allocated(const allocated &) noexcept = default;
+        constexpr allocated(allocated &&) noexcept = default;
+        MDBX_CXX17_CONSTEXPR allocated &
+        operator=(const allocated &) noexcept = default;
+        MDBX_CXX17_CONSTEXPR allocated &
+        operator=(allocated &&) noexcept = default;
+      };
+
+      allocated allocated_;
+      uint64_t align_hint_;
+      byte inplace_[(sizeof(allocated) + extra_inplace_storage + 7u) &
+                    ~size_t(7)];
+
+      static constexpr bool
+      is_suitable_for_inplace(size_t capacity_bytes) noexcept {
+        static_assert(sizeof(bin) == sizeof(inplace_), "WTF?");
+        return capacity_bytes < sizeof(bin);
+      }
+
+      enum : byte {
+        /* Little Endian:
+         *   last byte is the most significant byte of u_.allocated.cap,
+         *   so use higher bit of capacity as the inplace-flag */
+        le_lastbyte_mask = 0x80,
+        /* Big Endian:
+         *   last byte is the least significant byte of u_.allocated.cap,
+         *   so use lower bit of capacity as the inplace-flag. */
+        be_lastbyte_mask = 0x01
+      };
+
+      static constexpr byte inplace_lastbyte_mask() noexcept {
+        static_assert(
+            endian::native == endian::little || endian::native == endian::big,
+            "Only the little-endian or big-endian bytes order are supported");
+        return (endian::native == endian::little) ? le_lastbyte_mask
+                                                  : be_lastbyte_mask;
+      }
+      constexpr byte lastbyte() const noexcept {
+        return inplace_[sizeof(bin) - 1];
+      }
+      MDBX_CXX17_CONSTEXPR byte &lastbyte() noexcept {
+        return inplace_[sizeof(bin) - 1];
+      }
+
+      constexpr bool is_inplace() const noexcept {
+        return (lastbyte() & inplace_lastbyte_mask()) != 0;
+      }
+      constexpr bool is_allocated() const noexcept { return !is_inplace(); }
+
+      template <bool destroy_ptr>
+      MDBX_CXX17_CONSTEXPR byte *make_inplace() noexcept {
+        if (destroy_ptr) {
+          MDBX_CONSTEXPR_ASSERT(is_allocated());
+          /* properly destroy allocator::pointer */
+          allocated_.~allocated();
+        }
+        if (::std::is_trivial<allocator_pointer>::value)
+          /* workaround for "uninitialized" warning from some compilers */
+          ::std::memset(&allocated_.ptr_, 0, sizeof(allocated_.ptr_));
+        lastbyte() = inplace_lastbyte_mask();
+        MDBX_CONSTEXPR_ASSERT(is_inplace() && address() == inplace_ &&
+                              is_suitable_for_inplace(capacity()));
+        return address();
+      }
+
+      template <bool construct_ptr>
+      MDBX_CXX17_CONSTEXPR byte *
+      make_allocated(allocator_pointer ptr, size_t capacity_bytes) noexcept {
+        MDBX_CONSTEXPR_ASSERT(
+            (capacity_bytes & be_lastbyte_mask) == 0 &&
+            ((capacity_bytes >>
+              (sizeof(allocated_.capacity_bytes_) - 1) * CHAR_BIT) &
+             le_lastbyte_mask) == 0);
+        if (construct_ptr)
+          /* properly construct allocator::pointer */
+          new (&allocated_) allocated(ptr, capacity_bytes);
+        else {
+          MDBX_CONSTEXPR_ASSERT(is_allocated());
+          allocated_.ptr_ = ptr;
+          allocated_.capacity_bytes_ = capacity_bytes;
+        }
+        MDBX_CONSTEXPR_ASSERT(is_allocated() && address() == to_address(ptr) &&
+                              capacity() == capacity_bytes);
+        return address();
+      }
+
+      MDBX_CXX20_CONSTEXPR bin(size_t capacity_bytes = 0) noexcept {
+        MDBX_CONSTEXPR_ASSERT(is_suitable_for_inplace(capacity_bytes));
+        make_inplace<false>();
+        (void)capacity_bytes;
+      }
+      MDBX_CXX20_CONSTEXPR bin(allocator_pointer ptr,
+                               size_t capacity_bytes) noexcept {
+        MDBX_CONSTEXPR_ASSERT(!is_suitable_for_inplace(capacity_bytes));
+        make_allocated<true>(ptr, capacity_bytes);
+      }
+      MDBX_CXX20_CONSTEXPR ~bin() {
+        if (is_allocated())
+          /* properly destroy allocator::pointer */
+          allocated_.~allocated();
+      }
+      MDBX_CXX20_CONSTEXPR bin(bin &&ditto) noexcept {
+        if (ditto.is_inplace()) {
+          // micro-optimization: don't use make_inplace<> here
+          //                     since memcpy() will copy the flag.
+          memcpy(inplace_, ditto.inplace_, sizeof(inplace_));
+          MDBX_CONSTEXPR_ASSERT(is_inplace());
+        } else {
+          new (&allocated_) allocated(::std::move(ditto.allocated_));
+          ditto.make_inplace<true>();
+          MDBX_CONSTEXPR_ASSERT(is_allocated());
+        }
+      }
+
+      MDBX_CXX17_CONSTEXPR bin &operator=(const bin &ditto) noexcept {
+        if (ditto.is_inplace()) {
+          // micro-optimization: don't use make_inplace<> here
+          //                     since memcpy() will copy the flag.
+          if (is_allocated())
+            /* properly destroy allocator::pointer */
+            allocated_.~allocated();
+          memcpy(inplace_, ditto.inplace_, sizeof(inplace_));
+          MDBX_CONSTEXPR_ASSERT(is_inplace());
+        } else if (is_inplace())
+          make_allocated<true>(ditto.allocated_.ptr_,
+                               ditto.allocated_.capacity_bytes_);
+        else
+          make_allocated<false>(ditto.allocated_.ptr_,
+                                ditto.allocated_.capacity_bytes_);
+        return *this;
+      }
+
+      MDBX_CXX17_CONSTEXPR bin &operator=(bin &&ditto) noexcept {
+        operator=(const_cast<const bin &>(ditto));
+        if (ditto.is_allocated())
+          ditto.make_inplace<true>();
+        return *this;
+      }
+
+      static MDBX_CXX20_CONSTEXPR size_t advise_capacity(const size_t current,
+                                                         const size_t wanna) {
+        if (MDBX_UNLIKELY(wanna > max_capacity))
+          MDBX_CXX20_UNLIKELY throw_max_length_exceeded();
+
+        const size_t advised = reservation_policy::advise(current, wanna);
+        assert(advised >= wanna);
+        return ::std::min(size_t(max_capacity),
+                          ::std::max(sizeof(bin) - 1, advised));
+      }
+
+      constexpr const byte *address() const noexcept {
+        return is_inplace()
+                   ? inplace_
+                   : static_cast<const byte *>(to_address(allocated_.ptr_));
+      }
+      MDBX_CXX17_CONSTEXPR byte *address() noexcept {
+        return is_inplace() ? inplace_
+                            : static_cast<byte *>(to_address(allocated_.ptr_));
+      }
+      constexpr size_t capacity() const noexcept {
+        return is_inplace() ? sizeof(bin) - 1 : allocated_.capacity_bytes_;
+      }
+    } bin_;
+
+    MDBX_CXX20_CONSTEXPR void *init(size_t capacity) {
+      capacity = bin::advise_capacity(0, capacity);
+      if (bin_.is_suitable_for_inplace(capacity))
+        new (&bin_) bin();
+      else {
+        const auto pair = allocate_storage(capacity);
+        assert(pair.second >= capacity);
+        new (&bin_) bin(pair.first, pair.second);
+      }
+      return bin_.address();
+    }
+
+    MDBX_CXX20_CONSTEXPR void release() noexcept {
+      if (bin_.is_allocated()) {
+        deallocate_storage(bin_.allocated_.ptr_,
+                           bin_.allocated_.capacity_bytes_);
+        bin_.template make_inplace<true>();
+      }
+    }
+
+    template <bool external_content>
+    MDBX_CXX20_CONSTEXPR void *
+    reshape(const size_t wanna_capacity, const size_t wanna_headroom,
+            const void *const content, const size_t length) {
+      assert(wanna_capacity >= wanna_headroom + length);
+      const size_t old_capacity = bin_.capacity();
+      const size_t new_capacity =
+          bin::advise_capacity(old_capacity, wanna_capacity);
+      assert(new_capacity >= wanna_capacity);
+      if (MDBX_LIKELY(new_capacity == old_capacity))
+        MDBX_CXX20_LIKELY {
+          assert(bin_.is_inplace() ==
+                 bin::is_suitable_for_inplace(new_capacity));
+          byte *const new_place = bin_.address() + wanna_headroom;
+          if (MDBX_LIKELY(length))
+            MDBX_CXX20_LIKELY {
+              if (external_content)
+                memcpy(new_place, content, length);
+              else {
+                const size_t old_headroom =
+                    bin_.address() - static_cast<const byte *>(content);
+                assert(old_capacity >= old_headroom + length);
+                if (MDBX_UNLIKELY(old_headroom != wanna_headroom))
+                  MDBX_CXX20_UNLIKELY ::std::memmove(new_place, content,
+                                                     length);
+              }
+            }
+          return new_place;
+        }
+
+      if (bin::is_suitable_for_inplace(new_capacity)) {
+        assert(bin_.is_allocated());
+        const auto old_allocated = ::std::move(bin_.allocated_.ptr_);
+        byte *const new_place =
+            bin_.template make_inplace<true>() + wanna_headroom;
+        if (MDBX_LIKELY(length))
+          MDBX_CXX20_LIKELY memcpy(new_place, content, length);
+        deallocate_storage(old_allocated, old_capacity);
+        return new_place;
+      }
+
+      if (!bin_.is_allocated()) {
+        const auto pair = allocate_storage(new_capacity);
+        assert(pair.second >= new_capacity);
+        byte *const new_place =
+            static_cast<byte *>(to_address(pair.first)) + wanna_headroom;
+        if (MDBX_LIKELY(length))
+          MDBX_CXX20_LIKELY memcpy(new_place, content, length);
+        bin_.template make_allocated<true>(pair.first, pair.second);
+        return new_place;
+      }
+
+      const auto old_allocated = ::std::move(bin_.allocated_.ptr_);
+      if (external_content)
+        deallocate_storage(old_allocated, old_capacity);
+      const auto pair = allocate_storage(new_capacity);
+      assert(pair.second >= new_capacity);
+      byte *const new_place =
+          bin_.template make_allocated<false>(pair.first, pair.second) +
+          wanna_headroom;
+      if (MDBX_LIKELY(length))
+        MDBX_CXX20_LIKELY memcpy(new_place, content, length);
+      if (!external_content)
+        deallocate_storage(old_allocated, old_capacity);
+      return new_place;
+    }
+
+    MDBX_CXX20_CONSTEXPR const byte *get(size_t offset = 0) const noexcept {
+      assert(capacity() >= offset);
+      return bin_.address() + offset;
+    }
+    MDBX_CXX20_CONSTEXPR byte *get(size_t offset = 0) noexcept {
+      assert(capacity() >= offset);
+      return bin_.address() + offset;
+    }
+    MDBX_CXX20_CONSTEXPR byte *put(size_t offset, const void *ptr,
+                                   size_t length) {
+      assert(capacity() >= offset + length);
+      return static_cast<byte *>(memcpy(get(offset), ptr, length));
+    }
+
+    //--------------------------------------------------------------------------
+
+    MDBX_CXX20_CONSTEXPR
+    silo() noexcept : allocator_type() { init(0); }
+    MDBX_CXX20_CONSTEXPR
+    silo(const allocator_type &alloc) noexcept : allocator_type(alloc) {
+      init(0);
+    }
+    MDBX_CXX20_CONSTEXPR silo(size_t capacity) { init(capacity); }
+    MDBX_CXX20_CONSTEXPR silo(size_t capacity, const allocator_type &alloc)
+        : silo(alloc) {
+      init(capacity);
+    }
+
+    MDBX_CXX20_CONSTEXPR silo(silo &&ditto) noexcept(
+        ::std::is_nothrow_move_constructible<allocator_type>::value)
+        : allocator_type(::std::move(ditto.get_allocator())),
+          bin_(::std::move(ditto.bin_)) {}
+
+    MDBX_CXX20_CONSTEXPR silo(size_t capacity, size_t headroom, const void *ptr,
+                              size_t length)
+        : silo(capacity) {
+      assert(capacity >= headroom + length);
+      if (length)
+        put(headroom, ptr, length);
+    }
+
+    // select_on_container_copy_construction()
+    MDBX_CXX20_CONSTEXPR silo(size_t capacity, size_t headroom, const void *ptr,
+                              size_t length, const allocator_type &alloc)
+        : silo(capacity, alloc) {
+      assert(capacity >= headroom + length);
+      if (length)
+        put(headroom, ptr, length);
+    }
+
+    MDBX_CXX20_CONSTEXPR silo(const void *ptr, size_t length)
+        : silo(length, 0, ptr, length) {}
+    MDBX_CXX20_CONSTEXPR silo(const void *ptr, size_t length,
+                              const allocator_type &alloc)
+        : silo(length, 0, ptr, length, alloc) {}
+
+    ~silo() { release(); }
+
+    //--------------------------------------------------------------------------
+
+    MDBX_CXX20_CONSTEXPR void *assign(size_t headroom, const void *ptr,
+                                      size_t length, size_t tailroom) {
+      return reshape<true>(headroom + length + tailroom, headroom, ptr, length);
+    }
+    MDBX_CXX20_CONSTEXPR void *assign(const void *ptr, size_t length) {
+      return assign(0, ptr, length, 0);
+    }
+
+    MDBX_CXX20_CONSTEXPR silo &assign(const silo &ditto, size_t headroom,
+                                      slice &content) {
+      assert(ditto.get() + headroom == content.byte_ptr());
+      if MDBX_IF_CONSTEXPR (!allocation_aware_details::
+                                allocator_is_always_equal<allocator_type>()) {
+        if (MDBX_UNLIKELY(get_allocator() != ditto.get_allocator()))
+          MDBX_CXX20_UNLIKELY {
+            release();
+            allocation_aware_details::copy_assign_alloc<
+                silo, allocator_type>::propagate(this, ditto);
+          }
+      }
+      content.iov_base = reshape<true>(ditto.capacity(), headroom,
+                                       content.data(), content.length());
+      return *this;
+    }
+
+    MDBX_CXX20_CONSTEXPR silo &
+    assign(silo &&ditto, size_t headroom, slice &content) noexcept(
+        allocation_aware_details::move_assign_alloc<
+            silo, allocator_type>::is_nothrow()) {
+      assert(ditto.get() + headroom == content.byte_ptr());
+      if (allocation_aware_details::move_assign_alloc<
+              silo, allocator_type>::is_moveable(this, ditto)) {
+        release();
+        allocation_aware_details::move_assign_alloc<
+            silo, allocator_type>::propagate(this, ditto);
+        /* no reallocation nor copying required */
+        bin_ = ::std::move(ditto.bin_);
+        assert(get() + headroom == content.byte_ptr());
+      } else {
+        /* copy content since allocators are different */
+        content.iov_base = reshape<true>(ditto.capacity(), headroom,
+                                         content.data(), content.length());
+        ditto.release();
+      }
+      return *this;
+    }
+
+    MDBX_CXX20_CONSTEXPR void clear() { reshape<true>(0, 0, nullptr, 0); }
+    MDBX_CXX20_CONSTEXPR void resize(size_t capacity, size_t headroom,
+                                     slice &content) {
+      content.iov_base =
+          reshape<false>(capacity, headroom, content.iov_base, content.iov_len);
+    }
+    MDBX_CXX20_CONSTEXPR void swap(silo &ditto) noexcept(
+        allocation_aware_details::swap_alloc<silo,
+                                             allocator_type>::is_nothrow()) {
+      allocation_aware_details::swap_alloc<silo, allocator_type>::propagate(
+          this, ditto);
+      ::std::swap(bin_, ditto.bin_);
+    }
+
+    /* MDBX_CXX20_CONSTEXPR void shrink_to_fit() { TODO } */
+
+    MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX11_CONSTEXPR size_t
+    capacity() const noexcept {
+      return bin_.capacity();
+    }
+    MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX11_CONSTEXPR const void *
+    data(size_t offset = 0) const noexcept {
+      return get(offset);
+    }
+    MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX11_CONSTEXPR void *
+    data(size_t offset = 0) noexcept {
+      return get(offset);
+    }
+  };
+
   silo silo_;
   ::mdbx::slice slice_;
 
   void insulate() {
     assert(is_reference());
     silo_.assign(slice_.char_ptr(), slice_.length());
-    slice_.iov_base = const_cast<char *>(silo_.data());
+    slice_.iov_base = silo_.data();
   }
 
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR const byte *
   silo_begin() const noexcept {
-    return static_cast<const byte *>(static_cast<const void *>(silo_.data()));
+    return static_cast<const byte *>(silo_.data());
   }
 
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR const byte *
@@ -835,9 +1886,21 @@ template <class ALLOCATOR = legacy_allocator> class buffer {
 
   struct data_preserver : public exception_thunk {
     buffer data;
-    data_preserver(ALLOCATOR &allocator) : data(allocator) {}
+    data_preserver(allocator_type &allocator) : data(allocator) {}
     static int callback(void *context, MDBX_val *target, const void *src,
-                        size_t bytes) noexcept;
+                        size_t bytes) noexcept {
+      auto self = static_cast<data_preserver *>(context);
+      assert(self->is_clean());
+      assert(&self->data.slice_ == target);
+      (void)target;
+      try {
+        self->data.assign(src, bytes, false);
+        return MDBX_RESULT_FALSE;
+      } catch (... /* capture any exception to rethrow it over C code */) {
+        self->capture();
+        return MDBX_RESULT_TRUE;
+      }
+    }
     MDBX_CXX11_CONSTEXPR operator MDBX_preserve_func() const noexcept {
       return callback;
     }
@@ -852,12 +1915,6 @@ public:
   /// \todo buffer& operator>>(buffer&, ...) for reading (delegated to slice)
   /// \todo template<class X> key(X) for encoding keys while writing
 
-  using allocator_type = ALLOCATOR;
-  enum : size_t {
-    max_length = MDBX_MAXDATASIZE,
-    default_shrink_threshold = 1024
-  };
-
   /// \brief Returns the associated allocator.
   MDBX_CXX20_CONSTEXPR allocator_type get_allocator() const {
     return silo_.get_allocator();
@@ -867,6 +1924,7 @@ public:
   /// buffer just refers to data located outside the buffer.
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR bool
   is_freestanding() const noexcept {
+    static_assert(size_t(-long(max_length)) > max_length, "WTF?");
     return size_t(byte_ptr() - silo_begin()) < silo_.capacity();
   }
 
@@ -903,12 +1961,25 @@ public:
     return slice_.byte_ptr();
   }
 
+  /// \brief Returns casted to const pointer to byte an end of data.
+  MDBX_CXX11_CONSTEXPR const byte *end_byte_ptr() const noexcept {
+    return slice_.end_byte_ptr();
+  }
+
   /// \brief Returns casted to pointer to byte an address of data.
   /// \pre REQUIRES: The buffer should store data chunk, but not referenced to
   /// an external one.
   MDBX_CXX11_CONSTEXPR byte *byte_ptr() noexcept {
-    assert(is_freestanding());
+    MDBX_CONSTEXPR_ASSERT(is_freestanding());
     return const_cast<byte *>(slice_.byte_ptr());
+  }
+
+  /// \brief Returns casted to pointer to byte an end of data.
+  /// \pre REQUIRES: The buffer should store data chunk, but not referenced to
+  /// an external one.
+  MDBX_CXX11_CONSTEXPR byte *end_byte_ptr() noexcept {
+    MDBX_CONSTEXPR_ASSERT(is_freestanding());
+    return const_cast<byte *>(slice_.end_byte_ptr());
   }
 
   /// \brief Returns casted to const pointer to char an address of data.
@@ -916,12 +1987,25 @@ public:
     return slice_.char_ptr();
   }
 
+  /// \brief Returns casted to const pointer to char an end of data.
+  MDBX_CXX11_CONSTEXPR const char *end_char_ptr() const noexcept {
+    return slice_.end_char_ptr();
+  }
+
   /// \brief Returns casted to pointer to char an address of data.
   /// \pre REQUIRES: The buffer should store data chunk, but not referenced to
   /// an external one.
   MDBX_CXX11_CONSTEXPR char *char_ptr() noexcept {
-    assert(is_freestanding());
+    MDBX_CONSTEXPR_ASSERT(is_freestanding());
     return const_cast<char *>(slice_.char_ptr());
+  }
+
+  /// \brief Returns casted to pointer to char an end of data.
+  /// \pre REQUIRES: The buffer should store data chunk, but not referenced to
+  /// an external one.
+  MDBX_CXX11_CONSTEXPR char *end_char_ptr() noexcept {
+    MDBX_CONSTEXPR_ASSERT(is_freestanding());
+    return const_cast<char *>(slice_.end_char_ptr());
   }
 
   /// \brief Return a const pointer to the beginning of the referenced data.
@@ -929,29 +2013,61 @@ public:
     return slice_.data();
   }
 
+  /// \brief Return a const pointer to the end of the referenced data.
+  MDBX_CXX11_CONSTEXPR const void *end() const noexcept { return slice_.end(); }
+
   /// \brief Return a pointer to the beginning of the referenced data.
   /// \pre REQUIRES: The buffer should store data chunk, but not referenced to
   /// an external one.
   MDBX_CXX11_CONSTEXPR void *data() noexcept {
-    assert(is_freestanding());
+    MDBX_CONSTEXPR_ASSERT(is_freestanding());
     return const_cast<void *>(slice_.data());
   }
 
+  /// \brief Return a pointer to the end of the referenced data.
+  /// \pre REQUIRES: The buffer should store data chunk, but not referenced to
+  /// an external one.
+  MDBX_CXX11_CONSTEXPR void *end() noexcept {
+    MDBX_CONSTEXPR_ASSERT(is_freestanding());
+    return const_cast<void *>(slice_.end());
+  }
+
   /// \brief Returns the number of bytes.
-  MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR size_t
+  MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR size_t
   length() const noexcept {
     return MDBX_CONSTEXPR_ASSERT(is_reference() ||
-                                 slice_.length() + headroom() ==
-                                     silo_.length()),
+                                 slice_.length() + headroom() <=
+                                     silo_.capacity()),
            slice_.length();
   }
 
+  /// \brief Set length of data.
+  MDBX_CXX14_CONSTEXPR buffer &set_length(size_t bytes) {
+    MDBX_CONSTEXPR_ASSERT(is_reference() ||
+                          bytes + headroom() <= silo_.capacity());
+    slice_.set_length(bytes);
+    return *this;
+  }
+
+  /// \brief Sets the length by specifying the end of the data.
+  MDBX_CXX14_CONSTEXPR buffer &set_end(const void *ptr) {
+    MDBX_CONSTEXPR_ASSERT(static_cast<const char *>(ptr) >= char_ptr());
+    return set_length(static_cast<const char *>(ptr) - char_ptr());
+  }
+
+  /// \brief Makes buffer owning the data.
+  /// \details If buffer refers to an external data, then makes it the owner
+  /// of clone by allocating storage and copying the data.
   void make_freestanding() {
     if (is_reference())
       insulate();
   }
 
-  buffer(const ::mdbx::slice &src, bool make_reference,
+  MDBX_CXX20_CONSTEXPR buffer() noexcept = default;
+  MDBX_CXX20_CONSTEXPR buffer(const allocator_type &allocator) noexcept
+      : silo_(allocator) {}
+
+  buffer(const struct slice &src, bool make_reference,
          const allocator_type &allocator = allocator_type())
       : silo_(allocator), slice_(src) {
     if (!make_reference)
@@ -966,10 +2082,10 @@ public:
          const allocator_type &allocator = allocator_type())
       : buffer(::mdbx::slice(ptr, bytes), make_reference, allocator) {}
 
-  template <class C, class T, class A>
-  buffer(const ::std::basic_string<C, T, A> &str, bool make_reference,
-         const allocator_type &allocator = allocator_type())
-      : buffer(::mdbx::slice(str), make_reference, allocator) {}
+  template <class CHAR, class T, class A>
+  buffer(const ::std::basic_string<CHAR, T, A> &) = delete;
+  template <class CHAR, class T, class A>
+  buffer(const ::std::basic_string<CHAR, T, A> &&) = delete;
 
   buffer(const char *c_str, bool make_reference,
          const allocator_type &allocator = allocator_type())
@@ -977,16 +2093,17 @@ public:
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  buffer(const ::std::basic_string_view<C, T> &view, bool make_reference,
+  template <class CHAR, class T>
+  buffer(const ::std::basic_string_view<CHAR, T> &view, bool make_reference,
          const allocator_type &allocator = allocator_type())
       : buffer(::mdbx::slice(view), make_reference, allocator) {}
 #endif /* __cpp_lib_string_view >= 201606L */
 
   MDBX_CXX20_CONSTEXPR
-  buffer(const ::mdbx::slice &src,
+  buffer(const struct slice &src,
          const allocator_type &allocator = allocator_type())
-      : silo_(src.char_ptr(), src.length(), allocator), slice_(silo_) {}
+      : silo_(src.data(), src.length(), allocator),
+        slice_(silo_.data(), src.length()) {}
 
   MDBX_CXX20_CONSTEXPR
   buffer(const buffer &src, const allocator_type &allocator = allocator_type())
@@ -997,9 +2114,9 @@ public:
          const allocator_type &allocator = allocator_type())
       : buffer(::mdbx::slice(ptr, bytes), allocator) {}
 
-  template <class C, class T, class A>
+  template <class CHAR, class T, class A>
   MDBX_CXX20_CONSTEXPR
-  buffer(const ::std::basic_string<C, T, A> &str,
+  buffer(const ::std::basic_string<CHAR, T, A> &str,
          const allocator_type &allocator = allocator_type())
       : buffer(::mdbx::slice(str), allocator) {}
 
@@ -1009,43 +2126,50 @@ public:
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
+  template <class CHAR, class T>
   MDBX_CXX20_CONSTEXPR
-  buffer(const ::std::basic_string_view<C, T> &view,
+  buffer(const ::std::basic_string_view<CHAR, T> &view,
          const allocator_type &allocator = allocator_type())
       : buffer(::mdbx::slice(view), allocator) {}
 #endif /* __cpp_lib_string_view >= 201606L */
 
-  inline buffer(size_t head_room, size_t tail_room,
-                const allocator_type &allocator = allocator_type());
+  buffer(size_t head_room, size_t tail_room,
+         const allocator_type &allocator = allocator_type())
+      : silo_(allocator) {
+    slice_.iov_base = silo_.init(check_length(head_room, tail_room));
+    assert(slice_.iov_len == 0);
+  }
 
-  inline buffer(size_t capacity,
-                const allocator_type &allocator = allocator_type());
+  buffer(size_t capacity, const allocator_type &allocator = allocator_type())
+      : silo_(allocator) {
+    slice_.iov_base = silo_.init(check_length(capacity));
+    assert(slice_.iov_len == 0);
+  }
 
-  inline buffer(size_t head_room, const ::mdbx::slice &src, size_t tail_room,
-                const allocator_type &allocator = allocator_type());
+  buffer(size_t head_room, const struct slice &src, size_t tail_room,
+         const allocator_type &allocator = allocator_type())
+      : silo_(allocator) {
+    slice_.iov_base =
+        silo_.init(check_length(head_room, src.length(), tail_room));
+    slice_.iov_len = src.length();
+    memcpy(slice_.iov_base, src.data(), src.length());
+  }
 
   buffer(size_t head_room, const buffer &src, size_t tail_room,
          const allocator_type &allocator = allocator_type())
       : buffer(head_room, src.slice_, tail_room, allocator) {}
 
-  MDBX_CXX20_CONSTEXPR
-  buffer(const allocator_type &allocator = allocator_type()) noexcept
-      : silo_(allocator) {}
-
-  inline buffer(const txn &txn, const ::mdbx::slice &src,
+  inline buffer(const ::mdbx::txn &txn, const struct slice &src,
                 const allocator_type &allocator = allocator_type());
 
-  buffer(buffer &&src) noexcept
+  buffer(buffer &&src) noexcept(move_assign_alloc::is_nothrow())
       : silo_(::std::move(src.silo_)), slice_(::std::move(src.slice_)) {}
 
-  buffer(silo &&str) noexcept : silo_(::std::move(str)), slice_(silo_) {}
-
-  MDBX_CXX11_CONSTEXPR const ::mdbx::slice &slice() const noexcept {
+  MDBX_CXX11_CONSTEXPR const struct slice &slice() const noexcept {
     return slice_;
   }
 
-  MDBX_CXX11_CONSTEXPR operator const ::mdbx::slice &() const noexcept {
+  MDBX_CXX11_CONSTEXPR operator const struct slice &() const noexcept {
     return slice_;
   }
 
@@ -1055,11 +2179,28 @@ public:
     return buffer(::mdbx::slice::wrap(pod), make_reference, allocator);
   }
 
-  /// \brief Reserves storage.
-  inline void reserve(size_t wanna_headroom, size_t wanna_tailroom,
-                      size_t shrink_threshold = default_shrink_threshold);
+  /// \brief Reserves storage space.
+  void reserve(size_t wanna_headroom, size_t wanna_tailroom) {
+    wanna_headroom = ::std::min(::std::max(headroom(), wanna_headroom),
+                                wanna_headroom + pettiness_threshold);
+    wanna_tailroom = ::std::min(::std::max(tailroom(), wanna_tailroom),
+                                wanna_tailroom + pettiness_threshold);
+    const size_t wanna_capacity =
+        check_length(wanna_headroom, slice_.length(), wanna_tailroom);
+    silo_.resize(wanna_capacity, wanna_headroom, slice_);
+    assert(headroom() >= wanna_headroom &&
+           headroom() <= wanna_headroom + pettiness_threshold);
+    assert(tailroom() >= wanna_tailroom &&
+           tailroom() <= wanna_tailroom + pettiness_threshold);
+  }
 
-  buffer &assign_reference(const void *ptr, size_t bytes) noexcept {
+  /// \brief Reserves space before the payload.
+  void reserve_headroom(size_t wanna_headroom) { reserve(wanna_headroom, 0); }
+
+  /// \brief Reserves space after the payload.
+  void reserve_tailroom(size_t wanna_tailroom) { reserve(0, wanna_tailroom); }
+
+  buffer &assign_reference(const void *ptr, size_t bytes) {
     silo_.clear();
     slice_.assign(ptr, bytes);
     return *this;
@@ -1068,53 +2209,14 @@ public:
   buffer &assign_freestanding(const void *ptr, size_t bytes) {
     silo_.assign(static_cast<const typename silo::value_type *>(ptr),
                  check_length(bytes));
-    slice_.assign(silo_);
+    slice_.assign(silo_.data(), bytes);
     return *this;
   }
 
-  void swap(buffer &other)
-#if defined(__cpp_noexcept_function_type) &&                                   \
-    __cpp_noexcept_function_type >= 201510L
-      noexcept(
-          std::allocator_traits<ALLOCATOR>::propagate_on_container_swap::value
-#if defined(__cpp_lib_allocator_traits_is_always_equal) &&                     \
-    __cpp_lib_allocator_traits_is_always_equal >= 201411L
-          || std::allocator_traits<ALLOCATOR>::is_always_equal::value
-#endif /* __cpp_lib_allocator_traits_is_always_equal */
-      )
-#endif /* __cpp_noexcept_function_type */
-          ;
-
-  buffer &assign(buffer &&src)
-#if defined(__cpp_noexcept_function_type) &&                                   \
-    __cpp_noexcept_function_type >= 201510L
-      noexcept(std::allocator_traits<
-                   ALLOCATOR>::propagate_on_container_move_assignment::value
-#if defined(__cpp_lib_allocator_traits_is_always_equal) &&                     \
-    __cpp_lib_allocator_traits_is_always_equal >= 201411L
-               || std::allocator_traits<ALLOCATOR>::is_always_equal::value
-#endif /* __cpp_lib_allocator_traits_is_always_equal */
-      )
-#endif /* __cpp_noexcept_function_type */
-  {
-    silo_.assign(::std::move(src.silo_));
-    slice_.assign(::std::move(src.slice_));
-    return *this;
-  }
-
-  buffer &assign(silo &&src)
-#if defined(__cpp_noexcept_function_type) &&                                   \
-    __cpp_noexcept_function_type >= 201510L
-      noexcept(std::allocator_traits<
-                   ALLOCATOR>::propagate_on_container_move_assignment::value
-#if defined(__cpp_lib_allocator_traits_is_always_equal) &&                     \
-    __cpp_lib_allocator_traits_is_always_equal >= 201411L
-               || std::allocator_traits<ALLOCATOR>::is_always_equal::value
-#endif /* __cpp_lib_allocator_traits_is_always_equal */
-      )
-#endif /* __cpp_noexcept_function_type */
-  {
-    return assign(buffer(::std::move(src)));
+  MDBX_CXX20_CONSTEXPR void
+  swap(buffer &other) noexcept(swap_alloc::is_nothrow()) {
+    silo_.swap(other.silo_);
+    slice_.swap(other.slice_);
   }
 
   static buffer clone(const buffer &src,
@@ -1131,7 +2233,7 @@ public:
                           : assign_freestanding(ptr, bytes);
   }
 
-  buffer &assign(const ::mdbx::slice &src, bool make_reference = false) {
+  buffer &assign(const struct slice &src, bool make_reference = false) {
     return assign(src.data(), src.length(), make_reference);
   }
 
@@ -1139,7 +2241,7 @@ public:
     return assign(src.iov_base, src.iov_len, make_reference);
   }
 
-  buffer &assign(::mdbx::slice &&src, bool make_reference = false) {
+  buffer &assign(struct slice &&src, bool make_reference = false) {
     assign(src.data(), src.length(), make_reference);
     src.invalidate();
     return *this;
@@ -1159,8 +2261,8 @@ public:
                   make_reference);
   }
 
-  template <class C, class T, class A>
-  buffer &assign(const ::std::basic_string<C, T, A> &str,
+  template <class CHAR, class T, class A>
+  buffer &assign(const ::std::basic_string<CHAR, T, A> &str,
                  bool make_reference = false) {
     return assign(str.data(), str.length(), make_reference);
   }
@@ -1170,14 +2272,14 @@ public:
   }
 
 #if defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L
-  template <class C, class T>
-  buffer &assign(const ::std::basic_string_view<C, T> &view,
+  template <class CHAR, class T>
+  buffer &assign(const ::std::basic_string_view<CHAR, T> &view,
                  bool make_reference = false) {
     return assign(view.data(), view.length(), make_reference);
   }
 
-  template <class C, class T>
-  buffer &assign(::std::basic_string_view<C, T> &&view,
+  template <class CHAR, class T>
+  buffer &assign(::std::basic_string_view<CHAR, T> &&view,
                  bool make_reference = false) {
     assign(view.data(), view.length(), make_reference);
     view = {};
@@ -1187,108 +2289,33 @@ public:
 
   buffer &operator=(const buffer &src) { return assign(src); }
 
-  buffer &operator=(buffer &&src) noexcept { return assign(::std::move(src)); }
+  buffer &operator=(buffer &&src) noexcept(move_assign_alloc::is_nothrow()) {
+    return assign(::std::move(src));
+  }
 
-  buffer &operator=(silo &&src) noexcept { return assign(::std::move(src)); }
+  buffer &operator=(const struct slice &src) { return assign(src); }
 
-  buffer &operator=(const ::mdbx::slice &src) { return assign(src); }
-
-  buffer &operator=(::mdbx::slice &&src) { return assign(::std::move(src)); }
+  buffer &operator=(struct slice &&src) { return assign(::std::move(src)); }
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  buffer &operator=(const ::std::basic_string_view<C, T> &view) noexcept {
+  template <class CHAR, class T>
+  buffer &operator=(const ::std::basic_string_view<CHAR, T> &view) noexcept {
     return assign(view);
   }
 
   /// \brief Return a string_view that references the data of this buffer.
-  template <class C = char, class T = ::std::char_traits<C>>
-  ::std::basic_string_view<C, T> string_view() const noexcept {
-    return slice_.string_view<C, T>();
+  template <class CHAR = char, class T = ::std::char_traits<CHAR>>
+  ::std::basic_string_view<CHAR, T> string_view() const noexcept {
+    return slice_.string_view<CHAR, T>();
   }
 
   /// \brief Return a string_view that references the data of this buffer.
-  template <class C, class T>
-  operator ::std::basic_string_view<C, T>() const noexcept {
-    return string_view<C, T>();
+  template <class CHAR, class T>
+  operator ::std::basic_string_view<CHAR, T>() const noexcept {
+    return string_view<CHAR, T>();
   }
 #endif /* __cpp_lib_string_view >= 201606L */
-
-  /// \brief Decodes hexadecimal dump from the given slice to the returned
-  /// buffer.
-  static buffer decode_hex(const ::mdbx::slice &hex,
-                           const allocator_type &allocator = allocator_type()) {
-#if __cplusplus >= 201703L
-    return buffer(hex.hex_decode(allocator));
-#else
-    silo data(hex.hex_decode(allocator));
-    return buffer(::std::move(data));
-#endif
-  }
-
-  /// \brief Returns a buffer with a hexadecimal dump of the given slice.
-  static buffer encode_hex(const ::mdbx::slice &data, bool uppercase = false,
-                           const allocator_type &allocator = allocator_type()) {
-#if __cplusplus >= 201703L
-    return buffer(data.hex_encode(uppercase, allocator));
-#else
-    silo hex(data.hex_encode(uppercase, allocator));
-    return buffer(::std::move(hex));
-#endif
-  }
-
-  /// \brief Decodes [Base58](https://en.wikipedia.org/wiki/Base58) dump from
-  /// the given slice to the returned buffer.
-  static buffer
-  decode_base58(const ::mdbx::slice &base58,
-                const allocator_type &allocator = allocator_type()) {
-#if __cplusplus >= 201703L
-    return buffer(base58.base58_decode(allocator));
-#else
-    silo data(base58.base58_decode(allocator));
-    return buffer(::std::move(data));
-#endif
-  }
-
-  /// \brief Returns a buffer with a
-  /// [Base58](https://en.wikipedia.org/wiki/Base58) dump of the given slice.
-  static buffer
-  encode_base58(const ::mdbx::slice &data,
-                const allocator_type &allocator = allocator_type()) {
-#if __cplusplus >= 201703L
-    return buffer(data.base58_encode(allocator));
-#else
-    silo base58(data.base58_encode(allocator));
-    return buffer(::std::move(base58));
-#endif
-  }
-
-  /// \brief Decodes [Base64](https://en.wikipedia.org/wiki/Base64) dump from
-  /// the given slice to the returned buffer.
-  static buffer
-  decode_base64(const ::mdbx::slice &base64,
-                const allocator_type &allocator = allocator_type()) {
-#if __cplusplus >= 201703L
-    return buffer(base64.base64_decode(allocator));
-#else
-    silo data(base64.base64_decode(allocator));
-    return buffer(::std::move(data));
-#endif
-  }
-
-  /// \brief Returns a buffer with a
-  /// [Base64](https://en.wikipedia.org/wiki/Base64) dump of the given slice.
-  static buffer
-  encode_base64(const ::mdbx::slice &data,
-                const allocator_type &allocator = allocator_type()) {
-#if __cplusplus >= 201703L
-    return buffer(data.base64_encode(allocator));
-#else
-    silo base64(data.base64_encode(allocator));
-    return buffer(::std::move(base64));
-#endif
-  }
 
   /// \brief Checks whether the string is empty.
   MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX20_CONSTEXPR bool empty() const noexcept {
@@ -1314,27 +2341,28 @@ public:
     return slice_.hash_value();
   }
 
-  template <class C = char, class T = ::std::char_traits<C>,
+  template <class CHAR = char, class T = ::std::char_traits<CHAR>,
             class A = legacy_allocator>
-  MDBX_CXX20_CONSTEXPR ::std::basic_string<C, T, A>
-  string(const A &allocator = A()) const {
-    return slice_.string<C, T, A>(allocator);
+  MDBX_CXX20_CONSTEXPR ::std::basic_string<CHAR, T, A>
+  as_string(const A &allocator = A()) const {
+    return slice_.as_string<CHAR, T, A>(allocator);
   }
 
-  template <class C, class T, class A>
-  MDBX_CXX20_CONSTEXPR operator ::std::basic_string<C, T, A>() const {
-    return this->string<C, T, A>();
+  template <class CHAR, class T, class A>
+  MDBX_CXX20_CONSTEXPR explicit
+  operator ::std::basic_string<CHAR, T, A>() const {
+    return as_string<CHAR, T, A>();
   }
 
   /// \brief Checks if the data starts with the given prefix.
   MDBX_NOTHROW_PURE_FUNCTION bool
-  starts_with(const ::mdbx::slice &prefix) const noexcept {
+  starts_with(const struct slice &prefix) const noexcept {
     return slice_.starts_with(prefix);
   }
 
   /// \brief Checks if the data ends with the given suffix.
   MDBX_NOTHROW_PURE_FUNCTION bool
-  ends_with(const ::mdbx::slice &suffix) const noexcept {
+  ends_with(const struct slice &suffix) const noexcept {
     return slice_.ends_with(suffix);
   }
 
@@ -1345,7 +2373,7 @@ public:
   }
 
   /// \brief Reduces memory usage by freeing unused storage space.
-  void shrink_to_fit(size_t threshold = 64) { reserve(0, 0, threshold); }
+  void shrink_to_fit() { reserve(0, 0); }
 
   /// \brief Drops the first "n" bytes from the data chunk.
   /// \pre REQUIRES: `n <= size()`
@@ -1365,22 +2393,25 @@ public:
 
   /// \brief Accesses the specified byte of data chunk.
   /// \pre REQUIRES: `n < size()`
-  byte operator[](size_t n) const noexcept { return slice_[n]; }
+  MDBX_CXX11_CONSTEXPR byte operator[](size_t n) const noexcept {
+    MDBX_CONSTEXPR_ASSERT(n < size());
+    return slice_[n];
+  }
 
   /// \brief Accesses the specified byte of data chunk.
   /// \pre REQUIRES: `n < size()`
-  byte &operator[](size_t n) noexcept {
-    assert(n < size());
+  MDBX_CXX11_CONSTEXPR byte &operator[](size_t n) noexcept {
+    MDBX_CONSTEXPR_ASSERT(n < size());
     return byte_ptr()[n];
   }
 
   /// \brief Accesses the specified byte of data chunk with bounds checking.
   /// \throws std::out_of_range if `n >= size()`
-  byte at(size_t n) const { return slice_.at(n); }
+  MDBX_CXX14_CONSTEXPR byte at(size_t n) const { return slice_.at(n); }
 
   /// \brief Accesses the specified byte of data chunk with bounds checking.
   /// \throws std::out_of_range if `n >= size()`
-  byte &at(size_t n) {
+  MDBX_CXX14_CONSTEXPR byte &at(size_t n) {
     if (MDBX_UNLIKELY(n >= size()))
       MDBX_CXX20_UNLIKELY throw_out_range();
     return byte_ptr()[n];
@@ -1388,42 +2419,108 @@ public:
 
   /// \brief Returns the first "n" bytes of the data chunk.
   /// \pre REQUIRES: `n <= size()`
-  ::mdbx::slice head(size_t n) const noexcept { return slice_.head(n); }
+  MDBX_CXX14_CONSTEXPR struct slice head(size_t n) const noexcept {
+    return slice_.head(n);
+  }
 
   /// \brief Returns the last "n" bytes of the data chunk.
   /// \pre REQUIRES: `n <= size()`
-  ::mdbx::slice tail(size_t n) const noexcept { return slice_.tail(n); }
+  MDBX_CXX14_CONSTEXPR struct slice tail(size_t n) const noexcept {
+    return slice_.tail(n);
+  }
 
   /// \brief Returns the middle "n" bytes of the data chunk.
   /// \pre REQUIRES: `from + n <= size()`
-  ::mdbx::slice middle(size_t from, size_t n) const noexcept {
+  MDBX_CXX14_CONSTEXPR struct slice middle(size_t from,
+                                           size_t n) const noexcept {
     return slice_.middle(from, n);
   }
 
   /// \brief Returns the first "n" bytes of the data chunk.
   /// \throws std::out_of_range if `n >= size()`
-  ::mdbx::slice safe_head(size_t n) const { return slice_.safe_head(n); }
+  MDBX_CXX14_CONSTEXPR struct slice safe_head(size_t n) const {
+    return slice_.safe_head(n);
+  }
 
   /// \brief Returns the last "n" bytes of the data chunk.
   /// \throws std::out_of_range if `n >= size()`
-  ::mdbx::slice safe_tail(size_t n) const { return slice_.safe_tail(n); }
+  MDBX_CXX14_CONSTEXPR struct slice safe_tail(size_t n) const {
+    return slice_.safe_tail(n);
+  }
 
   /// \brief Returns the middle "n" bytes of the data chunk.
   /// \throws std::out_of_range if `from + n >= size()`
-  ::mdbx::slice safe_middle(size_t from, size_t n) const {
+  MDBX_CXX14_CONSTEXPR struct slice safe_middle(size_t from, size_t n) const {
     return slice_.safe_middle(from, n);
   }
 
-  inline buffer &append(const void *src, size_t bytes);
+  buffer &append(const void *src, size_t bytes) {
+    if (MDBX_UNLIKELY(tailroom() < check_length(bytes)))
+      MDBX_CXX20_UNLIKELY reserve_tailroom(bytes);
+    memcpy(slice_.byte_ptr() + size(), src, bytes);
+    slice_.iov_len += bytes;
+    return *this;
+  }
 
-  buffer &append(const ::mdbx::slice &chunk) {
+  buffer &append(const struct slice &chunk) {
     return append(chunk.data(), chunk.size());
   }
 
-  inline buffer &add_header(const void *src, size_t bytes);
+  buffer &add_header(const void *src, size_t bytes) {
+    if (MDBX_UNLIKELY(headroom() < check_length(bytes)))
+      MDBX_CXX20_UNLIKELY reserve_headroom(bytes);
+    slice_.iov_base =
+        memcpy(static_cast<char *>(slice_.iov_base) - bytes, src, bytes);
+    slice_.iov_len += bytes;
+    return *this;
+  }
 
-  buffer &add_header(const ::mdbx::slice &chunk) {
+  buffer &add_header(const struct slice &chunk) {
     return add_header(chunk.data(), chunk.size());
+  }
+
+  template <MDBX_CXX20_CONCEPT(MutableByteProducer, PRODUCER)>
+  buffer &append_producer(PRODUCER &producer) {
+    const size_t wanna_bytes = producer.envisage_result_length();
+    if (MDBX_UNLIKELY(tailroom() < check_length(wanna_bytes)))
+      MDBX_CXX20_UNLIKELY reserve_tailroom(wanna_bytes);
+    return set_end(producer.write_bytes(end_char_ptr(), tailroom()));
+  }
+
+  template <MDBX_CXX20_CONCEPT(ImmutableByteProducer, PRODUCER)>
+  buffer &append_producer(const PRODUCER &producer) {
+    const size_t wanna_bytes = producer.envisage_result_length();
+    if (MDBX_UNLIKELY(tailroom() < check_length(wanna_bytes)))
+      MDBX_CXX20_UNLIKELY reserve_tailroom(wanna_bytes);
+    return set_end(producer.write_bytes(end_char_ptr(), tailroom()));
+  }
+
+  buffer &append_hex(const struct slice &data, bool uppercase = false,
+                     unsigned wrap_width = 0) {
+    return append_producer(to_hex(data, uppercase, wrap_width));
+  }
+
+  buffer &append_base58(const struct slice &data, unsigned wrap_width = 0) {
+    return append_producer(to_base58(data, wrap_width));
+  }
+
+  buffer &append_base64(const struct slice &data, unsigned wrap_width = 0) {
+    return append_producer(to_base64(data, wrap_width));
+  }
+
+  buffer &append_decoded_hex(const struct slice &data,
+                             bool ignore_spaces = false) {
+    return append_producer(from_hex(data, ignore_spaces));
+  }
+
+  buffer &append_decoded_base58(const struct slice &data,
+                                bool ignore_spaces = false) {
+    return append_producer(from_base58(data, ignore_spaces));
+  }
+
+  buffer &append_decoded_base64(const struct slice &data,
+                                bool ignore_spaces = false) {
+    return append_producer(from_base64(data, ignore_spaces));
   }
 
   //----------------------------------------------------------------------------
@@ -1435,8 +2532,8 @@ public:
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_lib_string_view) && __cpp_lib_string_view >= 201606L)
-  template <class C, class T>
-  static buffer key_from(const ::std::basic_string_view<C, T> &src,
+  template <class CHAR, class T>
+  static buffer key_from(const ::std::basic_string_view<CHAR, T> &src,
                          bool make_reference = false) {
     return buffer(src, make_reference);
   }
@@ -1446,8 +2543,8 @@ public:
     return buffer(src, make_reference);
   }
 
-  template <class C, class T, class A>
-  static buffer key_from(const ::std::basic_string<C, T, A> &src,
+  template <class CHAR, class T, class A>
+  static buffer key_from(const ::std::basic_string<CHAR, T, A> &src,
                          bool make_reference = false) {
     return buffer(src, make_reference);
   }
@@ -1492,6 +2589,64 @@ public:
     return wrap(::mdbx_key_from_int32(signed_int32));
   }
 };
+
+template <class ALLOCATOR, class CAPACITY_POLICY,
+          MDBX_CXX20_CONCEPT(MutableByteProducer, PRODUCER)>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+make_buffer(PRODUCER &producer, const ALLOCATOR &allocator) {
+  if (MDBX_LIKELY(!producer.is_empty()))
+    MDBX_CXX20_LIKELY {
+      buffer<ALLOCATOR, CAPACITY_POLICY> result(
+          producer.envisage_result_length(), allocator);
+      result.set_end(
+          producer.write_bytes(result.end_char_ptr(), result.tailroom()));
+      return result;
+    }
+  return buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
+}
+
+template <class ALLOCATOR, class CAPACITY_POLICY,
+          MDBX_CXX20_CONCEPT(ImmutableByteProducer, PRODUCER)>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+make_buffer(const PRODUCER &producer, const ALLOCATOR &allocator) {
+  if (MDBX_LIKELY(!producer.is_empty()))
+    MDBX_CXX20_LIKELY {
+      buffer<ALLOCATOR, CAPACITY_POLICY> result(
+          producer.envisage_result_length(), allocator);
+      result.set_end(
+          producer.write_bytes(result.end_char_ptr(), result.tailroom()));
+      return result;
+    }
+  return buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
+}
+
+template <class ALLOCATOR, MDBX_CXX20_CONCEPT(MutableByteProducer, PRODUCER)>
+inline string<ALLOCATOR> make_string(PRODUCER &producer,
+                                     const ALLOCATOR &allocator) {
+  string<ALLOCATOR> result(allocator);
+  if (MDBX_LIKELY(!producer.is_empty()))
+    MDBX_CXX20_LIKELY {
+      result.resize(producer.envisage_result_length());
+      result.resize(producer.write_bytes(const_cast<char *>(result.data()),
+                                         result.capacity()) -
+                    result.data());
+    }
+  return result;
+}
+
+template <class ALLOCATOR, MDBX_CXX20_CONCEPT(ImmutableByteProducer, PRODUCER)>
+inline string<ALLOCATOR> make_string(const PRODUCER &producer,
+                                     const ALLOCATOR &allocator) {
+  string<ALLOCATOR> result(allocator);
+  if (MDBX_LIKELY(!producer.is_empty()))
+    MDBX_CXX20_LIKELY {
+      result.resize(producer.envisage_result_length());
+      result.resize(producer.write_bytes(const_cast<char *>(result.data()),
+                                         result.capacity()) -
+                    result.data());
+    }
+  return result;
+}
 
 /// \brief Combines data slice with boolean flag to represent result of certain
 /// operations.
@@ -2471,6 +3626,7 @@ public:
   inline value_result try_update_reserve(map_handle map, const slice &key,
                                          size_t value_length);
 
+  /// \brief Removes all values for given key.
   inline bool erase(map_handle map, const slice &key);
 
   /// \brief Removes the particular multi-value entry of the key.
@@ -2481,20 +3637,24 @@ public:
                       const slice &new_value);
 
   /// \brief Removes and return a value of the key.
-  template <class ALLOCATOR>
-  inline buffer<ALLOCATOR> extract(map_handle map, const slice &key,
-                                   const ALLOCATOR &allocator = ALLOCATOR());
+  template <class ALLOCATOR, typename CAPACITY_POLICY>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  extract(map_handle map, const slice &key,
+          const typename buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type &
+              allocator = buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type());
 
   /// \brief Replaces and returns a value of the key with new one.
-  template <class ALLOCATOR>
-  inline buffer<ALLOCATOR> replace(map_handle map, const slice &key,
-                                   const slice &new_value,
-                                   const ALLOCATOR &allocator = ALLOCATOR());
+  template <class ALLOCATOR, typename CAPACITY_POLICY>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY>
+  replace(map_handle map, const slice &key, const slice &new_value,
+          const typename buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type &
+              allocator = buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type());
 
-  template <class ALLOCATOR>
-  inline buffer<ALLOCATOR>
-  replace_reserve(map_handle map, const slice &key, slice &new_value,
-                  const ALLOCATOR &allocator = ALLOCATOR());
+  template <class ALLOCATOR, typename CAPACITY_POLICY>
+  inline buffer<ALLOCATOR, CAPACITY_POLICY> replace_reserve(
+      map_handle map, const slice &key, slice &new_value,
+      const typename buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type
+          &allocator = buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type());
 
   /// \brief Adding a key-value pair, provided that ascending order of the keys
   /// and (optionally) values are preserved.
@@ -2521,7 +3681,7 @@ public:
                       bool allow_partial = false);
   template <typename VALUE>
   void put_multiple(map_handle map, const slice &key,
-                    const std::vector<VALUE> &vector, put_mode mode) {
+                    const ::std::vector<VALUE> &vector, put_mode mode) {
     put_multiple(map, key, sizeof(VALUE), vector.data(), vector.size(), mode,
                  false);
   }
@@ -2705,7 +3865,18 @@ public:
   inline slice update_reserve(const slice &key, size_t value_length);
   inline value_result try_update_reserve(const slice &key, size_t value_length);
 
+  /// \brief Removes single key-value pair or all multi-values at the current
+  /// cursor position.
   inline bool erase(bool whole_multivalue = false);
+
+  /// \brief Seeks and removes first value or whole multi-value of the given
+  /// key.
+  /// \return `True` if the key is found and a value(s) is removed.
+  inline bool erase(const slice &key, bool whole_multivalue = true);
+
+  /// \brief Seeks and removes the particular multi-value entry of the key.
+  /// \return `True` if the given key-value pair is found and removed.
+  inline bool erase(const slice &key, const slice &value);
 };
 
 /// \brief Managed cursor.
@@ -2724,7 +3895,10 @@ class LIBMDBX_API_TYPE cursor_managed : public cursor {
 
 public:
   /// \brief Creates a new managed cursor with underlying object.
-  inline cursor_managed();
+  cursor_managed() : cursor_managed(::mdbx_cursor_create(nullptr)) {
+    if (MDBX_UNLIKELY(!handle_))
+      MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_ENOMEM);
+  }
 
   /// \brief Explicitly closes the cursor.
   void close();
@@ -2741,9 +3915,9 @@ public:
 LIBMDBX_API ::std::ostream &operator<<(::std::ostream &, const slice &);
 LIBMDBX_API ::std::ostream &operator<<(::std::ostream &, const pair &);
 LIBMDBX_API ::std::ostream &operator<<(::std::ostream &, const pair_result &);
-template <class ALLOCATOR>
-inline ::std::ostream &operator<<(::std::ostream &out,
-                                  const buffer<ALLOCATOR> &it) {
+template <class ALLOCATOR, typename CAPACITY_POLICY>
+inline ::std::ostream &
+operator<<(::std::ostream &out, const buffer<ALLOCATOR, CAPACITY_POLICY> &it) {
   return (it.is_freestanding()
               ? out << "buf-" << it.headroom() << "." << it.tailroom()
               : out << "ref-")
@@ -2803,10 +3977,50 @@ static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept {
 #endif
 }
 
-MDBX_CXX14_CONSTEXPR size_t check_length(size_t bytes) {
+static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
+                                         size_t bytes) noexcept {
+#if defined(__cpp_lib_is_constant_evaluated) &&                                \
+    __cpp_lib_is_constant_evaluated >= 201811L
+  if (::std::is_constant_evaluated()) {
+    for (size_t i = 0; i < bytes; ++i)
+      static_cast<byte *>(dest)[i] = static_cast<const byte *>(src)[i];
+    return dest;
+  } else
+#endif /* __cpp_lib_is_constant_evaluated >= 201811 */
+    return ::std::memcpy(dest, src, bytes);
+}
+
+static MDBX_CXX20_CONSTEXPR int memcmp(const void *a, const void *b,
+                                       size_t bytes) noexcept {
+#if defined(__cpp_lib_is_constant_evaluated) &&                                \
+    __cpp_lib_is_constant_evaluated >= 201811L
+  if (::std::is_constant_evaluated()) {
+    for (size_t i = 0; i < bytes; ++i) {
+      const int diff =
+          static_cast<const byte *>(a)[i] - static_cast<const byte *>(b)[i];
+      if (diff)
+        return diff;
+    }
+    return 0;
+  } else
+#endif /* __cpp_lib_is_constant_evaluated >= 201811 */
+    return ::std::memcmp(a, b, bytes);
+}
+
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t bytes) {
   if (MDBX_UNLIKELY(bytes > size_t(MDBX_MAXDATASIZE)))
     MDBX_CXX20_UNLIKELY throw_max_length_exceeded();
   return bytes;
+}
+
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom,
+                                                size_t payload) {
+  return check_length(check_length(headroom) + check_length(payload));
+}
+
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom, size_t payload,
+                                                size_t tailroom) {
+  return check_length(check_length(headroom, payload) + check_length(tailroom));
 }
 
 inline bool exception_thunk::is_clean() const noexcept { return !captured_; }
@@ -2960,9 +4174,13 @@ MDBX_CXX17_CONSTEXPR slice::slice(const char *c_str)
 MDBX_CXX14_CONSTEXPR slice::slice(const MDBX_val &src)
     : slice(src.iov_base, src.iov_len) {}
 
-inline slice::slice(MDBX_val &&src) : slice(src) { src.iov_base = nullptr; }
+MDBX_CXX14_CONSTEXPR slice::slice(MDBX_val &&src) : slice(src) {
+  src.iov_base = nullptr;
+}
 
-inline slice::slice(slice &&src) noexcept : slice(src) { src.invalidate(); }
+MDBX_CXX14_CONSTEXPR slice::slice(slice &&src) noexcept : slice(src) {
+  src.invalidate();
+}
 
 inline slice &slice::assign(const void *ptr, size_t bytes) {
   iov_base = const_cast<void *>(ptr);
@@ -3015,19 +4233,63 @@ inline void slice::swap(slice &other) noexcept {
   other = temp;
 }
 
-MDBX_CXX11_CONSTEXPR const mdbx::byte *slice::byte_ptr() const noexcept {
+MDBX_CXX11_CONSTEXPR const ::mdbx::byte *slice::byte_ptr() const noexcept {
   return static_cast<const byte *>(iov_base);
+}
+
+MDBX_CXX11_CONSTEXPR const ::mdbx::byte *slice::end_byte_ptr() const noexcept {
+  return byte_ptr() + length();
+}
+
+MDBX_CXX11_CONSTEXPR ::mdbx::byte *slice::byte_ptr() noexcept {
+  return static_cast<byte *>(iov_base);
+}
+
+MDBX_CXX11_CONSTEXPR ::mdbx::byte *slice::end_byte_ptr() noexcept {
+  return byte_ptr() + length();
 }
 
 MDBX_CXX11_CONSTEXPR const char *slice::char_ptr() const noexcept {
   return static_cast<const char *>(iov_base);
 }
 
+MDBX_CXX11_CONSTEXPR const char *slice::end_char_ptr() const noexcept {
+  return char_ptr() + length();
+}
+
+MDBX_CXX11_CONSTEXPR char *slice::char_ptr() noexcept {
+  return static_cast<char *>(iov_base);
+}
+
+MDBX_CXX11_CONSTEXPR char *slice::end_char_ptr() noexcept {
+  return char_ptr() + length();
+}
+
 MDBX_CXX11_CONSTEXPR const void *slice::data() const noexcept {
   return iov_base;
 }
 
+MDBX_CXX11_CONSTEXPR const void *slice::end() const noexcept {
+  return static_cast<const void *>(end_byte_ptr());
+}
+
+MDBX_CXX11_CONSTEXPR void *slice::data() noexcept { return iov_base; }
+
+MDBX_CXX11_CONSTEXPR void *slice::end() noexcept {
+  return static_cast<void *>(end_byte_ptr());
+}
+
 MDBX_CXX11_CONSTEXPR size_t slice::length() const noexcept { return iov_len; }
+
+MDBX_CXX14_CONSTEXPR slice &slice::set_length(size_t bytes) {
+  iov_len = check_length(bytes);
+  return *this;
+}
+
+MDBX_CXX14_CONSTEXPR slice &slice::set_end(const void *ptr) {
+  MDBX_CONSTEXPR_ASSERT(static_cast<const char *>(ptr) >= char_ptr());
+  return set_length(static_cast<const char *>(ptr) - char_ptr());
+}
 
 MDBX_CXX11_CONSTEXPR bool slice::empty() const noexcept {
   return length() == 0;
@@ -3043,9 +4305,9 @@ MDBX_CXX11_CONSTEXPR slice::operator bool() const noexcept {
   return !is_null();
 }
 
-inline void slice::invalidate() noexcept { iov_base = nullptr; }
+MDBX_CXX14_CONSTEXPR void slice::invalidate() noexcept { iov_base = nullptr; }
 
-inline void slice::clear() noexcept {
+MDBX_CXX14_CONSTEXPR void slice::clear() noexcept {
   iov_base = nullptr;
   iov_len = 0;
 }
@@ -3073,15 +4335,16 @@ inline void slice::safe_remove_suffix(size_t n) {
   remove_suffix(n);
 }
 
-inline bool slice::starts_with(const slice &prefix) const noexcept {
+MDBX_CXX14_CONSTEXPR bool
+slice::starts_with(const slice &prefix) const noexcept {
   return length() >= prefix.length() &&
-         ::std::memcmp(data(), prefix.data(), prefix.length()) == 0;
+         memcmp(data(), prefix.data(), prefix.length()) == 0;
 }
 
-inline bool slice::ends_with(const slice &suffix) const noexcept {
+MDBX_CXX14_CONSTEXPR bool slice::ends_with(const slice &suffix) const noexcept {
   return length() >= suffix.length() &&
-         ::std::memcmp(byte_ptr() + length() - suffix.length(), suffix.data(),
-                       suffix.length()) == 0;
+         memcmp(byte_ptr() + length() - suffix.length(), suffix.data(),
+                suffix.length()) == 0;
 }
 
 MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR size_t
@@ -3092,45 +4355,45 @@ slice::hash_value() const noexcept {
   return h ^ 3863194411 * (h >> 11);
 }
 
-inline byte slice::operator[](size_t n) const noexcept {
-  assert(n < size());
+MDBX_CXX11_CONSTEXPR byte slice::operator[](size_t n) const noexcept {
+  MDBX_CONSTEXPR_ASSERT(n < size());
   return byte_ptr()[n];
 }
 
-inline byte slice::at(size_t n) const {
+MDBX_CXX11_CONSTEXPR byte slice::at(size_t n) const {
   if (MDBX_UNLIKELY(n >= size()))
     MDBX_CXX20_UNLIKELY throw_out_range();
   return byte_ptr()[n];
 }
 
-inline slice slice::head(size_t n) const noexcept {
-  assert(n <= size());
+MDBX_CXX14_CONSTEXPR slice slice::head(size_t n) const noexcept {
+  MDBX_CONSTEXPR_ASSERT(n <= size());
   return slice(data(), n);
 }
 
-inline slice slice::tail(size_t n) const noexcept {
-  assert(n <= size());
+MDBX_CXX14_CONSTEXPR slice slice::tail(size_t n) const noexcept {
+  MDBX_CONSTEXPR_ASSERT(n <= size());
   return slice(char_ptr() + size() - n, n);
 }
 
-inline slice slice::middle(size_t from, size_t n) const noexcept {
-  assert(from + n <= size());
+MDBX_CXX14_CONSTEXPR slice slice::middle(size_t from, size_t n) const noexcept {
+  MDBX_CONSTEXPR_ASSERT(from + n <= size());
   return slice(char_ptr() + from, n);
 }
 
-inline slice slice::safe_head(size_t n) const {
+MDBX_CXX14_CONSTEXPR slice slice::safe_head(size_t n) const {
   if (MDBX_UNLIKELY(n > size()))
     MDBX_CXX20_UNLIKELY throw_out_range();
   return head(n);
 }
 
-inline slice slice::safe_tail(size_t n) const {
+MDBX_CXX14_CONSTEXPR slice slice::safe_tail(size_t n) const {
   if (MDBX_UNLIKELY(n > size()))
     MDBX_CXX20_UNLIKELY throw_out_range();
   return tail(n);
 }
 
-inline slice slice::safe_middle(size_t from, size_t n) const {
+MDBX_CXX14_CONSTEXPR slice slice::safe_middle(size_t from, size_t n) const {
   if (MDBX_UNLIKELY(n > max_length))
     MDBX_CXX20_UNLIKELY throw_max_length_exceeded();
   if (MDBX_UNLIKELY(from + n > size()))
@@ -3138,134 +4401,140 @@ inline slice slice::safe_middle(size_t from, size_t n) const {
   return middle(from, n);
 }
 
-inline intptr_t slice::compare_fast(const slice &a, const slice &b) noexcept {
-  const intptr_t diff = a.length() - b.length();
-  return diff ? diff
-              : (a.data() == b.data())
-                    ? 0
-                    : ::std::memcmp(a.data(), b.data(), a.length());
-}
-
-inline intptr_t slice::compare_lexicographically(const slice &a,
-                                                 const slice &b) noexcept {
-  const intptr_t diff =
-      ::std::memcmp(a.data(), b.data(), ::std::min(a.length(), b.length()));
-  return diff ? diff : intptr_t(a.length() - b.length());
-}
-
-MDBX_NOTHROW_PURE_FUNCTION inline bool operator==(const slice &a,
+MDBX_CXX14_CONSTEXPR intptr_t slice::compare_fast(const slice &a,
                                                   const slice &b) noexcept {
+  const intptr_t diff = intptr_t(a.length()) - intptr_t(b.length());
+  return diff ? diff
+              : MDBX_UNLIKELY(a.length() == 0 || a.data() == b.data())
+                    ? 0
+                    : memcmp(a.data(), b.data(), a.length());
+}
+
+MDBX_CXX14_CONSTEXPR intptr_t
+slice::compare_lexicographically(const slice &a, const slice &b) noexcept {
+  const size_t shortest = ::std::min(a.length(), b.length());
+  if (MDBX_LIKELY(shortest > 0))
+    MDBX_CXX20_LIKELY {
+      const intptr_t diff = memcmp(a.data(), b.data(), shortest);
+      if (MDBX_LIKELY(diff != 0))
+        MDBX_CXX20_LIKELY return diff;
+    }
+  return intptr_t(a.length()) - intptr_t(b.length());
+}
+
+MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
+operator==(const slice &a, const slice &b) noexcept {
   return slice::compare_fast(a, b) == 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION inline bool operator<(const slice &a,
-                                                 const slice &b) noexcept {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
+operator<(const slice &a, const slice &b) noexcept {
   return slice::compare_lexicographically(a, b) < 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION inline bool operator>(const slice &a,
-                                                 const slice &b) noexcept {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
+operator>(const slice &a, const slice &b) noexcept {
   return slice::compare_lexicographically(a, b) > 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION inline bool operator<=(const slice &a,
-                                                  const slice &b) noexcept {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
+operator<=(const slice &a, const slice &b) noexcept {
   return slice::compare_lexicographically(a, b) <= 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION inline bool operator>=(const slice &a,
-                                                  const slice &b) noexcept {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
+operator>=(const slice &a, const slice &b) noexcept {
   return slice::compare_lexicographically(a, b) >= 0;
 }
 
-MDBX_NOTHROW_PURE_FUNCTION inline bool operator!=(const slice &a,
-                                                  const slice &b) noexcept {
+MDBX_NOTHROW_PURE_FUNCTION MDBX_CXX14_CONSTEXPR bool
+operator!=(const slice &a, const slice &b) noexcept {
   return slice::compare_fast(a, b) != 0;
 }
 
 template <class ALLOCATOR>
-inline ::mdbx::string<ALLOCATOR>
-slice::hex_encode(bool uppercase, const ALLOCATOR &allocator) const {
-  ::mdbx::string<ALLOCATOR> result(allocator);
-  if (MDBX_LIKELY(length() > 0)) {
-    result.resize(to_hex_bytes());
-    result.resize(to_hex(const_cast<char *>(result.data()), result.capacity()) -
-                      result.data(),
-                  uppercase);
-  }
-  return result;
+inline string<ALLOCATOR>
+slice::as_hex_string(bool uppercase, unsigned wrap_width,
+                     const ALLOCATOR &allocator) const {
+  return to_hex(*this, uppercase, wrap_width).as_string<ALLOCATOR>(allocator);
 }
 
 template <class ALLOCATOR>
-inline ::mdbx::string<ALLOCATOR>
-slice::hex_decode(const ALLOCATOR &allocator) const {
-  ::mdbx::string<ALLOCATOR> result(allocator);
-  if (MDBX_LIKELY(length() > 0)) {
-    result.resize(from_hex_bytes());
-    result.resize(
-        from_hex(static_cast<byte *>(
-                     static_cast<void *>(const_cast<char *>(result.data()))),
-                 result.capacity()) -
-        static_cast<const byte *>(static_cast<const void *>(result.data())));
-  }
-  return result;
+inline string<ALLOCATOR>
+slice::as_base58_string(unsigned wrap_width, const ALLOCATOR &allocator) const {
+  return to_base58(*this, wrap_width).as_string<ALLOCATOR>(allocator);
 }
 
 template <class ALLOCATOR>
-inline ::mdbx::string<ALLOCATOR>
-slice::base58_encode(const ALLOCATOR &allocator) const {
-  ::mdbx::string<ALLOCATOR> result(allocator);
-  if (MDBX_LIKELY(length() > 0)) {
-    result.resize(to_base58_bytes());
-    result.resize(
-        to_base58(const_cast<char *>(result.data()), result.capacity()) -
-        result.data());
-  }
-  return result;
+inline string<ALLOCATOR>
+slice::as_base64_string(unsigned wrap_width, const ALLOCATOR &allocator) const {
+  return to_base64(*this, wrap_width).as_string<ALLOCATOR>(allocator);
 }
 
-template <class ALLOCATOR>
-inline ::mdbx::string<ALLOCATOR>
-slice::base58_decode(const ALLOCATOR &allocator) const {
-  ::mdbx::string<ALLOCATOR> result(allocator);
-  if (MDBX_LIKELY(length() > 0)) {
-    result.resize(from_base58_bytes());
-    result.resize(
-        from_base58(static_cast<byte *>(
-                        static_cast<void *>(const_cast<char *>(result.data()))),
-                    result.capacity()) -
-        static_cast<const byte *>(static_cast<const void *>(result.data())));
-  }
-  return result;
+template <class ALLOCATOR, class CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+slice::encode_hex(bool uppercase, unsigned wrap_width,
+                  const ALLOCATOR &allocator) const {
+  return to_hex(*this, uppercase, wrap_width)
+      .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
 }
 
-template <class ALLOCATOR>
-inline ::mdbx::string<ALLOCATOR>
-slice::base64_encode(const ALLOCATOR &allocator) const {
-  ::mdbx::string<ALLOCATOR> result(allocator);
-  if (MDBX_LIKELY(length() > 0)) {
-    result.resize(to_base64_bytes());
-    result.resize(
-        to_base64(const_cast<char *>(result.data()), result.capacity()) -
-        result.data());
-  }
-  return result;
+template <class ALLOCATOR, class CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+slice::encode_base58(unsigned wrap_width, const ALLOCATOR &allocator) const {
+  return to_base58(*this, wrap_width)
+      .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
 }
 
-template <class ALLOCATOR>
-inline ::mdbx::string<ALLOCATOR>
-slice::base64_decode(const ALLOCATOR &allocator) const {
-  ::mdbx::string<ALLOCATOR> result(allocator);
-  if (MDBX_LIKELY(length() > 0)) {
-    result.resize(from_base64_bytes());
-    result.resize(
-        from_base64(static_cast<byte *>(
-                        static_cast<void *>(const_cast<char *>(result.data()))),
-                    result.capacity()) -
-        static_cast<const byte *>(static_cast<const void *>(result.data())));
-  }
-  return result;
+template <class ALLOCATOR, class CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+slice::encode_base64(unsigned wrap_width, const ALLOCATOR &allocator) const {
+  return to_base64(*this, wrap_width)
+      .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
 }
+
+template <class ALLOCATOR, class CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+slice::hex_decode(bool ignore_spaces, const ALLOCATOR &allocator) const {
+  return from_hex(*this, ignore_spaces)
+      .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
+}
+
+template <class ALLOCATOR, class CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+slice::base58_decode(bool ignore_spaces, const ALLOCATOR &allocator) const {
+  return from_base58(*this, ignore_spaces)
+      .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
+}
+
+template <class ALLOCATOR, class CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+slice::base64_decode(bool ignore_spaces, const ALLOCATOR &allocator) const {
+  return from_base64(*this, ignore_spaces)
+      .as_buffer<ALLOCATOR, CAPACITY_POLICY>(allocator);
+}
+
+inline MDBX_NOTHROW_PURE_FUNCTION bool
+slice::is_hex(bool ignore_spaces) const noexcept {
+  return !from_hex(*this, ignore_spaces).is_erroneous();
+}
+
+inline MDBX_NOTHROW_PURE_FUNCTION bool
+slice::is_base58(bool ignore_spaces) const noexcept {
+  return !from_base58(*this, ignore_spaces).is_erroneous();
+}
+
+inline MDBX_NOTHROW_PURE_FUNCTION bool
+slice::is_base64(bool ignore_spaces) const noexcept {
+  return !from_base64(*this, ignore_spaces).is_erroneous();
+}
+
+//------------------------------------------------------------------------------
+
+template <class ALLOCATOR, typename CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>::buffer(
+    const txn &txn, const struct slice &src, const allocator_type &allocator)
+    : buffer(src, !txn.is_dirty(src.data()), allocator) {}
 
 //------------------------------------------------------------------------------
 
@@ -4033,10 +5302,12 @@ inline void txn::replace(map_handle map, const slice &key, slice old_value,
       MDBX_CURRENT | MDBX_NOOVERWRITE, nullptr, nullptr));
 }
 
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR> txn::extract(map_handle map, const slice &key,
-                                      const ALLOCATOR &allocator) {
-  typename buffer<ALLOCATOR>::data_preserver result(allocator);
+template <class ALLOCATOR, typename CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+txn::extract(map_handle map, const slice &key,
+             const typename buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type
+                 &allocator) {
+  typename buffer<ALLOCATOR, CAPACITY_POLICY>::data_preserver result(allocator);
   error::success_or_throw(::mdbx_replace_ex(handle_, map.dbi, &key, nullptr,
                                             &result.slice_, MDBX_CURRENT,
                                             result, &result),
@@ -4044,11 +5315,12 @@ inline buffer<ALLOCATOR> txn::extract(map_handle map, const slice &key,
   return result;
 }
 
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR> txn::replace(map_handle map, const slice &key,
-                                      const slice &new_value,
-                                      const ALLOCATOR &allocator) {
-  typename buffer<ALLOCATOR>::data_preserver result(allocator);
+template <class ALLOCATOR, typename CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY>
+txn::replace(map_handle map, const slice &key, const slice &new_value,
+             const typename buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type
+                 &allocator) {
+  typename buffer<ALLOCATOR, CAPACITY_POLICY>::data_preserver result(allocator);
   error::success_or_throw(
       ::mdbx_replace_ex(handle_, map.dbi, &key, const_cast<slice *>(&new_value),
                         &result.slice_, MDBX_CURRENT, result, &result),
@@ -4056,11 +5328,12 @@ inline buffer<ALLOCATOR> txn::replace(map_handle map, const slice &key,
   return result;
 }
 
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR> txn::replace_reserve(map_handle map, const slice &key,
-                                              slice &new_value,
-                                              const ALLOCATOR &allocator) {
-  typename buffer<ALLOCATOR>::data_preserver result(allocator);
+template <class ALLOCATOR, typename CAPACITY_POLICY>
+inline buffer<ALLOCATOR, CAPACITY_POLICY> txn::replace_reserve(
+    map_handle map, const slice &key, slice &new_value,
+    const typename buffer<ALLOCATOR, CAPACITY_POLICY>::allocator_type
+        &allocator) {
+  typename buffer<ALLOCATOR, CAPACITY_POLICY>::data_preserver result(allocator);
   error::success_or_throw(
       ::mdbx_replace_ex(handle_, map.dbi, &key, &new_value, &result.slice_,
                         MDBX_CURRENT | MDBX_RESERVE, result, &result),
@@ -4479,156 +5752,14 @@ inline bool cursor::erase(bool whole_multivalue) {
   }
 }
 
-//------------------------------------------------------------------------------
-
-inline cursor_managed::cursor_managed()
-    : cursor_managed(::mdbx_cursor_create(nullptr)) {
-  if (MDBX_UNLIKELY(!handle_))
-    MDBX_CXX20_UNLIKELY error::throw_exception(MDBX_ENOMEM);
+inline bool cursor::erase(const slice &key, bool whole_multivalue) {
+  bool found = seek(key);
+  return found ? erase(whole_multivalue) : found;
 }
 
-//------------------------------------------------------------------------------
-
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR>::buffer(const txn &txn, const ::mdbx::slice &src,
-                                 const ALLOCATOR &allocator)
-    : buffer(src, !txn.is_dirty(src.data()), allocator) {}
-
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR>::buffer(size_t head_room, size_t tail_room,
-                                 const ALLOCATOR &allocator)
-    : silo_(allocator) {
-  if (MDBX_UNLIKELY(head_room > max_length || tail_room > max_length ||
-                    head_room + tail_room > max_length))
-    throw_max_length_exceeded();
-  silo_.reserve(head_room + tail_room);
-  silo_.append(head_room, '\0');
-  slice_.iov_base = const_cast<char *>(silo_.data());
-  assert(slice_.iov_len == 0);
-}
-
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR>::buffer(size_t capacity, const ALLOCATOR &allocator)
-    : silo_(allocator) {
-  silo_.reserve(check_length(capacity));
-  slice_.iov_base = const_cast<char *>(silo_.data());
-  assert(slice_.iov_len == 0);
-}
-
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR>::buffer(size_t head_room, const ::mdbx::slice &src,
-                                 size_t tail_room, const ALLOCATOR &allocator)
-    : silo_(allocator) {
-  if (MDBX_UNLIKELY(head_room > max_length || tail_room > max_length ||
-                    head_room + tail_room > max_length - slice_.length()))
-    throw_max_length_exceeded();
-  silo_.reserve(head_room + src.length() + tail_room);
-  silo_.append(head_room, '\0');
-  silo_.append(src.char_ptr(), src.length());
-  slice_.iov_base = const_cast<char *>(silo_.data());
-  slice_.iov_len = src.length();
-}
-
-template <class ALLOCATOR>
-inline void buffer<ALLOCATOR>::reserve(size_t wanna_headroom,
-                                       size_t wanna_tailroom,
-                                       size_t shrink_threshold) {
-  if (MDBX_UNLIKELY(
-          wanna_headroom > max_length || wanna_tailroom > max_length ||
-          wanna_headroom + wanna_tailroom > max_length - slice_.length()))
-    throw_max_length_exceeded();
-
-  wanna_headroom = std::min(std::max(headroom(), wanna_headroom),
-                            wanna_headroom + shrink_threshold);
-  wanna_tailroom = std::min(std::max(tailroom(), wanna_tailroom),
-                            wanna_tailroom + shrink_threshold);
-  const auto wanna_capacity = wanna_headroom + slice_.length() + wanna_tailroom;
-  if (is_reference() || slice_.empty()) {
-    silo_.reserve(wanna_capacity);
-    silo_.resize(wanna_headroom);
-    silo_.append(slice_.char_ptr(), slice_.length());
-  } else {
-    const auto was_headroom = headroom();
-    if (was_headroom > wanna_headroom)
-      silo_.erase(wanna_headroom, was_headroom - wanna_headroom);
-    silo_.reserve(wanna_capacity);
-    if (was_headroom < wanna_headroom)
-      silo_.insert(was_headroom, wanna_headroom - was_headroom, '\0');
-  }
-  slice_.iov_base = const_cast<byte *>(silo_begin()) + wanna_headroom;
-  assert(headroom() >= wanna_headroom &&
-         headroom() <= wanna_headroom + shrink_threshold);
-  assert(tailroom() >= wanna_tailroom &&
-         tailroom() <= wanna_tailroom + shrink_threshold);
-}
-
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR> &buffer<ALLOCATOR>::append(const void *src,
-                                                    size_t bytes) {
-  if (MDBX_UNLIKELY(tailroom() < check_length(bytes)))
-    reserve(0, bytes);
-  std::memcpy(static_cast<char *>(slice_.iov_base) + size(), src, bytes);
-  slice_.iov_len += bytes;
-  return *this;
-}
-
-template <class ALLOCATOR>
-inline buffer<ALLOCATOR> &buffer<ALLOCATOR>::add_header(const void *src,
-                                                        size_t bytes) {
-  if (MDBX_UNLIKELY(headroom() < check_length(bytes)))
-    reserve(bytes, 0);
-  slice_.iov_base =
-      std::memcpy(static_cast<char *>(slice_.iov_base) - bytes, src, bytes);
-  slice_.iov_len += bytes;
-  return *this;
-}
-
-template <class ALLOCATOR>
-inline void buffer<ALLOCATOR>::swap(buffer &other)
-#if defined(__cpp_noexcept_function_type) &&                                   \
-    __cpp_noexcept_function_type >= 201510L
-    noexcept(
-        std::allocator_traits<ALLOCATOR>::propagate_on_container_swap::value
-#if defined(__cpp_lib_allocator_traits_is_always_equal) &&                     \
-    __cpp_lib_allocator_traits_is_always_equal >= 201411L
-        || std::allocator_traits<ALLOCATOR>::is_always_equal::value
-#endif /* __cpp_lib_allocator_traits_is_always_equal */
-    )
-#endif /* __cpp_noexcept_function_type */
-{
-  if /* checking the equality of allocators to avoid UB */
-#if defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606L
-      constexpr
-#endif
-      (!std::allocator_traits<ALLOCATOR>::propagate_on_container_swap::value
-#if defined(__cpp_lib_allocator_traits_is_always_equal) &&                     \
-    __cpp_lib_allocator_traits_is_always_equal >= 201411L
-       && !std::allocator_traits<ALLOCATOR>::is_always_equal::value
-#endif /* __cpp_lib_allocator_traits_is_always_equal */
-      ) {
-    if (MDBX_UNLIKELY(silo_.get_allocator() != other.silo_.get_allocator()))
-      throw std::bad_alloc();
-  }
-  silo_.swap(other.silo_);
-  slice_.swap(other.slice_);
-}
-
-template <class ALLOCATOR>
-inline int buffer<ALLOCATOR>::data_preserver::callback(void *context,
-                                                       MDBX_val *target,
-                                                       const void *src,
-                                                       size_t bytes) noexcept {
-  auto self = static_cast<data_preserver *>(context);
-  assert(self->is_clean());
-  assert(&self->data.slice_ == target);
-  (void)target;
-  try {
-    self->data.assign(src, bytes, false);
-    return MDBX_RESULT_FALSE;
-  } catch (... /* capture any exception to rethrow it over C code */) {
-    self->capture();
-    return MDBX_RESULT_TRUE;
-  }
+inline bool cursor::erase(const slice &key, const slice &value) {
+  move_result data = find_multivalue(key, value, false);
+  return data.done ? erase() : data.done;
 }
 
 } // namespace mdbx
@@ -4637,62 +5768,63 @@ inline int buffer<ALLOCATOR>::data_preserver::callback(void *context,
 
 namespace std {
 
-inline string to_string(const mdbx::slice &value) {
+inline string to_string(const ::mdbx::slice &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-template <class ALLOCATOR>
-inline string to_string(const mdbx::buffer<ALLOCATOR> &buffer) {
+template <class ALLOCATOR, typename CAPACITY_POLICY>
+inline string
+to_string(const ::mdbx::buffer<ALLOCATOR, CAPACITY_POLICY> &buffer) {
   ostringstream out;
   out << buffer;
   return out.str();
 }
 
-inline string to_string(const mdbx::pair &value) {
+inline string to_string(const ::mdbx::pair &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env::geometry &value) {
+inline string to_string(const ::mdbx::env::geometry &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env::operate_parameters &value) {
+inline string to_string(const ::mdbx::env::operate_parameters &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env::mode &value) {
+inline string to_string(const ::mdbx::env::mode &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env::durability &value) {
+inline string to_string(const ::mdbx::env::durability &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env::reclaiming_options &value) {
+inline string to_string(const ::mdbx::env::reclaiming_options &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env::operate_options &value) {
+inline string to_string(const ::mdbx::env::operate_options &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
-inline string to_string(const mdbx::env_managed::create_parameters &value) {
+inline string to_string(const ::mdbx::env_managed::create_parameters &value) {
   ostringstream out;
   out << value;
   return out.str();
@@ -4710,22 +5842,23 @@ inline string to_string(const ::MDBX_debug_flags_t &value) {
   return out.str();
 }
 
-inline string to_string(const mdbx::error &value) {
+inline string to_string(const ::mdbx::error &value) {
   ostringstream out;
   out << value;
   return out.str();
 }
 
 inline string to_string(const ::MDBX_error_t &errcode) {
-  return to_string(mdbx::error(errcode));
+  return to_string(::mdbx::error(errcode));
 }
 
-template <> struct hash<mdbx::slice> {
+template <> struct hash<::mdbx::slice> {
   MDBX_CXX14_CONSTEXPR size_t
-  operator()(mdbx::slice const &slice) const noexcept {
+  operator()(::mdbx::slice const &slice) const noexcept {
     return slice.hash_value();
   }
 };
+
 } // namespace std
 
 #ifdef _MSC_VER

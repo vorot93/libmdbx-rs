@@ -1,35 +1,98 @@
 ChangeLog
 ---------
 
-## v0.10.2 (in development)
+## v0.11.x (in development)
 
 ### TODO
 
+ - [Engage an "overlapped I/O" on Windows](https://github.com/erthink/libmdbx/issues/224).
+ - [Simple careful mode for working with corrupted DB](https://github.com/erthink/libmdbx/issues/223).
  - [Move most of `mdbx_chk` functional to the library API](https://github.com/erthink/libmdbx/issues/204).
- - [Fix recursive use of SRW-lock on Windows cause by `MDBX_NOTLS` option.](https://github.com/erthink/libmdbx/issues/203).
+ - [Replace SRW-lock on Windows to allow shrink DB with `MDBX_NOTLS` option](https://github.com/erthink/libmdbx/issues/210).
  - [More flexible support of asynchronous runtime/framework(s)](https://github.com/erthink/libmdbx/issues/200).
  - [Migration guide from LMDB to MDBX](https://github.com/erthink/libmdbx/issues/199).
  - [Get rid of dirty-pages list in MDBX_WRITEMAP mode](https://github.com/erthink/libmdbx/issues/193).
  - [Large/Overflow pages accounting for dirty-room](https://github.com/erthink/libmdbx/issues/192).
- - [C++ Buffer issue](https://github.com/erthink/libmdbx/issues/191).
  - [Support for RAW devices](https://github.com/erthink/libmdbx/issues/124).
- - [Test framework issue](https://github.com/erthink/libmdbx/issues/127).
  - [Support MessagePack for Keys & Values](https://github.com/erthink/libmdbx/issues/115).
  - [Engage new terminology](https://github.com/erthink/libmdbx/issues/137).
- - Finalize C++ API (few typos and trivia bugs are still likely for now).
+ - Finalize C++ API (few typos and bugs are still maybe for now).
  - Packages for [Astra Linux](https://astralinux.ru/), [ALT Linux](https://www.altlinux.org/), [ROSA Linux](https://www.rosalinux.ru/), etc.
+
+
+## v0.10.3 at 2021-08-27
+
+Acknowledgements:
+
+ - [Francisco Vallarino](https://github.com/fjvallarino) for [Haskell bindings for libmdbx](https://hackage.haskell.org/package/libmdbx).
+ - [Alex Sharov](https://github.com/AskAlexSharov) for reporting and testing.
+ - [Andrea Lanfranchi](https://github.com/AndreaLanfranchi) for contributing.
+
+Extensions and improvements:
+
+ - Added `cursor::erase()` overloads for `key` and for `key-value`.
+ - Resolve minor Coverity Scan issues (no fixes but some hint/comment were added).
+ - Resolve minor UndefinedBehaviorSanitizer issues (no fixes but some workaround were added).
+
+Fixes:
+
+ - Always setup `madvise` while opening DB (fixes https://github.com/erthink/libmdbx/issues/231).
+ - Fixed checking legacy `P_DIRTY` flag (`0x10`) for nested/sub-pages.
+
+Minors:
+
+ - Fixed getting revision number from middle of history during amalgamation (GNU Makefile).
+ - Fixed search GCC tools for LTO (CMake scripts).
+ - Fixed/reorder dirs list for search CLANG tools for LTO (CMake scripts).
+ - Fixed/workarounds for CLANG < 9.x
+ - Fixed CMake warning about compatibility with 3.8.2
+
+
+## v0.10.2 at 2021-07-26
 
 Acknowledgements:
 
  - [Alex Sharov](https://github.com/AskAlexSharov) for reporting and testing.
+ - [Andrea Lanfranchi](https://github.com/AndreaLanfranchi) for reporting bugs.
+ - [Lionel Debroux](https://github.com/debrouxl) for fuzzing tests and reporting bugs.
+ - [Sergey Fedotov](https://github.com/SergeyFromHell/) for [`node-mdbx` NodeJS bindings](https://www.npmjs.com/package/node-mdbx).
+ - [Kris Zyp](https://github.com/kriszyp) for [`lmdbx-store` NodeJS bindings](https://github.com/kriszyp/lmdbx-store).
+ - [Noel Kuntze](https://github.com/Thermi) for [draft Python bindings](https://github.com/erthink/libmdbx/commits/python-bindings).
 
-New features:
+New features, extensions and improvements:
 
- - Allow to predefine/override `MDBX_BUILD_TIMESTAMP` for builds reproducibility (https://github.com/erthink/libmdbx/issues/201).
+ - [Allow to predefine/override `MDBX_BUILD_TIMESTAMP` for builds reproducibility](https://github.com/erthink/libmdbx/issues/201).
+ - Added options support for `long-stochastic` script.
+ - Avoided `MDBX_TXN_FULL` error for large transactions when possible.
+ - The `MDBX_READERS_LIMIT` increased to `32767`.
+ - Raise `MDBX_TOO_LARGE` under Valgrind/ASAN if being opened DB is 100 larger than RAM (to avoid hangs and OOM).
+ - Minimized the size of poisoned/unpoisoned regions to avoid Valgrind/ASAN stuck.
+ - Added more workarounds for QEMU for testing builds for 32-bit platforms, Alpha and Sparc architectures.
+ - `mdbx_chk` now skips iteration & checking of DB' records if corresponding page-tree is corrupted (to avoid `SIGSEGV`, ASAN failures, etc).
+ - Added more checks for [rare/fuzzing corruption cases](https://github.com/erthink/libmdbx/issues/217).
+
+Backward compatibility break:
+
+ - Use file `VERSION.txt` for version information instead of `VERSION` to avoid collision with `#include <version>`.
+ - Rename `slice::from/to_FOO_bytes()` to `slice::envisage_from/to_FOO_length()'.
+ - Rename `MDBX_TEST_EXTRA` make's variable to `MDBX_SMOKE_EXTRA`.
+ - Some details of the C++ API have been changed for subsequent freezing.
 
 Fixes:
 
- - Fixed excess meta-pageы checks in case `mdbx_chk` is called to check the DB for a specific meta page and thus could prevent switching to the selected meta page, even if the check passed without errors.
+ - Fixed excess meta-pages checks in case `mdbx_chk` is called to check the DB for a specific meta page and thus could prevent switching to the selected meta page, even if the check passed without errors.
+ - Fixed [recursive use of SRW-lock on Windows cause by `MDBX_NOTLS` option](https://github.com/erthink/libmdbx/issues/203).
+ - Fixed [log a warning during a new DB creation](https://github.com/erthink/libmdbx/issues/205).
+ - Fixed [false-negative `mdbx_cursor_eof()` result](https://github.com/erthink/libmdbx/issues/207).
+ - Fixed [`make install` with non-GNU `install` utility (OSX, BSD)](https://github.com/erthink/libmdbx/issues/208).
+ - Fixed [installation by `CMake` in special cases by complete use `GNUInstallDirs`'s variables](https://github.com/erthink/libmdbx/issues/209).
+ - Fixed [C++ Buffer issue with `std::string` and alignment](https://github.com/erthink/libmdbx/issues/191).
+ - Fixed `safe64_reset()` for platforms without atomic 64-bit compare-and-swap.
+ - Fixed hang/shutdown on big-endian platforms without `__cxa_thread_atexit()`.
+ - Fixed [using bad meta-pages if DB was partially/recoverable corrupted](https://github.com/erthink/libmdbx/issues/217).
+ - Fixed extra `noexcept` for `buffer::&assign_reference()`.
+ - Fixed `bootid` generation on Windows for case of change system' time.
+ - Fixed [test framework keygen-related issue](https://github.com/erthink/libmdbx/issues/127).
 
 
 ## v0.10.1 at 2021-06-01

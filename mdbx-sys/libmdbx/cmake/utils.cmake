@@ -13,9 +13,14 @@
 ##  limitations under the License.
 ##
 
-cmake_minimum_required(VERSION 3.8.2)
+if(CMAKE_VERSION VERSION_LESS 3.12)
+  cmake_minimum_required(VERSION 3.8.2)
+else()
+  cmake_minimum_required(VERSION 3.12)
+endif()
+
 cmake_policy(PUSH)
-cmake_policy(VERSION 3.8.2)
+cmake_policy(VERSION ${CMAKE_MINIMUM_REQUIRED_VERSION})
 
 macro(add_compile_flags languages)
   foreach(_lang ${languages})
@@ -173,7 +178,10 @@ macro(fetch_version name source_root_directory parent_scope)
     set(${name}_GIT_REVISION 0)
 
     # Try to get version from VERSION file
-    set(version_file "${source_root_directory}/VERSION")
+    set(version_file "${source_root_directory}/VERSION.txt")
+    if(NOT EXISTS "${version_file}")
+      set(version_file "${source_root_directory}/VERSION")
+    endif()
     if(EXISTS "${version_file}")
       file(STRINGS "${version_file}" ${name}_VERSION LIMIT_COUNT 1 LIMIT_INPUT 42)
     endif()
