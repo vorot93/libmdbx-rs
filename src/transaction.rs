@@ -398,6 +398,21 @@ where
     }
 }
 
+impl<'env, E> Transaction<'env, RO, E>
+where
+    E: EnvironmentKind,
+{
+    /// Closes the database handle.
+    ///
+    /// # Safety
+    /// Caller must close ALL other [Database] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
+    pub unsafe fn close_db(&self, db: Database<'_>) -> Result<()> {
+        mdbx_result(ffi::mdbx_dbi_close(self.env.env(), db.dbi()))?;
+
+        Ok(())
+    }
+}
+
 impl<'env> Transaction<'env, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
     pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
