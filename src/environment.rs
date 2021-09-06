@@ -8,8 +8,6 @@ use crate::{
 use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
 use mem::size_of;
-#[cfg(windows)]
-use std::ffi::OsStr;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::{
@@ -25,18 +23,6 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-
-#[cfg(windows)]
-/// Adding a 'missing' trait from windows OsStrExt
-trait OsStrExtLmdb {
-    fn as_bytes(&self) -> &[u8];
-}
-#[cfg(windows)]
-impl OsStrExtLmdb for OsStr {
-    fn as_bytes(&self) -> &[u8] {
-        &self.to_str().unwrap().as_bytes()
-    }
-}
 
 mod private {
     use super::*;
@@ -471,8 +457,6 @@ where
     }
 
     /// Open an environment with the provided UNIX permissions.
-    ///
-    /// On Windows, the permissions will be ignored.
     ///
     /// The path may not contain the null character, Windows UNC (Uniform Naming Convention)
     /// paths are not supported either.
