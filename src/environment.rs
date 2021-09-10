@@ -201,9 +201,9 @@ where
         let mut freelist: usize = 0;
         let txn = self.begin_ro_txn()?;
         let db = Database::freelist_db();
-        let mut cursor = txn.cursor(&db)?;
+        let cursor = txn.cursor(&db)?;
 
-        for result in cursor.iter() {
+        for result in cursor {
             let (_key, value) = result?;
             if value.len() < mem::size_of::<usize>() {
                 return Err(Error::Corrupted);

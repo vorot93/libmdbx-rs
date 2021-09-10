@@ -1,7 +1,10 @@
 //! Idiomatic and safe APIs for interacting with the
 //! [libmdbx](https://erthink.github.io/libmdbx/).
 
+#![allow(clippy::type_complexity)]
+
 pub use crate::{
+    codec::*,
     cursor::{Cursor, Iter, IterDup},
     database::Database,
     environment::{
@@ -13,13 +16,13 @@ pub use crate::{
     transaction::{Transaction, TransactionKind, RO, RW},
 };
 
+mod codec;
 mod cursor;
 mod database;
 mod environment;
 mod error;
 mod flags;
 mod transaction;
-mod util;
 
 #[cfg(test)]
 mod test_utils {
