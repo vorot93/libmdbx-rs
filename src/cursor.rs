@@ -4,8 +4,7 @@ use crate::{
     flags::*,
     mdbx_try_optional,
     transaction::{txn_execute, TransactionKind, RW},
-    util::freeze_bytes,
-    EnvironmentKind, Transaction,
+    EnvironmentKind, TableObject, Transaction,
 };
 use ffi::{
     MDBX_cursor_op, MDBX_FIRST, MDBX_FIRST_DUP, MDBX_GET_BOTH, MDBX_GET_BOTH_RANGE,
@@ -14,9 +13,8 @@ use ffi::{
     MDBX_PREV_NODUP, MDBX_SET, MDBX_SET_KEY, MDBX_SET_LOWERBOUND, MDBX_SET_RANGE,
 };
 use libc::{c_uint, c_void};
-use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
-use std::{fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
+use std::{borrow::Cow, fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
 
 /// A cursor for navigating the items within a database.
 pub struct Cursor<'txn, K>
@@ -79,12 +77,16 @@ where
 
     /// Retrieves a key/data pair from the cursor. Depending on the cursor op,
     /// the current key may be returned.
-    fn get(
+    fn get<Key, Value>(
         &self,
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<(Option<Bytes<'txn>>, Bytes<'txn>, bool)> {
+    ) -> Result<(Option<Key>, Value, bool)>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         unsafe {
             let mut key_val = slice_to_val(key);
             let mut data_val = slice_to_val(data);
@@ -101,144 +103,210 @@ where
                 let key_out = {
                     // MDBX wrote in new key
                     if key_ptr != key_val.iov_base {
-                        Some(freeze_bytes::<K>(txn, &key_val)?)
+                        Some(Key::decode_val::<K>(txn, &key_val)?)
                     } else {
                         None
                     }
                 };
-                let data_out = freeze_bytes::<K>(txn, &data_val)?;
+                let data_out = Value::decode_val::<K>(txn, &data_val)?;
                 Ok((key_out, data_out, v))
             })
         }
     }
 
-    fn get_value(
+    fn get_value<Value>(
         &mut self,
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<Option<Bytes<'txn>>> {
-        let (_, v, _) = mdbx_try_optional!(self.get(key, data, op));
+    ) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
+        let (_, v, _) = mdbx_try_optional!(self.get::<(), Value>(key, data, op));
 
         Ok(Some(v))
     }
 
-    fn get_full(
+    fn get_full<Key, Value>(
         &mut self,
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    ) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         let (k, v, _) = mdbx_try_optional!(self.get(key, data, op));
 
         Ok(Some((k.unwrap(), v)))
     }
 
     /// Position at first key/data item.
-    pub fn first(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn first<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_FIRST)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at first data item of current key.
-    pub fn first_dup(&mut self) -> Result<Option<Bytes<'txn>>> {
+    pub fn first_dup<Value>(&mut self) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
         self.get_value(None, None, MDBX_FIRST_DUP)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at key/data pair.
-    pub fn get_both(
-        &mut self,
-        k: impl AsRef<[u8]>,
-        v: impl AsRef<[u8]>,
-    ) -> Result<Option<Bytes<'txn>>> {
-        self.get_value(Some(k.as_ref()), Some(v.as_ref()), MDBX_GET_BOTH)
+    pub fn get_both<Value>(&mut self, k: &[u8], v: &[u8]) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
+        self.get_value(Some(k), Some(v), MDBX_GET_BOTH)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at given key and at first data greater than or equal to specified data.
-    pub fn get_both_range(
-        &mut self,
-        k: impl AsRef<[u8]>,
-        v: impl AsRef<[u8]>,
-    ) -> Result<Option<Bytes<'txn>>> {
-        self.get_value(Some(k.as_ref()), Some(v.as_ref()), MDBX_GET_BOTH_RANGE)
+    pub fn get_both_range<Value>(&mut self, k: &[u8], v: &[u8]) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
+        self.get_value(Some(k), Some(v), MDBX_GET_BOTH_RANGE)
     }
 
     /// Return key/data at current cursor position.
-    pub fn get_current(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn get_current<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_GET_CURRENT)
     }
 
     /// DupFixed-only: Return up to a page of duplicate data items from current cursor position.
     /// Move cursor to prepare for [Self::next_multiple()].
-    pub fn get_multiple(&mut self) -> Result<Option<Bytes<'txn>>> {
+    pub fn get_multiple<Value>(&mut self) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
         self.get_value(None, None, MDBX_GET_MULTIPLE)
     }
 
     /// Position at last key/data item.
-    pub fn last(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn last<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_LAST)
     }
 
     /// DupSort-only: Position at last data item of current key.
-    pub fn last_dup(&mut self) -> Result<Option<Bytes<'txn>>> {
+    pub fn last_dup<Value>(&mut self) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
         self.get_value(None, None, MDBX_LAST_DUP)
     }
 
     /// Position at next data item
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_NEXT)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at next data item of current key.
-    pub fn next_dup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next_dup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_NEXT_DUP)
     }
 
     /// [DatabaseFlags::DUP_FIXED]-only: Return up to a page of duplicate data items from next cursor position. Move cursor to prepare for MDBX_NEXT_MULTIPLE.
-    pub fn next_multiple(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next_multiple<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_NEXT_MULTIPLE)
     }
 
     /// Position at first data item of next key.
-    pub fn next_nodup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next_nodup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_NEXT_NODUP)
     }
 
     /// Position at previous data item.
-    pub fn prev(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_PREV)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at previous data item of current key.
-    pub fn prev_dup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev_dup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_PREV_DUP)
     }
 
     /// Position at last data item of previous key.
-    pub fn prev_nodup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev_nodup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_PREV_NODUP)
     }
 
     /// Position at specified key.
-    pub fn set(&mut self, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
-        self.get_value(Some(key.as_ref()), None, MDBX_SET)
+    pub fn set<Value>(&mut self, key: &[u8]) -> Result<Option<Value>>
+    where
+        Value: TableObject<'txn>,
+    {
+        self.get_value(Some(key), None, MDBX_SET)
     }
 
     /// Position at specified key, return both key and data.
-    pub fn set_key(&mut self, key: impl AsRef<[u8]>) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
-        self.get_full(Some(key.as_ref()), None, MDBX_SET_KEY)
+    pub fn set_key<Key, Value>(&mut self, key: &[u8]) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        self.get_full(Some(key), None, MDBX_SET_KEY)
     }
 
     /// Position at first key greater than or equal to specified key.
-    pub fn set_range(
-        &mut self,
-        key: impl AsRef<[u8]>,
-    ) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
-        self.get_full(Some(key.as_ref()), None, MDBX_SET_RANGE)
+    pub fn set_range<Key, Value>(&mut self, key: &[u8]) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        self.get_full(Some(key), None, MDBX_SET_RANGE)
     }
 
     /// [DatabaseFlags::DUP_FIXED]-only: Position at previous page and return up to a page of duplicate data items.
-    pub fn prev_multiple(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev_multiple<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         self.get_full(None, None, MDBX_PREV_MULTIPLE)
     }
 
@@ -248,12 +316,12 @@ where
     ///
     /// For DupSort-ed a data value is taken into account for duplicates, i.e. for a pairs/tuples of a key and an each data value of duplicates.
     /// Returns [false] if key-value pair found exactly and [true] if the next pair was returned.
-    pub fn set_lowerbound(
-        &mut self,
-        key: impl AsRef<[u8]>,
-    ) -> Result<Option<(bool, Bytes<'txn>, Bytes<'txn>)>> {
-        let (k, v, found) =
-            mdbx_try_optional!(self.get(Some(key.as_ref()), None, MDBX_SET_LOWERBOUND));
+    pub fn set_lowerbound<Key, Value>(&mut self, key: &[u8]) -> Result<Option<(bool, Key, Value)>>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        let (k, v, found) = mdbx_try_optional!(self.get(Some(key), None, MDBX_SET_LOWERBOUND));
 
         Ok(Some((found, k.unwrap(), v)))
     }
@@ -265,9 +333,11 @@ where
     /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    pub fn iter(&mut self) -> Iter<'txn, '_, K>
+    pub fn iter<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
     where
         Self: Sized,
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
     {
         Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT)
     }
@@ -277,9 +347,11 @@ where
     /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    pub fn iter_start(&mut self) -> Iter<'txn, '_, K>
+    pub fn iter_start<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
     where
         Self: Sized,
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
     {
         Iter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
     }
@@ -289,10 +361,14 @@ where
     /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    pub fn iter_from(&mut self, key: impl AsRef<[u8]>) -> Iter<'txn, '_, K> {
-        match self.set_range(key) {
-            Ok(_) => (),
-            Err(error) => return Iter::Err(error),
+    pub fn iter_from<Key, Value>(&mut self, key: &[u8]) -> Iter<'txn, '_, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        let res: Result<Option<((), ())>> = self.set_range(key);
+        if let Err(error) = res {
+            return Iter::Err(error);
         };
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
     }
@@ -300,32 +376,49 @@ where
     /// Iterate over duplicate database items. The iterator will begin with the
     /// item next after the cursor, and continue until the end of the database.
     /// Each item will be returned as an iterator of its duplicates.
-    pub fn iter_dup(&mut self) -> IterDup<'txn, '_, K> {
+    pub fn iter_dup<Key, Value>(&mut self) -> IterDup<'txn, '_, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         IterDup::new(self, ffi::MDBX_NEXT)
     }
 
     /// Iterate over duplicate database items starting from the beginning of the
     /// database. Each item will be returned as an iterator of its duplicates.
-    pub fn iter_dup_start(&mut self) -> IterDup<'txn, '_, K> {
+    pub fn iter_dup_start<Key, Value>(&mut self) -> IterDup<'txn, '_, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
         IterDup::new(self, ffi::MDBX_FIRST)
     }
 
     /// Iterate over duplicate items in the database starting from the given
     /// key. Each item will be returned as an iterator of its duplicates.
-    pub fn iter_dup_from(&mut self, key: impl AsRef<[u8]>) -> IterDup<'txn, '_, K> {
-        match self.set_range(key) {
-            Ok(_) => (),
-            Err(error) => return IterDup::Err(error),
+    pub fn iter_dup_from<Key, Value>(&mut self, key: &[u8]) -> IterDup<'txn, '_, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        let res: Result<Option<((), ())>> = self.set_range(key);
+        if let Err(error) = res {
+            return IterDup::Err(error);
         };
         IterDup::new(self, ffi::MDBX_GET_CURRENT)
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
-    pub fn iter_dup_of(&mut self, key: impl AsRef<[u8]>) -> Iter<'txn, '_, K> {
-        match self.set(key) {
+    pub fn iter_dup_of<Key, Value>(&mut self, key: &[u8]) -> Iter<'txn, '_, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        let res: Result<Option<()>> = self.set(key);
+        match res {
             Ok(Some(_)) => (),
             Ok(None) => {
-                self.last().ok();
+                let _: Result<Option<((), ())>> = self.last();
                 return Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT);
             }
             Err(error) => return Iter::Err(error),
@@ -337,14 +430,7 @@ where
 impl<'txn> Cursor<'txn, RW> {
     /// Puts a key/data pair into the database. The cursor will be positioned at
     /// the new data item, or on failure usually near it.
-    pub fn put(
-        &mut self,
-        key: impl AsRef<[u8]>,
-        data: impl AsRef<[u8]>,
-        flags: WriteFlags,
-    ) -> Result<()> {
-        let key = key.as_ref();
-        let data = data.as_ref();
+    pub fn put(&mut self, key: &[u8], data: &[u8], flags: WriteFlags) -> Result<()> {
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
             iov_base: key.as_ptr() as *mut c_void,
@@ -428,8 +514,8 @@ impl<'txn, K> IntoIterator for Cursor<'txn, K>
 where
     K: TransactionKind,
 {
-    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
-    type IntoIter = IntoIter<'txn, K>;
+    type Item = Result<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>;
+    type IntoIter = IntoIter<'txn, K, Cow<'txn, [u8]>, Cow<'txn, [u8]>>;
 
     fn into_iter(self) -> Self::IntoIter {
         IntoIter::new(self, MDBX_NEXT, MDBX_NEXT)
@@ -438,9 +524,11 @@ where
 
 /// An iterator over the key/value pairs in an MDBX database.
 #[derive(Debug)]
-pub enum IntoIter<'txn, K>
+pub enum IntoIter<'txn, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     /// An iterator that returns an error on every call to [Iter::next()].
     /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
@@ -463,13 +551,15 @@ where
         /// The next and subsequent operations to perform.
         next_op: ffi::MDBX_cursor_op,
 
-        _marker: PhantomData<fn(&'txn (), K)>,
+        _marker: PhantomData<fn(&'txn (), K, Key, Value)>,
     },
 }
 
-impl<'txn, K> IntoIter<'txn, K>
+impl<'txn, K, Key, Value> IntoIter<'txn, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     /// Creates a new iterator backed by the given cursor.
     fn new(cursor: Cursor<'txn, K>, op: ffi::MDBX_cursor_op, next_op: ffi::MDBX_cursor_op) -> Self {
@@ -482,11 +572,13 @@ where
     }
 }
 
-impl<'txn, K> Iterator for IntoIter<'txn, K>
+impl<'txn, K, Key, Value> Iterator for IntoIter<'txn, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
-    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
+    type Item = Result<(Key, Value)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -509,11 +601,11 @@ where
                     txn_execute(&*cursor.txn, |txn| {
                         match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
                             ffi::MDBX_SUCCESS => {
-                                let key = match freeze_bytes::<K>(txn, &key) {
+                                let key = match Key::decode_val::<K>(txn, &key) {
                                     Ok(v) => v,
                                     Err(e) => return Some(Err(e)),
                                 };
-                                let data = match freeze_bytes::<K>(txn, &data) {
+                                let data = match Value::decode_val::<K>(txn, &data) {
                                     Ok(v) => v,
                                     Err(e) => return Some(Err(e)),
                                 };
@@ -527,16 +619,18 @@ where
                     })
                 }
             }
-            Self::Err(err) => Some(Err(*err)),
+            Self::Err(err) => Some(Err(err.clone())),
         }
     }
 }
 
 /// An iterator over the key/value pairs in an MDBX database.
 #[derive(Debug)]
-pub enum Iter<'txn, 'cur, K>
+pub enum Iter<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     /// An iterator that returns an error on every call to [Iter::next()].
     /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
@@ -558,12 +652,16 @@ where
 
         /// The next and subsequent operations to perform.
         next_op: ffi::MDBX_cursor_op,
+
+        _marker: PhantomData<fn(&'txn (Key, Value))>,
     },
 }
 
-impl<'txn, 'cur, K> Iter<'txn, 'cur, K>
+impl<'txn, 'cur, K, Key, Value> Iter<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     /// Creates a new iterator backed by the given cursor.
     fn new(
@@ -575,15 +673,18 @@ where
             cursor,
             op,
             next_op,
+            _marker: PhantomData,
         }
     }
 }
 
-impl<'txn, 'cur, K> Iterator for Iter<'txn, 'cur, K>
+impl<'txn, 'cur, K, Key, Value> Iterator for Iter<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
-    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
+    type Item = Result<(Key, Value)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -591,6 +692,7 @@ where
                 cursor,
                 op,
                 next_op,
+                ..
             } => {
                 let mut key = ffi::MDBX_val {
                     iov_len: 0,
@@ -605,11 +707,11 @@ where
                     txn_execute(&*cursor.txn, |txn| {
                         match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
                             ffi::MDBX_SUCCESS => {
-                                let key = match freeze_bytes::<K>(txn, &key) {
+                                let key = match Key::decode_val::<K>(txn, &key) {
                                     Ok(v) => v,
                                     Err(e) => return Some(Err(e)),
                                 };
-                                let data = match freeze_bytes::<K>(txn, &data) {
+                                let data = match Value::decode_val::<K>(txn, &data) {
                                     Ok(v) => v,
                                     Err(e) => return Some(Err(e)),
                                 };
@@ -623,7 +725,7 @@ where
                     })
                 }
             }
-            &mut Iter::Err(err) => Some(Err(err)),
+            Iter::Err(err) => Some(Err(err.clone())),
         }
     }
 }
@@ -632,9 +734,11 @@ where
 ///
 /// The yielded items of the iterator are themselves iterators over the duplicate values for a
 /// specific key.
-pub enum IterDup<'txn, 'cur, K>
+pub enum IterDup<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     /// An iterator that returns an error on every call to Iter.next().
     /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
@@ -653,37 +757,49 @@ where
 
         /// The first operation to perform when the consumer calls Iter.next().
         op: c_uint,
+
+        _marker: PhantomData<fn(&'txn (Key, Value))>,
     },
 }
 
-impl<'txn, 'cur, K> IterDup<'txn, 'cur, K>
+impl<'txn, 'cur, K, Key, Value> IterDup<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     /// Creates a new iterator backed by the given cursor.
     fn new(cursor: &'cur mut Cursor<'txn, K>, op: c_uint) -> Self {
-        IterDup::Ok { cursor, op }
+        IterDup::Ok {
+            cursor,
+            op,
+            _marker: PhantomData,
+        }
     }
 }
 
-impl<'txn, 'cur, K> fmt::Debug for IterDup<'txn, 'cur, K>
+impl<'txn, 'cur, K, Key, Value> fmt::Debug for IterDup<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("IterDup").finish()
     }
 }
 
-impl<'txn, 'cur, K> Iterator for IterDup<'txn, 'cur, K>
+impl<'txn, 'cur, K, Key, Value> Iterator for IterDup<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
+    Key: TableObject<'txn>,
+    Value: TableObject<'txn>,
 {
-    type Item = IntoIter<'txn, K>;
+    type Item = IntoIter<'txn, K, Key, Value>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            IterDup::Ok { cursor, op } => {
+            IterDup::Ok { cursor, op, .. } => {
                 let mut key = ffi::MDBX_val {
                     iov_len: 0,
                     iov_base: ptr::null_mut(),
@@ -709,7 +825,7 @@ where
                     }
                 })
             }
-            IterDup::Err(err) => Some(IntoIter::Err(*err)),
+            IterDup::Err(err) => Some(IntoIter::Err(err.clone())),
         }
     }
 }
@@ -730,38 +846,23 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
 
-        assert_eq!(None, txn.cursor(&db).unwrap().first().unwrap());
+        assert_eq!(None, txn.cursor(&db).unwrap().first::<(), ()>().unwrap());
 
         txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
         txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
 
         let mut cursor = txn.cursor(&db).unwrap();
+        assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
+        assert_eq!(cursor.get_current().unwrap(), Some((*b"key1", *b"val1")));
+        assert_eq!(cursor.next().unwrap(), Some((*b"key2", *b"val2")));
+        assert_eq!(cursor.prev().unwrap(), Some((*b"key1", *b"val1")));
+        assert_eq!(cursor.last().unwrap(), Some((*b"key3", *b"val3")));
+        assert_eq!(cursor.set(b"key1").unwrap(), Some(*b"val1"));
+        assert_eq!(cursor.set_key(b"key3").unwrap(), Some((*b"key3", *b"val3")));
         assert_eq!(
-            cursor.first().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
-        );
-        assert_eq!(
-            cursor.get_current().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
-        );
-        assert_eq!(
-            cursor.next().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
-        );
-        assert_eq!(
-            cursor.prev().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
-        );
-        assert_eq!(
-            cursor.last().unwrap().unwrap(),
-            (b"key3".into(), b"val3".into())
-        );
-        assert_eq!(cursor.set(b"key1").unwrap().unwrap(), b"val1");
-        // assert_eq!((Some(b"key3".into()), b"val3".into()), cursor.get(Some(b"key3"), None, MDBX_SET_KEY).unwrap());
-        assert_eq!(
-            cursor.set_range(b"key2\0").unwrap().unwrap(),
-            (b"key3".into(), b"val3".into())
+            cursor.set_range(b"key2\0").unwrap(),
+            Some((*b"key3", *b"val3"))
         );
     }
 
@@ -780,47 +881,26 @@ mod test {
         txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
 
         let mut cursor = txn.cursor(&db).unwrap();
+        assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
+        assert_eq!(cursor.first_dup().unwrap(), Some(*b"val1"));
+        assert_eq!(cursor.get_current().unwrap(), Some((*b"key1", *b"val1")));
+        assert_eq!(cursor.next_nodup().unwrap(), Some((*b"key2", *b"val1")));
+        assert_eq!(cursor.next_dup().unwrap(), Some((*b"key2", *b"val2")));
+        assert_eq!(cursor.next_dup().unwrap(), Some((*b"key2", *b"val3")));
+        assert_eq!(cursor.next_dup::<(), ()>().unwrap(), None);
+        assert_eq!(cursor.prev_dup().unwrap(), Some((*b"key2", *b"val2")));
+        assert_eq!(cursor.last_dup().unwrap(), Some(*b"val3"));
+        assert_eq!(cursor.prev_nodup().unwrap(), Some((*b"key1", *b"val3")));
+        assert_eq!(cursor.set(b"key1").unwrap(), Some(*b"val1"));
+        assert_eq!(cursor.set(b"key2").unwrap(), Some(*b"val1"));
         assert_eq!(
-            cursor.first().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            cursor.set_range(b"key1\0").unwrap(),
+            Some((*b"key2", *b"val1"))
         );
-        assert_eq!(cursor.first_dup().unwrap().unwrap(), b"val1");
+        assert_eq!(cursor.get_both(b"key1", b"val3").unwrap(), Some(*b"val3"));
         assert_eq!(
-            cursor.get_current().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
-        );
-        assert_eq!(
-            cursor.next_nodup().unwrap().unwrap(),
-            (b"key2".into(), b"val1".into())
-        );
-        assert_eq!(
-            cursor.next_dup().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
-        );
-        assert_eq!(
-            cursor.next_dup().unwrap().unwrap(),
-            (b"key2".into(), b"val3".into())
-        );
-        assert_eq!(cursor.next_dup().unwrap(), None);
-        assert_eq!(
-            cursor.prev_dup().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
-        );
-        assert_eq!(cursor.last_dup().unwrap().unwrap(), b"val3");
-        assert_eq!(
-            cursor.prev_nodup().unwrap().unwrap(),
-            (b"key1".into(), b"val3".into())
-        );
-        assert_eq!(cursor.set(b"key1").unwrap().unwrap(), b"val1");
-        assert_eq!(cursor.set(b"key2").unwrap().unwrap(), b"val1");
-        assert_eq!(
-            cursor.set_range(b"key1\0").unwrap().unwrap(),
-            (b"key2".into(), b"val1".into())
-        );
-        assert_eq!(cursor.get_both(b"key1", b"val3").unwrap().unwrap(), b"val3");
-        assert_eq!(
-            cursor.get_both_range(b"key2", b"val").unwrap().unwrap(),
-            b"val1"
+            cursor.get_both_range(b"key2", b"val").unwrap(),
+            Some(*b"val1")
         );
     }
 
@@ -841,12 +921,9 @@ mod test {
         txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
 
         let mut cursor = txn.cursor(&db).unwrap();
-        assert_eq!(
-            cursor.first().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
-        );
-        assert_eq!(cursor.get_multiple().unwrap().unwrap(), b"val1val2val3");
-        assert_eq!(cursor.next_multiple().unwrap(), None);
+        assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
+        assert_eq!(cursor.get_multiple().unwrap(), Some(*b"val1val2val3"));
+        assert_eq!(cursor.next_multiple::<(), ()>().unwrap(), None);
     }
 
     #[test]
@@ -854,11 +931,11 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let items: Vec<(Bytes, Bytes)> = vec![
-            (b"key1".into(), b"val1".into()),
-            (b"key2".into(), b"val2".into()),
-            (b"key3".into(), b"val3".into()),
-            (b"key5".into(), b"val5".into()),
+        let items: Vec<(_, _)> = vec![
+            (*b"key1", *b"val1"),
+            (*b"key2", *b"val2"),
+            (*b"key3", *b"val3"),
+            (*b"key5", *b"val5"),
         ];
 
         {
@@ -883,7 +960,7 @@ mod test {
         let retr: Result<Vec<_>> = cursor.iter_start().collect();
         assert_eq!(items, retr.unwrap());
 
-        cursor.set(b"key2").unwrap();
+        cursor.set::<()>(b"key2").unwrap();
         assert_eq!(
             items.clone().into_iter().skip(2).collect::<Vec<_>>(),
             cursor.iter().collect::<Result<Vec<_>>>().unwrap()
@@ -903,7 +980,7 @@ mod test {
         );
 
         assert_eq!(
-            items.clone().into_iter().skip(3).collect::<Vec<_>>(),
+            items.into_iter().skip(3).collect::<Vec<_>>(),
             cursor
                 .iter_from(b"key4")
                 .collect::<Result<Vec<_>>>()
@@ -911,7 +988,7 @@ mod test {
         );
 
         assert_eq!(
-            vec!().into_iter().collect::<Vec<(Bytes, Bytes)>>(),
+            Vec::<((), ())>::new(),
             cursor
                 .iter_from(b"key6")
                 .collect::<Result<Vec<_>>>()
@@ -927,9 +1004,9 @@ mod test {
         let db = txn.open_db(None).unwrap();
         let mut cursor = txn.cursor(&db).unwrap();
 
-        assert_eq!(None, cursor.iter().next());
-        assert_eq!(None, cursor.iter_start().next());
-        assert_eq!(None, cursor.iter_from(b"foo").next());
+        assert!(cursor.iter::<(), ()>().next().is_none());
+        assert!(cursor.iter_start::<(), ()>().next().is_none());
+        assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
     }
 
     #[test]
@@ -945,14 +1022,18 @@ mod test {
         let db = txn.open_db(None).unwrap();
         let mut cursor = txn.cursor(&db).unwrap();
 
-        assert_eq!(None, cursor.iter().next());
-        assert_eq!(None, cursor.iter_start().next());
-        assert_eq!(None, cursor.iter_from(b"foo").next());
-        assert_eq!(None, cursor.iter_from(b"foo").next());
-        assert_eq!(None, cursor.iter_dup().flatten().next());
-        assert_eq!(None, cursor.iter_dup_start().flatten().next());
-        assert_eq!(None, cursor.iter_dup_from(b"foo").flatten().next());
-        assert_eq!(None, cursor.iter_dup_of(b"foo").next());
+        assert!(cursor.iter::<(), ()>().next().is_none());
+        assert!(cursor.iter_start::<(), ()>().next().is_none());
+        assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
+        assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
+        assert!(cursor.iter_dup::<(), ()>().flatten().next().is_none());
+        assert!(cursor.iter_dup_start::<(), ()>().flatten().next().is_none());
+        assert!(cursor
+            .iter_dup_from::<(), ()>(b"foo")
+            .flatten()
+            .next()
+            .is_none());
+        assert!(cursor.iter_dup_of::<(), ()>(b"foo").next().is_none());
     }
 
     #[test]
@@ -964,20 +1045,23 @@ mod test {
         txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
-        let items: Vec<(Bytes, Bytes)> = vec![
-            (b"a".into(), b"1".into()),
-            (b"a".into(), b"2".into()),
-            (b"a".into(), b"3".into()),
-            (b"b".into(), b"1".into()),
-            (b"b".into(), b"2".into()),
-            (b"b".into(), b"3".into()),
-            (b"c".into(), b"1".into()),
-            (b"c".into(), b"2".into()),
-            (b"c".into(), b"3".into()),
-            (b"e".into(), b"1".into()),
-            (b"e".into(), b"2".into()),
-            (b"e".into(), b"3".into()),
-        ];
+        let items: Vec<(_, _)> = [
+            (b"a", b"1"),
+            (b"a", b"2"),
+            (b"a", b"3"),
+            (b"b", b"1"),
+            (b"b", b"2"),
+            (b"b", b"3"),
+            (b"c", b"1"),
+            (b"c", b"2"),
+            (b"c", b"3"),
+            (b"e", b"1"),
+            (b"e", b"2"),
+            (b"e", b"3"),
+        ]
+        .iter()
+        .map(|&(&k, &v)| (k, v))
+        .collect();
 
         {
             let txn = env.begin_rw_txn().unwrap();
@@ -1000,13 +1084,9 @@ mod test {
                 .unwrap()
         );
 
-        cursor.set(b"b").unwrap();
+        cursor.set::<()>(b"b").unwrap();
         assert_eq!(
-            items
-                .clone()
-                .into_iter()
-                .skip(4)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+            items.iter().copied().skip(4).collect::<Vec<_>>(),
             cursor
                 .iter_dup()
                 .flatten()
@@ -1019,16 +1099,17 @@ mod test {
             cursor
                 .iter_dup_start()
                 .flatten()
-                .collect::<Result<Vec<(Bytes, Bytes)>>>()
+                .collect::<Result<Vec<_>>>()
                 .unwrap()
         );
 
         assert_eq!(
             items
-                .clone()
+                .iter()
+                .copied()
                 .into_iter()
                 .skip(3)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<_>>(),
             cursor
                 .iter_dup_from(b"b")
                 .flatten()
@@ -1038,10 +1119,11 @@ mod test {
 
         assert_eq!(
             items
-                .clone()
+                .iter()
+                .copied()
                 .into_iter()
                 .skip(3)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<_>>(),
             cursor
                 .iter_dup_from(b"ab")
                 .flatten()
@@ -1051,10 +1133,11 @@ mod test {
 
         assert_eq!(
             items
-                .clone()
+                .iter()
+                .copied()
                 .into_iter()
                 .skip(9)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<_>>(),
             cursor
                 .iter_dup_from(b"d")
                 .flatten()
@@ -1063,7 +1146,7 @@ mod test {
         );
 
         assert_eq!(
-            vec!().into_iter().collect::<Vec<(Bytes, Bytes)>>(),
+            Vec::<([u8; 1], [u8; 1])>::new(),
             cursor
                 .iter_dup_from(b"f")
                 .flatten()
@@ -1072,19 +1155,14 @@ mod test {
         );
 
         assert_eq!(
-            items
-                .clone()
-                .into_iter()
-                .skip(3)
-                .take(3)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+            items.iter().copied().skip(3).take(3).collect::<Vec<_>>(),
             cursor
                 .iter_dup_of(b"b")
                 .collect::<Result<Vec<_>>>()
                 .unwrap()
         );
 
-        assert_eq!(0, cursor.iter_dup_of(b"foo").count());
+        assert_eq!(0, cursor.iter_dup_of::<(), ()>(b"foo").count());
     }
 
     #[test]
@@ -1092,19 +1170,18 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let items: Vec<(Bytes, Bytes)> =
-            vec![(b"a".into(), b"1".into()), (b"b".into(), b"2".into())];
-        let r: Vec<(_, _)> = Vec::new();
+        let items = vec![(*b"a", *b"1"), (*b"b", *b"2")];
         {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
             assert_eq!(
-                r,
                 txn.cursor(&db)
                     .unwrap()
-                    .iter_dup_of(b"a")
+                    .iter_dup_of::<(), ()>(b"a")
                     .collect::<Result<Vec<_>>>()
                     .unwrap()
+                    .len(),
+                0
             );
             txn.commit().unwrap();
         }
@@ -1131,27 +1208,24 @@ mod test {
         );
 
         assert_eq!(
-            items
-                .clone()
-                .into_iter()
-                .take(1)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+            items.iter().copied().take(1).collect::<Vec<(_, _)>>(),
             cursor
                 .iter_dup_of(b"a")
                 .collect::<Result<Vec<_>>>()
                 .unwrap()
         );
 
-        assert_eq!(cursor.set(b"a").unwrap().unwrap(), b"1");
+        assert_eq!(cursor.set(b"a").unwrap(), Some(*b"1"));
 
         cursor.del(WriteFlags::empty()).unwrap();
 
         assert_eq!(
-            r,
             cursor
-                .iter_dup_of(b"a")
+                .iter_dup_of::<(), ()>(b"a")
                 .collect::<Result<Vec<_>>>()
                 .unwrap()
+                .len(),
+            0
         );
     }
 
@@ -1170,13 +1244,19 @@ mod test {
 
         assert_eq!(
             cursor.get_current().unwrap().unwrap(),
-            (b"key3".into(), b"val3".into())
+            (
+                Cow::Borrowed(b"key3" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            )
         );
 
         cursor.del(WriteFlags::empty()).unwrap();
         assert_eq!(
             cursor.last().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val2" as &[u8])
+            )
         );
     }
 }

@@ -3,7 +3,7 @@ mod utils;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ffi::*;
 use libc::size_t;
-use mdbx::WriteFlags;
+use mdbx::{ObjectLength, WriteFlags};
 use rand::{prelude::SliceRandom, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::ptr;
@@ -22,7 +22,10 @@ fn bench_get_rand(c: &mut Criterion) {
         b.iter(|| {
             let mut i = 0usize;
             for key in &keys {
-                i += txn.get(&db, key).unwrap().unwrap().len();
+                i += *txn
+                    .get::<ObjectLength>(&db, key.as_bytes())
+                    .unwrap()
+                    .unwrap();
             }
             black_box(i);
         })

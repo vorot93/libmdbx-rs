@@ -26,10 +26,12 @@ members = ["mdbx-sys"]
 [dependencies]
 bitflags = "1"
 byteorder = "1"
+derive_more = "0.99"
 indexmap = "1"
 libc = "0.2"
 lifetimed-bytes = { git = "https://github.com/vorot93/lifetimed-bytes" }
 parking_lot = "0.11"
+thiserror = "1"
 
 ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 

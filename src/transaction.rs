@@ -3,13 +3,11 @@ use crate::{
     environment::{Environment, EnvironmentKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
     flags::{DatabaseFlags, WriteFlags},
-    util::freeze_bytes,
-    Cursor, Error, Stat,
+    Cursor, Error, Stat, TableObject,
 };
 use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
 use libc::{c_uint, c_void};
-use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
 use std::{
     fmt,
@@ -125,12 +123,10 @@ where
     /// returned. Retrieval of other items requires the use of
     /// [Cursor]. If the item is not in the database, then
     /// [None] will be returned.
-    pub fn get<'txn>(
-        &'txn self,
-        db: &Database<'txn>,
-        key: impl AsRef<[u8]>,
-    ) -> Result<Option<Bytes<'txn>>> {
-        let key = key.as_ref();
+    pub fn get<'txn, Key>(&'txn self, db: &Database<'txn>, key: &[u8]) -> Result<Option<Key>>
+    where
+        Key: TableObject<'txn>,
+    {
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
             iov_base: key.as_ptr() as *mut c_void,
@@ -142,7 +138,7 @@ where
 
         txn_execute(&self.txn, |txn| unsafe {
             match ffi::mdbx_get(txn, db.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => freeze_bytes::<K>(txn, &data_val).map(Some),
+                ffi::MDBX_SUCCESS => Key::decode_val::<K>(txn, &data_val).map(Some),
                 ffi::MDBX_NOTFOUND => Ok(None),
                 err_code => Err(Error::from_err_code(err_code)),
             }
@@ -493,8 +489,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{error::*, flags::*, NoWriteMap};
-    use lifetimed_bytes::Bytes;
     use std::{
+        borrow::Cow,
         io::Write,
         sync::{Arc, Barrier},
         thread::{self, JoinHandle},
@@ -517,13 +513,13 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        assert_eq!(b"val1", &*txn.get(&db, b"key1").unwrap().unwrap());
-        assert_eq!(b"val2", &*txn.get(&db, b"key2").unwrap().unwrap());
-        assert_eq!(b"val3", &*txn.get(&db, b"key3").unwrap().unwrap());
-        assert_eq!(txn.get(&db, b"key").unwrap(), None);
+        assert_eq!(txn.get(&db, b"key1").unwrap(), Some(*b"val1"));
+        assert_eq!(txn.get(&db, b"key2").unwrap(), Some(*b"val2"));
+        assert_eq!(txn.get(&db, b"key3").unwrap(), Some(*b"val3"));
+        assert_eq!(txn.get::<()>(&db, b"key").unwrap(), None);
 
         txn.del(&db, b"key1", None).unwrap();
-        assert_eq!(txn.get(&db, b"key1").unwrap(), None);
+        assert_eq!(txn.get::<()>(&db, b"key1").unwrap(), None);
     }
 
     #[test]
@@ -548,12 +544,9 @@ mod test {
         let db = txn.open_db(None).unwrap();
         {
             let mut cur = txn.cursor(&db).unwrap();
-            let iter = cur.iter_dup_of(b"key1");
+            let iter = cur.iter_dup_of::<(), [u8; 4]>(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
-            assert_eq!(
-                vals,
-                vec![b"val1".into(), b"val2".into(), b"val3".into()] as Vec<Bytes>
-            );
+            assert_eq!(vals, vec![*b"val1", *b"val2", *b"val3"]);
         }
         txn.commit().unwrap();
 
@@ -567,11 +560,11 @@ mod test {
         let db = txn.open_db(None).unwrap();
         {
             let mut cur = txn.cursor(&db).unwrap();
-            let iter = cur.iter_dup_of(b"key1");
+            let iter = cur.iter_dup_of::<(), [u8; 4]>(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
-            assert_eq!(vals, vec![b"val1".into(), b"val3".into()] as Vec<Bytes>);
+            assert_eq!(vals, vec![*b"val1", *b"val3"]);
 
-            let iter = cur.iter_dup_of(b"key2");
+            let iter = cur.iter_dup_of::<(), ()>(b"key2");
             assert_eq!(0, iter.count());
         }
         txn.commit().unwrap();
@@ -592,14 +585,11 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        assert_eq!(
-            Bytes::from(b"val1"),
-            txn.get(&db, b"key1").unwrap().unwrap()
-        );
-        assert_eq!(txn.get(&db, b"key").unwrap(), None);
+        assert_eq!(txn.get(&db, b"key1").unwrap(), Some(*b"val1"));
+        assert_eq!(txn.get::<()>(&db, b"key").unwrap(), None);
 
         txn.del(&db, b"key1", None).unwrap();
-        assert_eq!(txn.get(&db, b"key1").unwrap(), None);
+        assert_eq!(txn.get::<()>(&db, b"key1").unwrap(), None);
     }
 
     #[test]
@@ -622,22 +612,13 @@ mod test {
             nested
                 .put(&db, b"key2", b"val2", WriteFlags::empty())
                 .unwrap();
-            assert_eq!(
-                nested.get(&db, b"key1").unwrap().unwrap(),
-                Bytes::from(b"val1")
-            );
-            assert_eq!(
-                nested.get(&db, b"key2").unwrap().unwrap(),
-                Bytes::from(b"val2")
-            );
+            assert_eq!(nested.get(&db, b"key1").unwrap(), Some(*b"val1"));
+            assert_eq!(nested.get(&db, b"key2").unwrap(), Some(*b"val2"));
         }
 
         let db = txn.open_db(None).unwrap();
-        assert_eq!(
-            txn.get(&db, b"key1").unwrap().unwrap(),
-            Bytes::from(b"val1")
-        );
-        assert_eq!(txn.get(&db, b"key2").unwrap(), None);
+        assert_eq!(txn.get(&db, b"key1").unwrap(), Some(*b"val1"));
+        assert_eq!(txn.get::<()>(&db, b"key2").unwrap(), None);
     }
 
     #[test]
@@ -664,7 +645,10 @@ mod test {
         }
 
         let txn = env.begin_ro_txn().unwrap();
-        assert_eq!(txn.get(&txn.open_db(None).unwrap(), b"key").unwrap(), None);
+        assert_eq!(
+            txn.get::<()>(&txn.open_db(None).unwrap(), b"key").unwrap(),
+            None
+        );
     }
 
     #[test]
@@ -693,7 +677,10 @@ mod test {
                 unsafe {
                     txn.drop_db(db).unwrap();
                 }
-                assert_eq!(txn.open_db(Some("test")).unwrap_err(), Error::NotFound);
+                assert!(matches!(
+                    txn.open_db(Some("test")).unwrap_err(),
+                    Error::NotFound
+                ));
                 assert!(!txn.commit().unwrap());
             }
         }
@@ -702,7 +689,10 @@ mod test {
 
         let txn = env.begin_ro_txn().unwrap();
         txn.open_db(Some("canary")).unwrap();
-        assert_eq!(txn.open_db(Some("test")).unwrap_err(), Error::NotFound);
+        assert!(matches!(
+            txn.open_db(Some("test")).unwrap_err(),
+            Error::NotFound
+        ));
     }
 
     #[test]
@@ -725,14 +715,14 @@ mod test {
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    assert_eq!(txn.get(&db, key), Ok(None));
+                    assert_eq!(txn.get::<()>(&db, key).unwrap(), None);
                 }
                 reader_barrier.wait();
                 reader_barrier.wait();
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    txn.get(&db, key).unwrap().unwrap() == val
+                    txn.get::<[u8; 3]>(&db, key).unwrap().unwrap() == *val
                 }
             }));
         }
@@ -784,8 +774,10 @@ mod test {
 
         for i in 0..n {
             assert_eq!(
-                format!("{}{}", val, i).as_bytes(),
-                txn.get(&db, &format!("{}{}", key, i)).unwrap().unwrap()
+                Cow::<Vec<u8>>::Owned(format!("{}{}", val, i).into_bytes()),
+                txn.get(&db, format!("{}{}", key, i).as_bytes())
+                    .unwrap()
+                    .unwrap()
             );
         }
     }

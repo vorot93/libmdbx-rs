@@ -2,7 +2,7 @@ mod utils;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ffi::*;
-use mdbx::{Cursor, Result, TransactionKind};
+use mdbx::*;
 use std::ptr;
 use utils::*;
 
@@ -19,20 +19,26 @@ fn bench_get_seq_iter(c: &mut Criterion) {
             let mut i = 0;
             let mut count = 0u32;
 
-            for (key, data) in cursor.iter().map(Result::unwrap) {
-                i = i + key.len() + data.len();
+            for (key_len, data_len) in cursor
+                .iter::<ObjectLength, ObjectLength>()
+                .map(Result::unwrap)
+            {
+                i = i + *key_len + *data_len;
                 count += 1;
             }
-            for (key, data) in cursor.iter().filter_map(Result::ok) {
-                i = i + key.len() + data.len();
+            for (key_len, data_len) in cursor
+                .iter::<ObjectLength, ObjectLength>()
+                .filter_map(Result::ok)
+            {
+                i = i + *key_len + *data_len;
                 count += 1;
             }
 
             fn iterate<K: TransactionKind>(cursor: &mut Cursor<'_, K>) -> Result<()> {
                 let mut i = 0;
-                for result in cursor.iter() {
-                    let (key, data) = result?;
-                    i = i + key.len() + data.len();
+                for result in cursor.iter::<ObjectLength, ObjectLength>() {
+                    let (key_len, data_len) = result?;
+                    i = i + *key_len + *data_len;
                 }
                 Ok(())
             }
@@ -56,10 +62,10 @@ fn bench_get_seq_cursor(c: &mut Criterion) {
             let (i, count) = txn
                 .cursor(&db)
                 .unwrap()
-                .into_iter()
+                .iter::<ObjectLength, ObjectLength>()
                 .map(Result::unwrap)
                 .fold((0, 0), |(i, count), (key, val)| {
-                    (i + key.len() + val.len(), count + 1)
+                    (i + *key + *val, count + 1)
                 });
 
             black_box(i);
