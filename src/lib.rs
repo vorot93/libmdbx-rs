@@ -1,6 +1,8 @@
 //! Idiomatic and safe APIs for interacting with the
 //! [libmdbx](https://erthink.github.io/libmdbx/).
 
+#![allow(clippy::type_complexity)]
+
 pub use crate::{
     cursor::{Cursor, Iter, IterDup},
     database::Database,

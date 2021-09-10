@@ -9,9 +9,9 @@ use crate::{
 use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
 use libc::{c_uint, c_void};
-use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
 use std::{
+    borrow::Cow,
     fmt,
     fmt::Debug,
     marker::PhantomData,
@@ -129,7 +129,7 @@ where
         &'txn self,
         db: &Database<'txn>,
         key: impl AsRef<[u8]>,
-    ) -> Result<Option<Bytes<'txn>>> {
+    ) -> Result<Option<Cow<'txn, [u8]>>> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -493,8 +493,8 @@ where
 #[cfg(test)]
 mod test {
     use crate::{error::*, flags::*, NoWriteMap};
-    use lifetimed_bytes::Bytes;
     use std::{
+        borrow::Cow,
         io::Write,
         sync::{Arc, Barrier},
         thread::{self, JoinHandle},
@@ -552,7 +552,11 @@ mod test {
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
             assert_eq!(
                 vals,
-                vec![b"val1".into(), b"val2".into(), b"val3".into()] as Vec<Bytes>
+                vec![
+                    Cow::Borrowed(b"val1" as &[u8]),
+                    Cow::Borrowed(b"val2" as &[u8]),
+                    Cow::Borrowed(b"val3" as &[u8])
+                ] as Vec<Cow<_>>
             );
         }
         txn.commit().unwrap();
@@ -569,7 +573,13 @@ mod test {
             let mut cur = txn.cursor(&db).unwrap();
             let iter = cur.iter_dup_of(b"key1");
             let vals = iter.map(|x| x.unwrap()).map(|(_, x)| x).collect::<Vec<_>>();
-            assert_eq!(vals, vec![b"val1".into(), b"val3".into()] as Vec<Bytes>);
+            assert_eq!(
+                vals,
+                vec![
+                    Cow::Borrowed(b"val1" as &[u8]),
+                    Cow::Borrowed(b"val3" as &[u8])
+                ]
+            );
 
             let iter = cur.iter_dup_of(b"key2");
             assert_eq!(0, iter.count());
@@ -593,7 +603,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         assert_eq!(
-            Bytes::from(b"val1"),
+            Cow::Borrowed(b"val1" as &[u8]),
             txn.get(&db, b"key1").unwrap().unwrap()
         );
         assert_eq!(txn.get(&db, b"key").unwrap(), None);
@@ -624,18 +634,18 @@ mod test {
                 .unwrap();
             assert_eq!(
                 nested.get(&db, b"key1").unwrap().unwrap(),
-                Bytes::from(b"val1")
+                Cow::Borrowed(b"val1" as &[u8])
             );
             assert_eq!(
                 nested.get(&db, b"key2").unwrap().unwrap(),
-                Bytes::from(b"val2")
+                Cow::Borrowed(b"val2" as &[u8])
             );
         }
 
         let db = txn.open_db(None).unwrap();
         assert_eq!(
             txn.get(&db, b"key1").unwrap().unwrap(),
-            Bytes::from(b"val1")
+            Cow::Borrowed(b"val1" as &[u8])
         );
         assert_eq!(txn.get(&db, b"key2").unwrap(), None);
     }
@@ -732,7 +742,7 @@ mod test {
                 {
                     let txn = reader_env.begin_ro_txn().unwrap();
                     let db = txn.open_db(None).unwrap();
-                    txn.get(&db, key).unwrap().unwrap() == val
+                    txn.get(&db, key).unwrap().unwrap() == Cow::Borrowed(val as &[u8])
                 }
             }));
         }
@@ -784,7 +794,7 @@ mod test {
 
         for i in 0..n {
             assert_eq!(
-                format!("{}{}", val, i).as_bytes(),
+                Cow::<Vec<u8>>::Owned(format!("{}{}", val, i).into_bytes()),
                 txn.get(&db, &format!("{}{}", key, i)).unwrap().unwrap()
             );
         }

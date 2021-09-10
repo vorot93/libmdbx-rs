@@ -14,9 +14,8 @@ use ffi::{
     MDBX_PREV_NODUP, MDBX_SET, MDBX_SET_KEY, MDBX_SET_LOWERBOUND, MDBX_SET_RANGE,
 };
 use libc::{c_uint, c_void};
-use lifetimed_bytes::Bytes;
 use parking_lot::Mutex;
-use std::{fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
+use std::{borrow::Cow, fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
 
 /// A cursor for navigating the items within a database.
 pub struct Cursor<'txn, K>
@@ -84,7 +83,7 @@ where
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<(Option<Bytes<'txn>>, Bytes<'txn>, bool)> {
+    ) -> Result<(Option<Cow<'txn, [u8]>>, Cow<'txn, [u8]>, bool)> {
         unsafe {
             let mut key_val = slice_to_val(key);
             let mut data_val = slice_to_val(data);
@@ -117,7 +116,7 @@ where
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<Option<Bytes<'txn>>> {
+    ) -> Result<Option<Cow<'txn, [u8]>>> {
         let (_, v, _) = mdbx_try_optional!(self.get(key, data, op));
 
         Ok(Some(v))
@@ -128,19 +127,19 @@ where
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    ) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         let (k, v, _) = mdbx_try_optional!(self.get(key, data, op));
 
         Ok(Some((k.unwrap(), v)))
     }
 
     /// Position at first key/data item.
-    pub fn first(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn first(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_FIRST)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at first data item of current key.
-    pub fn first_dup(&mut self) -> Result<Option<Bytes<'txn>>> {
+    pub fn first_dup(&mut self) -> Result<Option<Cow<'txn, [u8]>>> {
         self.get_value(None, None, MDBX_FIRST_DUP)
     }
 
@@ -149,7 +148,7 @@ where
         &mut self,
         k: impl AsRef<[u8]>,
         v: impl AsRef<[u8]>,
-    ) -> Result<Option<Bytes<'txn>>> {
+    ) -> Result<Option<Cow<'txn, [u8]>>> {
         self.get_value(Some(k.as_ref()), Some(v.as_ref()), MDBX_GET_BOTH)
     }
 
@@ -158,74 +157,77 @@ where
         &mut self,
         k: impl AsRef<[u8]>,
         v: impl AsRef<[u8]>,
-    ) -> Result<Option<Bytes<'txn>>> {
+    ) -> Result<Option<Cow<'txn, [u8]>>> {
         self.get_value(Some(k.as_ref()), Some(v.as_ref()), MDBX_GET_BOTH_RANGE)
     }
 
     /// Return key/data at current cursor position.
-    pub fn get_current(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn get_current(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_GET_CURRENT)
     }
 
     /// DupFixed-only: Return up to a page of duplicate data items from current cursor position.
     /// Move cursor to prepare for [Self::next_multiple()].
-    pub fn get_multiple(&mut self) -> Result<Option<Bytes<'txn>>> {
+    pub fn get_multiple(&mut self) -> Result<Option<Cow<'txn, [u8]>>> {
         self.get_value(None, None, MDBX_GET_MULTIPLE)
     }
 
     /// Position at last key/data item.
-    pub fn last(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn last(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_LAST)
     }
 
     /// DupSort-only: Position at last data item of current key.
-    pub fn last_dup(&mut self) -> Result<Option<Bytes<'txn>>> {
+    pub fn last_dup(&mut self) -> Result<Option<Cow<'txn, [u8]>>> {
         self.get_value(None, None, MDBX_LAST_DUP)
     }
 
     /// Position at next data item
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_NEXT)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at next data item of current key.
-    pub fn next_dup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next_dup(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_NEXT_DUP)
     }
 
     /// [DatabaseFlags::DUP_FIXED]-only: Return up to a page of duplicate data items from next cursor position. Move cursor to prepare for MDBX_NEXT_MULTIPLE.
-    pub fn next_multiple(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next_multiple(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_NEXT_MULTIPLE)
     }
 
     /// Position at first data item of next key.
-    pub fn next_nodup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn next_nodup(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_NEXT_NODUP)
     }
 
     /// Position at previous data item.
-    pub fn prev(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_PREV)
     }
 
     /// [DatabaseFlags::DUP_SORT]-only: Position at previous data item of current key.
-    pub fn prev_dup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev_dup(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_PREV_DUP)
     }
 
     /// Position at last data item of previous key.
-    pub fn prev_nodup(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev_nodup(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_PREV_NODUP)
     }
 
     /// Position at specified key.
-    pub fn set(&mut self, key: impl AsRef<[u8]>) -> Result<Option<Bytes<'txn>>> {
+    pub fn set(&mut self, key: impl AsRef<[u8]>) -> Result<Option<Cow<'txn, [u8]>>> {
         self.get_value(Some(key.as_ref()), None, MDBX_SET)
     }
 
     /// Position at specified key, return both key and data.
-    pub fn set_key(&mut self, key: impl AsRef<[u8]>) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn set_key(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(Some(key.as_ref()), None, MDBX_SET_KEY)
     }
 
@@ -233,12 +235,12 @@ where
     pub fn set_range(
         &mut self,
         key: impl AsRef<[u8]>,
-    ) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    ) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(Some(key.as_ref()), None, MDBX_SET_RANGE)
     }
 
     /// [DatabaseFlags::DUP_FIXED]-only: Position at previous page and return up to a page of duplicate data items.
-    pub fn prev_multiple(&mut self) -> Result<Option<(Bytes<'txn>, Bytes<'txn>)>> {
+    pub fn prev_multiple(&mut self) -> Result<Option<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         self.get_full(None, None, MDBX_PREV_MULTIPLE)
     }
 
@@ -251,7 +253,7 @@ where
     pub fn set_lowerbound(
         &mut self,
         key: impl AsRef<[u8]>,
-    ) -> Result<Option<(bool, Bytes<'txn>, Bytes<'txn>)>> {
+    ) -> Result<Option<(bool, Cow<'txn, [u8]>, Cow<'txn, [u8]>)>> {
         let (k, v, found) =
             mdbx_try_optional!(self.get(Some(key.as_ref()), None, MDBX_SET_LOWERBOUND));
 
@@ -428,7 +430,7 @@ impl<'txn, K> IntoIterator for Cursor<'txn, K>
 where
     K: TransactionKind,
 {
-    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
+    type Item = Result<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>;
     type IntoIter = IntoIter<'txn, K>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -486,7 +488,7 @@ impl<'txn, K> Iterator for IntoIter<'txn, K>
 where
     K: TransactionKind,
 {
-    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
+    type Item = Result<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -583,7 +585,7 @@ impl<'txn, 'cur, K> Iterator for Iter<'txn, 'cur, K>
 where
     K: TransactionKind,
 {
-    type Item = Result<(Bytes<'txn>, Bytes<'txn>)>;
+    type Item = Result<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -739,29 +741,56 @@ mod test {
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(
             cursor.first().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
         assert_eq!(
             cursor.get_current().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
         assert_eq!(
             cursor.next().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val2" as &[u8])
+            )
         );
         assert_eq!(
             cursor.prev().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
         assert_eq!(
             cursor.last().unwrap().unwrap(),
-            (b"key3".into(), b"val3".into())
+            (
+                Cow::Borrowed(b"key3" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            )
         );
-        assert_eq!(cursor.set(b"key1").unwrap().unwrap(), b"val1");
-        // assert_eq!((Some(b"key3".into()), b"val3".into()), cursor.get(Some(b"key3"), None, MDBX_SET_KEY).unwrap());
+        assert_eq!(
+            cursor.set(b"key1").unwrap().unwrap(),
+            Cow::Borrowed(b"val1" as &[u8])
+        );
+        assert_eq!(
+            (
+                Cow::Borrowed(b"key3" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            ),
+            cursor.set_key(b"key3").unwrap().unwrap()
+        );
         assert_eq!(
             cursor.set_range(b"key2\0").unwrap().unwrap(),
-            (b"key3".into(), b"val3".into())
+            (
+                Cow::Borrowed(b"key3" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            )
         );
     }
 
@@ -782,45 +811,84 @@ mod test {
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(
             cursor.first().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
-        assert_eq!(cursor.first_dup().unwrap().unwrap(), b"val1");
+        assert_eq!(
+            cursor.first_dup().unwrap().unwrap(),
+            Cow::Borrowed(b"val1" as &[u8])
+        );
         assert_eq!(
             cursor.get_current().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
         assert_eq!(
             cursor.next_nodup().unwrap().unwrap(),
-            (b"key2".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
         assert_eq!(
             cursor.next_dup().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val2" as &[u8])
+            )
         );
         assert_eq!(
             cursor.next_dup().unwrap().unwrap(),
-            (b"key2".into(), b"val3".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            )
         );
         assert_eq!(cursor.next_dup().unwrap(), None);
         assert_eq!(
             cursor.prev_dup().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val2" as &[u8])
+            )
         );
-        assert_eq!(cursor.last_dup().unwrap().unwrap(), b"val3");
+        assert_eq!(
+            cursor.last_dup().unwrap().unwrap(),
+            Cow::Borrowed(b"val3" as &[u8])
+        );
         assert_eq!(
             cursor.prev_nodup().unwrap().unwrap(),
-            (b"key1".into(), b"val3".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            )
         );
-        assert_eq!(cursor.set(b"key1").unwrap().unwrap(), b"val1");
-        assert_eq!(cursor.set(b"key2").unwrap().unwrap(), b"val1");
+        assert_eq!(
+            cursor.set(b"key1").unwrap().unwrap(),
+            Cow::Borrowed(b"val1" as &[u8])
+        );
+        assert_eq!(
+            cursor.set(b"key2").unwrap().unwrap(),
+            Cow::Borrowed(b"val1" as &[u8])
+        );
         assert_eq!(
             cursor.set_range(b"key1\0").unwrap().unwrap(),
-            (b"key2".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
-        assert_eq!(cursor.get_both(b"key1", b"val3").unwrap().unwrap(), b"val3");
+        assert_eq!(
+            cursor.get_both(b"key1", b"val3").unwrap().unwrap(),
+            Cow::Borrowed(b"val3" as &[u8])
+        );
         assert_eq!(
             cursor.get_both_range(b"key2", b"val").unwrap().unwrap(),
-            b"val1"
+            Cow::Borrowed(b"val1" as &[u8])
         );
     }
 
@@ -843,9 +911,15 @@ mod test {
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(
             cursor.first().unwrap().unwrap(),
-            (b"key1".into(), b"val1".into())
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8])
+            )
         );
-        assert_eq!(cursor.get_multiple().unwrap().unwrap(), b"val1val2val3");
+        assert_eq!(
+            cursor.get_multiple().unwrap().unwrap(),
+            Cow::Borrowed(b"val1val2val3" as &[u8])
+        );
         assert_eq!(cursor.next_multiple().unwrap(), None);
     }
 
@@ -854,11 +928,23 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let items: Vec<(Bytes, Bytes)> = vec![
-            (b"key1".into(), b"val1".into()),
-            (b"key2".into(), b"val2".into()),
-            (b"key3".into(), b"val3".into()),
-            (b"key5".into(), b"val5".into()),
+        let items: Vec<(Cow<_>, Cow<_>)> = vec![
+            (
+                Cow::Borrowed(b"key1" as &[u8]),
+                Cow::Borrowed(b"val1" as &[u8]),
+            ),
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val2" as &[u8]),
+            ),
+            (
+                Cow::Borrowed(b"key3" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8]),
+            ),
+            (
+                Cow::Borrowed(b"key5" as &[u8]),
+                Cow::Borrowed(b"val5" as &[u8]),
+            ),
         ];
 
         {
@@ -911,7 +997,7 @@ mod test {
         );
 
         assert_eq!(
-            vec!().into_iter().collect::<Vec<(Bytes, Bytes)>>(),
+            vec!().into_iter().collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_from(b"key6")
                 .collect::<Result<Vec<_>>>()
@@ -964,20 +1050,23 @@ mod test {
         txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
-        let items: Vec<(Bytes, Bytes)> = vec![
-            (b"a".into(), b"1".into()),
-            (b"a".into(), b"2".into()),
-            (b"a".into(), b"3".into()),
-            (b"b".into(), b"1".into()),
-            (b"b".into(), b"2".into()),
-            (b"b".into(), b"3".into()),
-            (b"c".into(), b"1".into()),
-            (b"c".into(), b"2".into()),
-            (b"c".into(), b"3".into()),
-            (b"e".into(), b"1".into()),
-            (b"e".into(), b"2".into()),
-            (b"e".into(), b"3".into()),
-        ];
+        let items: Vec<(_, _)> = vec![
+            (b"a", b"1"),
+            (b"a", b"2"),
+            (b"a", b"3"),
+            (b"b", b"1"),
+            (b"b", b"2"),
+            (b"b", b"3"),
+            (b"c", b"1"),
+            (b"c", b"2"),
+            (b"c", b"3"),
+            (b"e", b"1"),
+            (b"e", b"2"),
+            (b"e", b"3"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (Cow::Borrowed(k as &[u8]), Cow::Borrowed(v as &[u8])))
+        .collect();
 
         {
             let txn = env.begin_rw_txn().unwrap();
@@ -992,7 +1081,7 @@ mod test {
         let db = txn.open_db(None).unwrap();
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(
-            items,
+            items.clone(),
             cursor
                 .iter_dup()
                 .flatten()
@@ -1006,7 +1095,7 @@ mod test {
                 .clone()
                 .into_iter()
                 .skip(4)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup()
                 .flatten()
@@ -1019,7 +1108,7 @@ mod test {
             cursor
                 .iter_dup_start()
                 .flatten()
-                .collect::<Result<Vec<(Bytes, Bytes)>>>()
+                .collect::<Result<Vec<(Cow<_>, Cow<_>)>>>()
                 .unwrap()
         );
 
@@ -1028,7 +1117,7 @@ mod test {
                 .clone()
                 .into_iter()
                 .skip(3)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup_from(b"b")
                 .flatten()
@@ -1041,7 +1130,7 @@ mod test {
                 .clone()
                 .into_iter()
                 .skip(3)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup_from(b"ab")
                 .flatten()
@@ -1054,7 +1143,7 @@ mod test {
                 .clone()
                 .into_iter()
                 .skip(9)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup_from(b"d")
                 .flatten()
@@ -1063,7 +1152,7 @@ mod test {
         );
 
         assert_eq!(
-            vec!().into_iter().collect::<Vec<(Bytes, Bytes)>>(),
+            vec!().into_iter().collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup_from(b"f")
                 .flatten()
@@ -1077,7 +1166,7 @@ mod test {
                 .into_iter()
                 .skip(3)
                 .take(3)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup_of(b"b")
                 .collect::<Result<Vec<_>>>()
@@ -1092,8 +1181,10 @@ mod test {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
 
-        let items: Vec<(Bytes, Bytes)> =
-            vec![(b"a".into(), b"1".into()), (b"b".into(), b"2".into())];
+        let items: Vec<(Cow<_>, Cow<_>)> = vec![
+            (Cow::Borrowed(b"a" as &[u8]), Cow::Borrowed(b"1" as &[u8])),
+            (Cow::Borrowed(b"b" as &[u8]), Cow::Borrowed(b"2" as &[u8])),
+        ];
         let r: Vec<(_, _)> = Vec::new();
         {
             let txn = env.begin_rw_txn().unwrap();
@@ -1135,14 +1226,14 @@ mod test {
                 .clone()
                 .into_iter()
                 .take(1)
-                .collect::<Vec<(Bytes, Bytes)>>(),
+                .collect::<Vec<(Cow<_>, Cow<_>)>>(),
             cursor
                 .iter_dup_of(b"a")
                 .collect::<Result<Vec<_>>>()
                 .unwrap()
         );
 
-        assert_eq!(cursor.set(b"a").unwrap().unwrap(), b"1");
+        assert_eq!(cursor.set(b"a").unwrap().unwrap(), Cow::Borrowed(b"1"));
 
         cursor.del(WriteFlags::empty()).unwrap();
 
@@ -1170,13 +1261,19 @@ mod test {
 
         assert_eq!(
             cursor.get_current().unwrap().unwrap(),
-            (b"key3".into(), b"val3".into())
+            (
+                Cow::Borrowed(b"key3" as &[u8]),
+                Cow::Borrowed(b"val3" as &[u8])
+            )
         );
 
         cursor.del(WriteFlags::empty()).unwrap();
         assert_eq!(
             cursor.last().unwrap().unwrap(),
-            (b"key2".into(), b"val2".into())
+            (
+                Cow::Borrowed(b"key2" as &[u8]),
+                Cow::Borrowed(b"val2" as &[u8])
+            )
         );
     }
 }
