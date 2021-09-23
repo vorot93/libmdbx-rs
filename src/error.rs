@@ -1,8 +1,8 @@
 use libc::c_int;
-use std::{ffi::CStr, fmt, result, str, sync::Arc};
+use std::{ffi::CStr, fmt, result, str};
 
 /// An MDBX error kind.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Error {
     KeyExist,
     NotFound,
@@ -31,7 +31,7 @@ pub enum Error {
     InvalidValue,
     Access,
     TooLarge,
-    DecodeError(Arc<dyn std::error::Error + Send + Sync + 'static>),
+    DecodeError(Box<dyn std::error::Error + Send + Sync + 'static>),
     Other(c_int),
 }
 

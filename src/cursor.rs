@@ -368,7 +368,7 @@ where
     {
         let res: Result<Option<((), ())>> = self.set_range(key);
         if let Err(error) = res {
-            return Iter::Err(error);
+            return Iter::Err(Some(error));
         };
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
     }
@@ -403,7 +403,7 @@ where
     {
         let res: Result<Option<((), ())>> = self.set_range(key);
         if let Err(error) = res {
-            return IterDup::Err(error);
+            return IterDup::Err(Some(error));
         };
         IterDup::new(self, ffi::MDBX_GET_CURRENT)
     }
@@ -421,7 +421,7 @@ where
                 let _: Result<Option<((), ())>> = self.last();
                 return Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT);
             }
-            Err(error) => return Iter::Err(error),
+            Err(error) => return Iter::Err(Some(error)),
         };
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
     }
@@ -535,7 +535,7 @@ where
     /// on retrieval of a cursor.  Using this variant instead of returning
     /// an error makes Cursor.iter()* methods infallible, so consumers only
     /// need to check the result of Iter.next().
-    Err(Error),
+    Err(Option<Error>),
 
     /// An iterator that returns an Item on calls to [Iter::next()].
     /// The Item is a [Result], so this variant
@@ -619,7 +619,7 @@ where
                     })
                 }
             }
-            Self::Err(err) => Some(Err(err.clone())),
+            Self::Err(err) => err.take().map(Err),
         }
     }
 }
@@ -637,7 +637,7 @@ where
     /// on retrieval of a cursor.  Using this variant instead of returning
     /// an error makes Cursor.iter()* methods infallible, so consumers only
     /// need to check the result of Iter.next().
-    Err(Error),
+    Err(Option<Error>),
 
     /// An iterator that returns an Item on calls to [Iter::next()].
     /// The Item is a [Result], so this variant
@@ -725,7 +725,7 @@ where
                     })
                 }
             }
-            Iter::Err(err) => Some(Err(err.clone())),
+            Iter::Err(err) => err.take().map(Err),
         }
     }
 }
@@ -745,7 +745,7 @@ where
     /// on retrieval of a cursor.  Using this variant instead of returning
     /// an error makes Cursor.iter()* methods infallible, so consumers only
     /// need to check the result of Iter.next().
-    Err(Error),
+    Err(Option<Error>),
 
     /// An iterator that returns an Item on calls to Iter.next().
     /// The Item is a Result<(&'txn [u8], &'txn [u8])>, so this variant
@@ -825,7 +825,7 @@ where
                     }
                 })
             }
-            IterDup::Err(err) => Some(IntoIter::Err(err.clone())),
+            IterDup::Err(err) => err.take().map(|e| IntoIter::Err(Some(e))),
         }
     }
 }

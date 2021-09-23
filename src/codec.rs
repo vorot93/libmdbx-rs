@@ -1,7 +1,7 @@
 use crate::{error::mdbx_result, Error, TransactionKind};
 use derive_more::*;
 use lifetimed_bytes::Bytes;
-use std::{borrow::Cow, slice, sync::Arc};
+use std::{borrow::Cow, slice};
 use thiserror::Error;
 
 /// Implement this to be able to decode data values
@@ -106,7 +106,7 @@ impl<'tx, const LEN: usize> TableObject<'tx> for [u8; LEN] {
         }
 
         if data_val.len() != LEN {
-            return Err(Error::DecodeError(Arc::new(InvalidSize::<LEN> {
+            return Err(Error::DecodeError(Box::new(InvalidSize::<LEN> {
                 got: data_val.len(),
             })));
         }
