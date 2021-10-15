@@ -576,6 +576,24 @@ mod test {
     }
 
     #[test]
+    fn test_put_get_del_empty_key() {
+        let dir = tempdir().unwrap();
+        let env = Environment::new().open(dir.path()).unwrap();
+
+        let txn = env.begin_rw_txn().unwrap();
+        let db = txn.create_db(None, Default::default()).unwrap();
+        txn.put(&db, b"", b"hello", WriteFlags::empty()).unwrap();
+        assert_eq!(txn.get(&db, b"").unwrap(), Some(*b"hello"));
+        txn.commit().unwrap();
+
+        let txn = env.begin_rw_txn().unwrap();
+        let db = txn.open_db(None).unwrap();
+        assert_eq!(txn.get(&db, b"").unwrap(), Some(*b"hello"));
+        txn.put(&db, b"", b"", WriteFlags::empty()).unwrap();
+        assert_eq!(txn.get(&db, b"").unwrap(), Some(*b""));
+    }
+
+    #[test]
     fn test_reserve() {
         let dir = tempdir().unwrap();
         let env = Environment::new().open(dir.path()).unwrap();
