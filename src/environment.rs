@@ -75,6 +75,17 @@ pub(crate) enum TxnManagerMessage {
     },
 }
 
+pub type HsrCallback = unsafe extern "C" fn(
+    *const ffi::MDBX_env,
+    *const ffi::MDBX_txn,
+    i32,
+    u64,
+    u64,
+    u32,
+    usize,
+    i32,
+) -> i32;
+
 /// An environment supports multiple databases, all residing in the same shared-memory map.
 pub struct Environment<E>
 where
@@ -218,6 +229,13 @@ where
         }
 
         Ok(freelist)
+    }
+
+    pub fn set_hsr(&self, hsr_callback: Option<HsrCallback>) -> Result<()> {
+        unsafe {
+            mdbx_result(ffi::mdbx_env_set_hsr(self.env, hsr_callback))?;
+        }
+        Ok(())
     }
 }
 
