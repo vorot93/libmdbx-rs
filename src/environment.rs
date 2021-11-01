@@ -404,56 +404,7 @@ where
     /// The path may not contain the null character, Windows UNC (Uniform Naming Convention)
     /// paths are not supported either.
     pub fn open(&self, path: &Path) -> Result<Environment<E>> {
-        let mut env = self.open_with_permissions(path, 0o644)?;
-
-        if let Mode::ReadWrite { .. } = self.flags.mode {
-            let (tx, rx) = std::sync::mpsc::sync_channel(0);
-            let e = EnvPtr(env.env);
-            std::thread::spawn(move || loop {
-                match rx.recv() {
-                    Ok(msg) => match msg {
-                        TxnManagerMessage::Begin {
-                            parent,
-                            flags,
-                            sender,
-                        } => {
-                            let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-                            sender
-                                .send(
-                                    mdbx_result(unsafe {
-                                        ffi::mdbx_txn_begin_ex(
-                                            e.0,
-                                            parent.0,
-                                            flags,
-                                            &mut txn,
-                                            ptr::null_mut(),
-                                        )
-                                    })
-                                    .map(|_| TxnPtr(txn)),
-                                )
-                                .unwrap()
-                        }
-                        TxnManagerMessage::Abort { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
-                                .unwrap();
-                        }
-                        TxnManagerMessage::Commit { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe {
-                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                }))
-                                .unwrap();
-                        }
-                    },
-                    Err(_) => return,
-                }
-            });
-
-            env.txn_manager = Some(tx);
-        }
-
-        Ok(env)
+        self.open_with_permissions(path, 0o644)
     }
 
     /// Open an environment with the provided UNIX permissions.
@@ -522,11 +473,61 @@ where
                 return Err(e);
             }
         }
-        Ok(Environment {
+
+        let mut env = Environment {
             env,
             txn_manager: None,
             _marker: PhantomData,
-        })
+        };
+
+        if let Mode::ReadWrite { .. } = self.flags.mode {
+            let (tx, rx) = std::sync::mpsc::sync_channel(0);
+            let e = EnvPtr(env.env);
+            std::thread::spawn(move || loop {
+                match rx.recv() {
+                    Ok(msg) => match msg {
+                        TxnManagerMessage::Begin {
+                            parent,
+                            flags,
+                            sender,
+                        } => {
+                            let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
+                            sender
+                                .send(
+                                    mdbx_result(unsafe {
+                                        ffi::mdbx_txn_begin_ex(
+                                            e.0,
+                                            parent.0,
+                                            flags,
+                                            &mut txn,
+                                            ptr::null_mut(),
+                                        )
+                                    })
+                                    .map(|_| TxnPtr(txn)),
+                                )
+                                .unwrap()
+                        }
+                        TxnManagerMessage::Abort { tx, sender } => {
+                            sender
+                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
+                                .unwrap();
+                        }
+                        TxnManagerMessage::Commit { tx, sender } => {
+                            sender
+                                .send(mdbx_result(unsafe {
+                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
+                                }))
+                                .unwrap();
+                        }
+                    },
+                    Err(_) => return,
+                }
+            });
+
+            env.txn_manager = Some(tx);
+        }
+
+        Ok(env)
     }
 
     /// Sets the provided options in the environment.
