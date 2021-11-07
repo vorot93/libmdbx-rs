@@ -96,6 +96,12 @@ where
             flags: EnvironmentFlags::default(),
             max_readers: None,
             max_dbs: None,
+            rp_augment_limit: None,
+            loose_limit: None,
+            dp_reserve_limit: None,
+            txn_dp_limit: None,
+            spill_max_denominator: None,
+            spill_min_denominator: None,
             geometry: None,
             _marker: PhantomData,
         }
@@ -388,7 +394,13 @@ where
 {
     flags: EnvironmentFlags,
     max_readers: Option<c_uint>,
-    max_dbs: Option<usize>,
+    max_dbs: Option<u64>,
+    rp_augment_limit: Option<u64>,
+    loose_limit: Option<u64>,
+    dp_reserve_limit: Option<u64>,
+    txn_dp_limit: Option<u64>,
+    spill_max_denominator: Option<u64>,
+    spill_min_denominator: Option<u64>,
     geometry: Option<Geometry<(Option<usize>, Option<usize>)>>,
     _marker: PhantomData<E>,
 }
@@ -448,13 +460,26 @@ where
                         },
                     ))?;
                 }
-                if let Some(max_dbs) = self.max_dbs {
-                    mdbx_result(ffi::mdbx_env_set_option(
-                        env,
-                        ffi::MDBX_opt_max_db,
-                        max_dbs as u64,
-                    ))?;
+                for (opt, v) in [
+                    (ffi::MDBX_opt_max_db, self.max_dbs),
+                    (ffi::MDBX_opt_rp_augment_limit, self.rp_augment_limit),
+                    (ffi::MDBX_opt_loose_limit, self.loose_limit),
+                    (ffi::MDBX_opt_dp_reserve_limit, self.dp_reserve_limit),
+                    (ffi::MDBX_opt_txn_dp_limit, self.txn_dp_limit),
+                    (
+                        ffi::MDBX_opt_spill_max_denominator,
+                        self.spill_max_denominator,
+                    ),
+                    (
+                        ffi::MDBX_opt_spill_min_denominator,
+                        self.spill_min_denominator,
+                    ),
+                ] {
+                    if let Some(v) = v {
+                        mdbx_result(ffi::mdbx_env_set_option(env, opt, v))?;
+                    }
                 }
+
                 let path = match CString::new(path.as_os_str().as_bytes()) {
                     Ok(path) => path,
                     Err(..) => return Err(crate::Error::Invalid),
@@ -555,8 +580,38 @@ where
     /// Currently a moderate number of slots are cheap but a huge number gets
     /// expensive: 7-120 words per transaction, and every [Transaction::open_db()]
     /// does a linear search of the opened slots.
-    pub fn set_max_dbs(&mut self, max_dbs: usize) -> &mut Self {
-        self.max_dbs = Some(max_dbs);
+    pub fn set_max_dbs(&mut self, v: usize) -> &mut Self {
+        self.max_dbs = Some(v as u64);
+        self
+    }
+
+    pub fn set_rp_augment_limit(&mut self, v: u64) -> &mut Self {
+        self.rp_augment_limit = Some(v);
+        self
+    }
+
+    pub fn set_loose_limit(&mut self, v: u64) -> &mut Self {
+        self.loose_limit = Some(v);
+        self
+    }
+
+    pub fn set_dp_reserve_limit(&mut self, v: u64) -> &mut Self {
+        self.dp_reserve_limit = Some(v);
+        self
+    }
+
+    pub fn set_txn_dp_limit(&mut self, v: u64) -> &mut Self {
+        self.txn_dp_limit = Some(v);
+        self
+    }
+
+    pub fn set_spill_max_denominator(&mut self, v: u8) -> &mut Self {
+        self.spill_max_denominator = Some(v.into());
+        self
+    }
+
+    pub fn set_spill_min_denominator(&mut self, v: u8) -> &mut Self {
+        self.spill_min_denominator = Some(v.into());
         self
     }
 
