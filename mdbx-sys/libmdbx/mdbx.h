@@ -461,7 +461,8 @@ typedef mode_t mdbx_mode_t;
 #endif /* MDBX_PRINTF_ARGS */
 
 #if defined(DOXYGEN) ||                                                        \
-    (defined(__cplusplus) && __has_cpp_attribute(maybe_unused) &&              \
+    (defined(__cplusplus) && __cplusplus >= 201603 &&                          \
+     __has_cpp_attribute(maybe_unused) &&                                      \
      __has_cpp_attribute(maybe_unused) >= 201603) ||                           \
     (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
      __STDC_VERSION__ > 202005L)
@@ -471,6 +472,12 @@ typedef mode_t mdbx_mode_t;
 #else
 #define MDBX_MAYBE_UNUSED
 #endif /* MDBX_MAYBE_UNUSED */
+
+#if __has_attribute(no_sanitize)
+#define MDBX_NOSANITIZE_ENUM __attribute((__no_sanitize__("enum")))
+#else
+#define MDBX_NOSANITIZE_ENUM
+#endif /* MDBX_NOSANITIZE_ENUM */
 
 /* Oh, below are some songs and dances since:
  *  - C++ requires explicit definition of the necessary operators.
@@ -497,28 +504,40 @@ typedef mode_t mdbx_mode_t;
 /// used to define flags (based on Microsoft's DEFINE_ENUM_FLAG_OPERATORS).
 #define DEFINE_ENUM_FLAG_OPERATORS(ENUM)                                       \
   extern "C++" {                                                               \
-  MDBX_CXX01_CONSTEXPR ENUM operator|(ENUM a, ENUM b) {                        \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX01_CONSTEXPR ENUM operator|(ENUM a, ENUM b) {   \
     return ENUM(unsigned(a) | unsigned(b));                                    \
   }                                                                            \
-  MDBX_CXX14_CONSTEXPR ENUM &operator|=(ENUM &a, ENUM b) { return a = a | b; } \
-  MDBX_CXX01_CONSTEXPR ENUM operator&(ENUM a, ENUM b) {                        \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX14_CONSTEXPR ENUM &operator|=(ENUM &a,          \
+                                                             ENUM b) {         \
+    return a = a | b;                                                          \
+  }                                                                            \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX01_CONSTEXPR ENUM operator&(ENUM a, ENUM b) {   \
     return ENUM(unsigned(a) & unsigned(b));                                    \
   }                                                                            \
-  MDBX_CXX01_CONSTEXPR ENUM operator&(ENUM a, unsigned b) {                    \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX01_CONSTEXPR ENUM operator&(ENUM a,             \
+                                                           unsigned b) {       \
     return ENUM(unsigned(a) & b);                                              \
   }                                                                            \
-  MDBX_CXX01_CONSTEXPR ENUM operator&(unsigned a, ENUM b) {                    \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX01_CONSTEXPR ENUM operator&(unsigned a,         \
+                                                           ENUM b) {           \
     return ENUM(a & unsigned(b));                                              \
   }                                                                            \
-  MDBX_CXX14_CONSTEXPR ENUM &operator&=(ENUM &a, ENUM b) { return a = a & b; } \
-  MDBX_CXX14_CONSTEXPR ENUM &operator&=(ENUM &a, unsigned b) {                 \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX14_CONSTEXPR ENUM &operator&=(ENUM &a,          \
+                                                             ENUM b) {         \
+    return a = a & b;                                                          \
+  }                                                                            \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX14_CONSTEXPR ENUM &operator&=(ENUM &a,          \
+                                                             unsigned b) {     \
     return a = a & b;                                                          \
   }                                                                            \
   MDBX_CXX01_CONSTEXPR unsigned operator~(ENUM a) { return ~unsigned(a); }     \
-  MDBX_CXX01_CONSTEXPR ENUM operator^(ENUM a, ENUM b) {                        \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX01_CONSTEXPR ENUM operator^(ENUM a, ENUM b) {   \
     return ENUM(unsigned(a) ^ unsigned(b));                                    \
   }                                                                            \
-  MDBX_CXX14_CONSTEXPR ENUM &operator^=(ENUM &a, ENUM b) { return a = a ^ b; } \
+  MDBX_NOSANITIZE_ENUM MDBX_CXX14_CONSTEXPR ENUM &operator^=(ENUM &a,          \
+                                                             ENUM b) {         \
+    return a = a ^ b;                                                          \
+  }                                                                            \
   }
 #else /* __cplusplus */
 /* nope for C since it always allows these operators for enums */
@@ -549,9 +568,9 @@ typedef mode_t mdbx_mode_t;
 extern "C" {
 #endif
 
-/* MDBX version 0.10.x */
+/* MDBX version 0.11.x */
 #define MDBX_VERSION_MAJOR 0
-#define MDBX_VERSION_MINOR 10
+#define MDBX_VERSION_MINOR 11
 
 #ifndef LIBMDBX_API
 #if defined(LIBMDBX_EXPORTS)
@@ -790,6 +809,10 @@ enum MDBX_log_level_t {
       and all other log-messages */
   MDBX_LOG_EXTRA = 7,
 
+#ifdef ENABLE_UBSAN
+  MDBX_LOG_MAX = 7 /* avoid UBSAN false-positive trap by a tests */,
+#endif /* ENABLE_UBSAN */
+
   /** for \ref mdbx_setup_debug() only: Don't change current settings */
   MDBX_LOG_DONTCHANGE = -1
 };
@@ -803,6 +826,8 @@ typedef enum MDBX_log_level_t MDBX_log_level_t;
  * effect, but `MDBX_DBG_ASSERT`, `MDBX_DBG_AUDIT` and `MDBX_DBG_JITTER` only if
  * libmdbx builded with \ref MDBX_DEBUG. */
 enum MDBX_debug_flags_t {
+  MDBX_DBG_NONE = 0,
+
   /** Enable assertion checks.
    * Requires build with \ref MDBX_DEBUG > 0 */
   MDBX_DBG_ASSERT = 1,
@@ -824,6 +849,11 @@ enum MDBX_debug_flags_t {
 
   /** Allow read and write transactions overlapping for the same thread */
   MDBX_DBG_LEGACY_OVERLAP = 32,
+
+#ifdef ENABLE_UBSAN
+  MDBX_DBG_MAX = ((unsigned)MDBX_LOG_MAX) << 16 |
+                 63 /* avoid UBSAN false-positive trap by a tests */,
+#endif /* ENABLE_UBSAN */
 
   /** for mdbx_setup_debug() only: Don't change current settings */
   MDBX_DBG_DONTCHANGE = -1

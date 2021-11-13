@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 4c0edad9e694f89ccb919dbe9a40cc1c9570bde6d8b72ba610260ffb4f5c608f_v0_10_2_0_g70933d81
+#define MDBX_BUILD_SOURCERY e5282b30d89e877fff2a5d79d89fc4ade5841a57bccc0bd61d79cbb4e8cf271f_v0_11_1_0_g113162b6
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -90,7 +90,7 @@
 #endif
 #ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
-#endif
+#endif /* _CRT_SECURE_NO_WARNINGS */
 #if _MSC_VER > 1800
 #pragma warning(disable : 4464) /* relative include path contains '..' */
 #endif
@@ -573,7 +573,7 @@ extern "C" {
 #if defined(_WIN32) || defined(_WIN64)
 #if !defined(_CRT_SECURE_NO_WARNINGS)
 #define _CRT_SECURE_NO_WARNINGS
-#endif
+#endif /* _CRT_SECURE_NO_WARNINGS */
 #if !defined(_NO_CRT_STDIO_INLINE) && MDBX_BUILD_SHARED_LIBRARY &&             \
     !defined(xMDBX_TOOLS) && MDBX_WITHOUT_MSVC_CRT
 #define _NO_CRT_STDIO_INLINE
@@ -2164,7 +2164,7 @@ MDBX_MAYBE_UNUSED static
 #define MDBX_MAGIC UINT64_C(/* 56-bit prime */ 0x59659DBDEF4C11)
 
 /* FROZEN: The version number for a database's datafile format. */
-#define MDBX_DATA_VERSION 2
+#define MDBX_DATA_VERSION 3
 /* The version number for a database's lockfile format. */
 #define MDBX_LOCK_VERSION 4
 
@@ -2217,7 +2217,7 @@ typedef uint16_t indx_t;
 
 /*----------------------------------------------------------------------------*/
 /* Core structures for database and shared memory (i.e. format definition) */
-#pragma pack(push, 1)
+#pragma pack(push, 4)
 
 /* Information about a single database in the environment. */
 typedef struct MDBX_db {
@@ -2296,6 +2296,8 @@ typedef struct MDBX_meta {
   bin128_t mm_bootid;
 
 } MDBX_meta;
+
+#pragma pack(1)
 
 /* Common header for all page types. The page type depends on mp_flags.
  *
@@ -2567,7 +2569,11 @@ typedef struct MDBX_lockinfo {
 
 #define MDBX_DATA_MAGIC                                                        \
   ((MDBX_MAGIC << 8) + MDBX_PNL_ASCENDING * 64 + MDBX_DATA_VERSION)
-#define MDBX_DATA_MAGIC_DEVEL ((MDBX_MAGIC << 8) + 255)
+
+#define MDBX_DATA_MAGIC_LEGACY_COMPAT                                          \
+  ((MDBX_MAGIC << 8) + MDBX_PNL_ASCENDING * 64 + 2)
+
+#define MDBX_DATA_MAGIC_LEGACY_DEVEL ((MDBX_MAGIC << 8) + 255)
 
 #define MDBX_LOCK_MAGIC ((MDBX_MAGIC << 8) + MDBX_LOCK_VERSION)
 

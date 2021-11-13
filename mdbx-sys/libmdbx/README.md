@@ -385,6 +385,12 @@ target platform. Obviously you need building tools itself, i.e. `git`,
 and `make options` are also available for listing existing targets
 and build options respectively.
 
+The only significant specificity is that git' tags are required
+to build from complete (not amalgamated) source codes.
+Executing **`git fetch --tags --force --prune`** is enough to get ones,
+or `git fetch --unshallow --tags --prune --force` after the Github's
+[`actions/checkout@v2`](https://github.com/actions/checkout) either set **`fetch-depth: 0`** for it.
+
 So just using CMake or GNU Make in your habitual manner and feel free to
 fill an issue or make pull request in the case something will be
 unexpected or broken down.
@@ -558,15 +564,16 @@ Bindings
 
 | Runtime |  Repo  | Author |
 | ------- | ------ | ------ |
+| Haskell | [libmdbx-hs](https://hackage.haskell.org/package/libmdbx) | [Francisco Vallarino](https://github.com/fjvallarino) |
 | Python (draft) | [python-bindings](https://github.com/erthink/libmdbx/commits/python-bindings) branch | [Noel Kuntze](https://github.com/Thermi)
 | NodeJS  | [lmdbx-store](https://github.com/kriszyp/lmdbx-store) | [Kris Zyp](https://github.com/kriszyp/)
 | NodeJS  | [node-mdbx](https://www.npmjs.com/package/node-mdbx/) | [Сергей Федотов](mailto:sergey.fedotov@corp.mail.ru) |
 | Ruby    | [ruby-mdbx](https://rubygems.org/gems/mdbx/) | [Mahlon E. Smith](https://github.com/mahlonsmith) |
 | Go      | [mdbx-go](https://github.com/torquem-ch/mdbx-go) | [Alex Sharov](https://github.com/AskAlexSharov) |
 | [Nim](https://en.wikipedia.org/wiki/Nim_(programming_language)) | [NimDBX](https://github.com/snej/nimdbx) | [Jens Alfke](https://github.com/snej)
-| Rust    | [heed](https://github.com/Kerollmops/heed), [mdbx-rs](https://github.com/Kerollmops/mdbx-rs)   | [Clément Renault](https://github.com/Kerollmops) |
-| Java    | [mdbxjni](https://github.com/castortech/mdbxjni)   | [Castor Technologies](https://castortech.com/) |
-| .NET    | [mdbx.NET](https://github.com/wangjia184/mdbx.NET) | [Jerry Wang](https://github.com/wangjia184) |
+| Rust    | [mdbx-rs](https://github.com/vorot93/mdbx-rs)   | [Artem Vorotnikov](https://github.com/vorot93) |
+| Java (obsolete)   | [mdbxjni](https://github.com/castortech/mdbxjni)   | [Castor Technologies](https://castortech.com/) |
+| .NET (obsolete)   | [mdbx.NET](https://github.com/wangjia184/mdbx.NET) | [Jerry Wang](https://github.com/wangjia184) |
 
 <!-- section-end -->
 
