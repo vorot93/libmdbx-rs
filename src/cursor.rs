@@ -456,6 +456,7 @@ impl<'txn> Cursor<'txn, RW> {
         };
         mdbx_result!(unsafe {
             txn_execute(&*self.txn, |_| {
+                let _ = &self;
                 ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, flags)
             })
         })?;
@@ -471,7 +472,7 @@ impl<'txn> Cursor<'txn, RW> {
     /// current key, if the database was opened with [ffi::MDBX_db_flags_t::DUP_SORT].
     pub fn del(&mut self, flags: ffi::MDBX_put_flags_t) -> Result<()> {
         mdbx_result!(unsafe {
-            txn_execute(&*self.txn, |_| ffi::mdbx_cursor_del(self.cursor, flags))
+            txn_execute(&*self.txn, |_| { let _ = &self; ffi::mdbx_cursor_del(self.cursor, flags) })
         })?;
 
         Ok(())
@@ -501,9 +502,9 @@ where
     K: TransactionKind,
 {
     fn drop(&mut self) {
-        txn_execute(&*self.txn, |_| unsafe {
+        txn_execute(&*self.txn, |_| { let _ = &self; unsafe {
             ffi::mdbx_cursor_close(self.cursor)
-        })
+        } })
     }
 }
 

@@ -503,7 +503,7 @@ where
         if let Mode::ReadWrite { .. } = self.flags.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
             let e = EnvPtr(env.env);
-            std::thread::spawn(move || loop {
+            std::thread::spawn(move || { let _ = &e; loop {
                 match rx.recv() {
                     Ok(msg) => match msg {
                         TxnManagerMessage::Begin {
@@ -542,7 +542,7 @@ where
                     },
                     Err(_) => return,
                 }
-            });
+            } });
 
             env.txn_manager = Some(tx);
         }
