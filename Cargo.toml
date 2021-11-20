@@ -7,7 +7,7 @@ authors = [
   "Victor Porof <vporof@mozilla.com>",
   "Artem Vorotnikov <artem@vorotnikov.me>",
 ]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0"
 description = "Idiomatic and safe MDBX wrapper."
 documentation = "https://docs.rs/mdbx"
