@@ -1,18 +1,12 @@
 use crate::{
     database::Database,
-    error::{mdbx_result, Error, Result},
-    flags::*,
-    mdbx_try_optional,
+    error::{Error, Result},
+    mdbx_result, mdbx_try_optional,
     transaction::{txn_execute, TransactionKind, RW},
     EnvironmentKind, TableObject, Transaction,
 };
-use ffi::{
-    MDBX_cursor_op, MDBX_FIRST, MDBX_FIRST_DUP, MDBX_GET_BOTH, MDBX_GET_BOTH_RANGE,
-    MDBX_GET_CURRENT, MDBX_GET_MULTIPLE, MDBX_LAST, MDBX_LAST_DUP, MDBX_NEXT, MDBX_NEXT_DUP,
-    MDBX_NEXT_MULTIPLE, MDBX_NEXT_NODUP, MDBX_PREV, MDBX_PREV_DUP, MDBX_PREV_MULTIPLE,
-    MDBX_PREV_NODUP, MDBX_SET, MDBX_SET_KEY, MDBX_SET_LOWERBOUND, MDBX_SET_RANGE,
-};
-use libc::{c_uint, c_void};
+use ffi::{MDBX_cursor_op, MDBX_error_t};
+use libc::c_void;
 use parking_lot::Mutex;
 use std::{borrow::Cow, fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
 
@@ -38,7 +32,7 @@ where
 
         let txn = txn.txn_mutex();
         unsafe {
-            mdbx_result(txn_execute(&*txn, |txn| {
+            mdbx_result!(txn_execute(&*txn, |txn| {
                 ffi::mdbx_cursor_open(txn, db.dbi(), &mut cursor)
             }))?;
         }
@@ -61,7 +55,7 @@ where
                 _marker: PhantomData,
             };
 
-            mdbx_result(res)?;
+            mdbx_result!(res)?;
 
             Ok(s)
         }
@@ -93,7 +87,7 @@ where
             let key_ptr = key_val.iov_base;
             let data_ptr = data_val.iov_base;
             txn_execute(&*self.txn, |txn| {
-                let v = mdbx_result(ffi::mdbx_cursor_get(
+                let v = mdbx_result!(ffi::mdbx_cursor_get(
                     self.cursor,
                     &mut key_val,
                     &mut data_val,
@@ -149,31 +143,31 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_FIRST)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_FIRST)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at first data item of current key.
+    /// [ffi::MDBX_db_flags_t::DUP_SORT]-only: Position at first data item of current key.
     pub fn first_dup<Value>(&mut self) -> Result<Option<Value>>
     where
         Value: TableObject<'txn>,
     {
-        self.get_value(None, None, MDBX_FIRST_DUP)
+        self.get_value(None, None, ffi::MDBX_cursor_op::MDBX_FIRST_DUP)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at key/data pair.
+    /// [ffi::MDBX_db_flags_t::DUP_SORT]-only: Position at key/data pair.
     pub fn get_both<Value>(&mut self, k: &[u8], v: &[u8]) -> Result<Option<Value>>
     where
         Value: TableObject<'txn>,
     {
-        self.get_value(Some(k), Some(v), MDBX_GET_BOTH)
+        self.get_value(Some(k), Some(v), ffi::MDBX_cursor_op::MDBX_GET_BOTH)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at given key and at first data greater than or equal to specified data.
+    /// [ffi::MDBX_db_flags_t::DUP_SORT]-only: Position at given key and at first data greater than or equal to specified data.
     pub fn get_both_range<Value>(&mut self, k: &[u8], v: &[u8]) -> Result<Option<Value>>
     where
         Value: TableObject<'txn>,
     {
-        self.get_value(Some(k), Some(v), MDBX_GET_BOTH_RANGE)
+        self.get_value(Some(k), Some(v), ffi::MDBX_cursor_op::MDBX_GET_BOTH_RANGE)
     }
 
     /// Return key/data at current cursor position.
@@ -182,7 +176,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_GET_CURRENT)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_GET_CURRENT)
     }
 
     /// DupFixed-only: Return up to a page of duplicate data items from current cursor position.
@@ -191,7 +185,7 @@ where
     where
         Value: TableObject<'txn>,
     {
-        self.get_value(None, None, MDBX_GET_MULTIPLE)
+        self.get_value(None, None, ffi::MDBX_cursor_op::MDBX_GET_MULTIPLE)
     }
 
     /// Position at last key/data item.
@@ -200,7 +194,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_LAST)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_LAST)
     }
 
     /// DupSort-only: Position at last data item of current key.
@@ -208,7 +202,7 @@ where
     where
         Value: TableObject<'txn>,
     {
-        self.get_value(None, None, MDBX_LAST_DUP)
+        self.get_value(None, None, ffi::MDBX_cursor_op::MDBX_LAST_DUP)
     }
 
     /// Position at next data item
@@ -218,25 +212,25 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_NEXT)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_NEXT)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at next data item of current key.
+    /// [ffi::MDBX_db_flags_t::DUP_SORT]-only: Position at next data item of current key.
     pub fn next_dup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_NEXT_DUP)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_NEXT_DUP)
     }
 
-    /// [DatabaseFlags::DUP_FIXED]-only: Return up to a page of duplicate data items from next cursor position. Move cursor to prepare for MDBX_NEXT_MULTIPLE.
+    /// [ffi::MDBX_db_flags_t::DUP_FIXED]-only: Return up to a page of duplicate data items from next cursor position. Move cursor to prepare for ffi::MDBX_cursor_op::MDBX_NEXT_MULTIPLE.
     pub fn next_multiple<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_NEXT_MULTIPLE)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_NEXT_MULTIPLE)
     }
 
     /// Position at first data item of next key.
@@ -245,7 +239,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_NEXT_NODUP)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_NEXT_NODUP)
     }
 
     /// Position at previous data item.
@@ -254,16 +248,16 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_PREV)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_PREV)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at previous data item of current key.
+    /// [ffi::MDBX_db_flags_t::DUP_SORT]-only: Position at previous data item of current key.
     pub fn prev_dup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_PREV_DUP)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_PREV_DUP)
     }
 
     /// Position at last data item of previous key.
@@ -272,7 +266,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_PREV_NODUP)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_PREV_NODUP)
     }
 
     /// Position at specified key.
@@ -280,7 +274,7 @@ where
     where
         Value: TableObject<'txn>,
     {
-        self.get_value(Some(key), None, MDBX_SET)
+        self.get_value(Some(key), None, ffi::MDBX_cursor_op::MDBX_SET)
     }
 
     /// Position at specified key, return both key and data.
@@ -289,7 +283,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(Some(key), None, MDBX_SET_KEY)
+        self.get_full(Some(key), None, ffi::MDBX_cursor_op::MDBX_SET_KEY)
     }
 
     /// Position at first key greater than or equal to specified key.
@@ -298,16 +292,16 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(Some(key), None, MDBX_SET_RANGE)
+        self.get_full(Some(key), None, ffi::MDBX_cursor_op::MDBX_SET_RANGE)
     }
 
-    /// [DatabaseFlags::DUP_FIXED]-only: Position at previous page and return up to a page of duplicate data items.
+    /// [ffi::MDBX_db_flags_t::DUP_FIXED]-only: Position at previous page and return up to a page of duplicate data items.
     pub fn prev_multiple<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        self.get_full(None, None, MDBX_PREV_MULTIPLE)
+        self.get_full(None, None, ffi::MDBX_cursor_op::MDBX_PREV_MULTIPLE)
     }
 
     /// Position at first key-value pair greater than or equal to specified, return both key and data, and the return code depends on a exact match.
@@ -321,7 +315,8 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        let (k, v, found) = mdbx_try_optional!(self.get(Some(key), None, MDBX_SET_LOWERBOUND));
+        let (k, v, found) =
+            mdbx_try_optional!(self.get(Some(key), None, ffi::MDBX_cursor_op::MDBX_SET_LOWERBOUND));
 
         Ok(Some((found, k.unwrap(), v)))
     }
@@ -330,7 +325,7 @@ where
     /// after the cursor, and continue until the end of the database. For new
     /// cursors, the iterator will begin with the first item in the database.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For databases with duplicate data items ([ffi::MDBX_db_flags_t::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn iter<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
@@ -339,12 +334,16 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT)
+        Iter::new(
+            self,
+            ffi::MDBX_cursor_op::MDBX_NEXT,
+            ffi::MDBX_cursor_op::MDBX_NEXT,
+        )
     }
 
     /// Iterate over database items starting from the beginning of the database.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For databases with duplicate data items ([ffi::MDBX_db_flags_t::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn iter_start<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
@@ -353,12 +352,16 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        Iter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
+        Iter::new(
+            self,
+            ffi::MDBX_cursor_op::MDBX_FIRST,
+            ffi::MDBX_cursor_op::MDBX_NEXT,
+        )
     }
 
     /// Iterate over database items starting from the given key.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For databases with duplicate data items ([ffi::MDBX_db_flags_t::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn iter_from<Key, Value>(&mut self, key: &[u8]) -> Iter<'txn, '_, K, Key, Value>
@@ -370,7 +373,11 @@ where
         if let Err(error) = res {
             return Iter::Err(Some(error));
         };
-        Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
+        Iter::new(
+            self,
+            ffi::MDBX_cursor_op::MDBX_GET_CURRENT,
+            ffi::MDBX_cursor_op::MDBX_NEXT,
+        )
     }
 
     /// Iterate over duplicate database items. The iterator will begin with the
@@ -381,7 +388,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_NEXT)
+        IterDup::new(self, ffi::MDBX_cursor_op::MDBX_NEXT)
     }
 
     /// Iterate over duplicate database items starting from the beginning of the
@@ -391,7 +398,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_FIRST)
+        IterDup::new(self, ffi::MDBX_cursor_op::MDBX_FIRST)
     }
 
     /// Iterate over duplicate items in the database starting from the given
@@ -405,7 +412,7 @@ where
         if let Err(error) = res {
             return IterDup::Err(Some(error));
         };
-        IterDup::new(self, ffi::MDBX_GET_CURRENT)
+        IterDup::new(self, ffi::MDBX_cursor_op::MDBX_GET_CURRENT)
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
@@ -419,18 +426,26 @@ where
             Ok(Some(_)) => (),
             Ok(None) => {
                 let _: Result<Option<((), ())>> = self.last();
-                return Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT);
+                return Iter::new(
+                    self,
+                    ffi::MDBX_cursor_op::MDBX_NEXT,
+                    ffi::MDBX_cursor_op::MDBX_NEXT,
+                );
             }
             Err(error) => return Iter::Err(Some(error)),
         };
-        Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
+        Iter::new(
+            self,
+            ffi::MDBX_cursor_op::MDBX_GET_CURRENT,
+            ffi::MDBX_cursor_op::MDBX_NEXT_DUP,
+        )
     }
 }
 
 impl<'txn> Cursor<'txn, RW> {
     /// Puts a key/data pair into the database. The cursor will be positioned at
     /// the new data item, or on failure usually near it.
-    pub fn put(&mut self, key: &[u8], data: &[u8], flags: WriteFlags) -> Result<()> {
+    pub fn put(&mut self, key: &[u8], data: &[u8], flags: ffi::MDBX_put_flags_t) -> Result<()> {
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
             iov_base: key.as_ptr() as *mut c_void,
@@ -439,9 +454,9 @@ impl<'txn> Cursor<'txn, RW> {
             iov_len: data.len(),
             iov_base: data.as_ptr() as *mut c_void,
         };
-        mdbx_result(unsafe {
+        mdbx_result!(unsafe {
             txn_execute(&*self.txn, |_| {
-                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, flags.bits())
+                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, flags)
             })
         })?;
 
@@ -452,13 +467,11 @@ impl<'txn> Cursor<'txn, RW> {
     ///
     /// ### Flags
     ///
-    /// [WriteFlags::NO_DUP_DATA] may be used to delete all data items for the
-    /// current key, if the database was opened with [DatabaseFlags::DUP_SORT].
-    pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
-        mdbx_result(unsafe {
-            txn_execute(&*self.txn, |_| {
-                ffi::mdbx_cursor_del(self.cursor, flags.bits())
-            })
+    /// [ffi::MDBX_put_flags_t::NO_DUP_DATA] may be used to delete all data items for the
+    /// current key, if the database was opened with [ffi::MDBX_db_flags_t::DUP_SORT].
+    pub fn del(&mut self, flags: ffi::MDBX_put_flags_t) -> Result<()> {
+        mdbx_result!(unsafe {
+            txn_execute(&*self.txn, |_| ffi::mdbx_cursor_del(self.cursor, flags))
         })?;
 
         Ok(())
@@ -518,7 +531,11 @@ where
     type IntoIter = IntoIter<'txn, K, Cow<'txn, [u8]>, Cow<'txn, [u8]>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IntoIter::new(self, MDBX_NEXT, MDBX_NEXT)
+        IntoIter::new(
+            self,
+            ffi::MDBX_cursor_op::MDBX_NEXT,
+            ffi::MDBX_cursor_op::MDBX_NEXT,
+        )
     }
 }
 
@@ -599,8 +616,13 @@ where
                 let op = mem::replace(op, *next_op);
                 unsafe {
                     txn_execute(&*cursor.txn, |txn| {
-                        match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
-                            ffi::MDBX_SUCCESS => {
+                        match MDBX_error_t(ffi::mdbx_cursor_get(
+                            cursor.cursor(),
+                            &mut key,
+                            &mut data,
+                            op,
+                        )) {
+                            MDBX_error_t::MDBX_SUCCESS => {
                                 let key = match Key::decode_val::<K>(txn, &key) {
                                     Ok(v) => v,
                                     Err(e) => return Some(Err(e)),
@@ -613,7 +635,7 @@ where
                             }
                             // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | libc::ENODATA => None,
+                            MDBX_error_t::MDBX_NOTFOUND | MDBX_error_t::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })
@@ -705,8 +727,13 @@ where
                 let op = mem::replace(op, *next_op);
                 unsafe {
                     txn_execute(&*cursor.txn, |txn| {
-                        match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
-                            ffi::MDBX_SUCCESS => {
+                        match MDBX_error_t(ffi::mdbx_cursor_get(
+                            cursor.cursor(),
+                            &mut key,
+                            &mut data,
+                            op,
+                        )) {
+                            MDBX_error_t::MDBX_SUCCESS => {
                                 let key = match Key::decode_val::<K>(txn, &key) {
                                     Ok(v) => v,
                                     Err(e) => return Some(Err(e)),
@@ -719,7 +746,7 @@ where
                             }
                             // EINVAL can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | libc::ENODATA => None,
+                            MDBX_error_t::MDBX_NOTFOUND | MDBX_error_t::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })
@@ -756,7 +783,7 @@ where
         cursor: &'cur mut Cursor<'txn, K>,
 
         /// The first operation to perform when the consumer calls Iter.next().
-        op: c_uint,
+        op: MDBX_cursor_op,
 
         _marker: PhantomData<fn(&'txn (Key, Value))>,
     },
@@ -769,7 +796,7 @@ where
     Value: TableObject<'txn>,
 {
     /// Creates a new iterator backed by the given cursor.
-    fn new(cursor: &'cur mut Cursor<'txn, K>, op: c_uint) -> Self {
+    fn new(cursor: &'cur mut Cursor<'txn, K>, op: MDBX_cursor_op) -> Self {
         IterDup::Ok {
             cursor,
             op,
@@ -808,17 +835,17 @@ where
                     iov_len: 0,
                     iov_base: ptr::null_mut(),
                 };
-                let op = mem::replace(op, ffi::MDBX_NEXT_NODUP);
+                let op = mem::replace(op, ffi::MDBX_cursor_op::MDBX_NEXT_NODUP);
 
                 txn_execute(&*cursor.txn, |_| {
                     let err_code =
                         unsafe { ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) };
 
-                    if err_code == ffi::MDBX_SUCCESS {
+                    if MDBX_error_t(err_code) == MDBX_error_t::MDBX_SUCCESS {
                         Some(IntoIter::new(
                             Cursor::new_at_position(&**cursor).unwrap(),
-                            ffi::MDBX_GET_CURRENT,
-                            ffi::MDBX_NEXT_DUP,
+                            ffi::MDBX_cursor_op::MDBX_GET_CURRENT,
+                            ffi::MDBX_cursor_op::MDBX_NEXT_DUP,
                         ))
                     } else {
                         None
@@ -848,9 +875,12 @@ mod test {
 
         assert_eq!(None, txn.cursor(&db).unwrap().first::<(), ()>().unwrap());
 
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val2", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val3", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
 
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
@@ -872,13 +902,19 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
+        let db = txn.create_db(None, ffi::MDBX_db_flags_t::DUP_SORT).unwrap();
+        txn.put(&db, b"key1", b"val1", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val2", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val3", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val1", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val2", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val3", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
 
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
@@ -911,14 +947,23 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn
-            .create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+            .create_db(
+                None,
+                ffi::MDBX_db_flags_t::DUP_SORT | ffi::MDBX_db_flags_t::DUP_FIXED,
+            )
             .unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val4", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val5", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val2", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val3", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val4", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val5", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val6", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
 
         let mut cursor = txn.cursor(&db).unwrap();
         assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
@@ -942,7 +987,8 @@ mod test {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for (key, data) in &items {
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, ffi::MDBX_put_flags_t::empty())
+                    .unwrap();
             }
             assert!(!txn.commit().unwrap());
         }
@@ -1015,7 +1061,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        txn.create_db(None, ffi::MDBX_db_flags_t::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_ro_txn().unwrap();
@@ -1042,7 +1088,7 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        txn.create_db(None, ffi::MDBX_db_flags_t::DUP_SORT).unwrap();
         txn.commit().unwrap();
 
         let items: Vec<(_, _)> = [
@@ -1067,7 +1113,8 @@ mod test {
             let txn = env.begin_rw_txn().unwrap();
             for (key, data) in items.clone() {
                 let db = txn.open_db(None).unwrap();
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, ffi::MDBX_put_flags_t::empty())
+                    .unwrap();
             }
             txn.commit().unwrap();
         }
@@ -1173,7 +1220,7 @@ mod test {
         let items = vec![(*b"a", *b"1"), (*b"b", *b"2")];
         {
             let txn = env.begin_rw_txn().unwrap();
-            let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+            let db = txn.create_db(None, ffi::MDBX_db_flags_t::DUP_SORT).unwrap();
             assert_eq!(
                 txn.cursor(&db)
                     .unwrap()
@@ -1190,7 +1237,8 @@ mod test {
             let txn = env.begin_rw_txn().unwrap();
             let db = txn.open_db(None).unwrap();
             for (key, data) in &items {
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&db, key, data, ffi::MDBX_put_flags_t::empty())
+                    .unwrap();
             }
             txn.commit().unwrap();
         }
@@ -1217,7 +1265,7 @@ mod test {
 
         assert_eq!(cursor.set(b"a").unwrap(), Some(*b"1"));
 
-        cursor.del(WriteFlags::empty()).unwrap();
+        cursor.del(ffi::MDBX_put_flags_t::empty()).unwrap();
 
         assert_eq!(
             cursor
@@ -1238,9 +1286,15 @@ mod test {
         let db = txn.open_db(None).unwrap();
         let mut cursor = txn.cursor(&db).unwrap();
 
-        cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
-        cursor.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
-        cursor.put(b"key3", b"val3", WriteFlags::empty()).unwrap();
+        cursor
+            .put(b"key1", b"val1", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        cursor
+            .put(b"key2", b"val2", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
+        cursor
+            .put(b"key3", b"val3", ffi::MDBX_put_flags_t::empty())
+            .unwrap();
 
         assert_eq!(
             cursor.get_current().unwrap().unwrap(),
@@ -1250,7 +1304,7 @@ mod test {
             )
         );
 
-        cursor.del(WriteFlags::empty()).unwrap();
+        cursor.del(ffi::MDBX_put_flags_t::empty()).unwrap();
         assert_eq!(
             cursor.last().unwrap().unwrap(),
             (

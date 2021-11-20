@@ -14,8 +14,22 @@ ChangeLog
  - [Support for RAW devices](https://github.com/erthink/libmdbx/issues/124).
  - [Support MessagePack for Keys & Values](https://github.com/erthink/libmdbx/issues/115).
  - [Engage new terminology](https://github.com/erthink/libmdbx/issues/137).
- - Finalize C++ API (few typos and bugs are still maybe for now).
+ - Finalize C++ API (there is still a small chance for a few typos and bugs).
  - Packages for [Astra Linux](https://astralinux.ru/), [ALT Linux](https://www.altlinux.org/), [ROSA Linux](https://www.rosalinux.ru/), etc.
+
+
+## v0.11.2 (underway)
+
+Acknowledgements:
+
+ - [장세연 (Чан Се Ен)](https://github.com/sasgas) for contributing to C++ API.
+
+Minors:
+
+ - Fixed `constexpr`-related macros for legacy compilers.
+ - Allowed to define 'CMAKE_CXX_STANDARD` using an environment variable.
+ - Simplified collection statistics of page operation .
+ - [Fixed](https://github.com/erthink/libmdbx/pull/239) compilation with devtoolset-9 on CentOS/RHEL 7.
 
 
 ## v0.11.1 at 2021-10-23

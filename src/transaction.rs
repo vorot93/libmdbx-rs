@@ -1,13 +1,12 @@
 use crate::{
     database::Database,
     environment::{Environment, EnvironmentKind, NoWriteMap, TxnManagerMessage, TxnPtr},
-    error::{mdbx_result, Result},
-    flags::{DatabaseFlags, WriteFlags},
-    Cursor, Error, Stat, TableObject,
+    error::Result,
+    mdbx_result, Cursor, Error, Stat, TableObject,
 };
-use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
+use ffi::{MDBX_db_flags_t, MDBX_error_t, MDBX_put_flags_t, MDBX_txn_flags_t};
 use indexmap::IndexSet;
-use libc::{c_uint, c_void};
+use libc::c_void;
 use parking_lot::Mutex;
 use std::{
     fmt,
@@ -42,11 +41,11 @@ pub struct RW;
 
 impl TransactionKind for RO {
     const ONLY_CLEAN: bool = true;
-    const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_TXN_RDONLY;
+    const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_txn_flags_t::MDBX_TXN_RDONLY;
 }
 impl TransactionKind for RW {
     const ONLY_CLEAN: bool = false;
-    const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_TXN_READWRITE;
+    const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_txn_flags_t::MDBX_TXN_READWRITE;
 }
 
 /// An MDBX transaction.
@@ -72,7 +71,7 @@ where
     pub(crate) fn new(env: &'env Environment<E>) -> Result<Self> {
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
-            mdbx_result(ffi::mdbx_txn_begin_ex(
+            mdbx_result!(ffi::mdbx_txn_begin_ex(
                 env.env(),
                 ptr::null_mut(),
                 K::OPEN_FLAGS,
@@ -119,7 +118,7 @@ where
     ///
     /// This function retrieves the data associated with the given key in the
     /// database. If the database supports duplicate keys
-    /// ([DatabaseFlags::DUP_SORT]) then the first data item for the key will be
+    /// ([MDBX_db_flags_t::DUP_SORT]) then the first data item for the key will be
     /// returned. Retrieval of other items requires the use of
     /// [Cursor]. If the item is not in the database, then
     /// [None] will be returned.
@@ -137,9 +136,9 @@ where
         };
 
         txn_execute(&self.txn, |txn| unsafe {
-            match ffi::mdbx_get(txn, db.dbi(), &key_val, &mut data_val) {
-                ffi::MDBX_SUCCESS => Key::decode_val::<K>(txn, &data_val).map(Some),
-                ffi::MDBX_NOTFOUND => Ok(None),
+            match MDBX_error_t(ffi::mdbx_get(txn, db.dbi(), &key_val, &mut data_val)) {
+                MDBX_error_t::MDBX_SUCCESS => Key::decode_val::<K>(txn, &data_val).map(Some),
+                MDBX_error_t::MDBX_NOTFOUND => Ok(None),
                 err_code => Err(Error::from_err_code(err_code)),
             }
         })
@@ -161,7 +160,7 @@ where
         let txnlck = self.txn.lock();
         let txn = *txnlck;
         let result = if K::ONLY_CLEAN {
-            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
+            mdbx_result!(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
         } else {
             let (sender, rx) = sync_channel(0);
             self.env
@@ -200,25 +199,25 @@ where
     ///
     /// The database name may not contain the null character.
     pub fn open_db<'txn>(&'txn self, name: Option<&str>) -> Result<Database<'txn>> {
-        Database::new(self, name, 0)
+        Database::new(self, name, MDBX_db_flags_t::MDBX_DB_DEFAULTS)
     }
 
     /// Gets the option flags for the given database in the transaction.
-    pub fn db_flags<'txn>(&'txn self, db: &Database<'txn>) -> Result<DatabaseFlags> {
-        let mut flags: c_uint = 0;
+    pub fn db_flags<'txn>(&'txn self, db: &Database<'txn>) -> Result<MDBX_db_flags_t> {
+        let mut flags: libc::c_uint = 0;
         unsafe {
-            mdbx_result(txn_execute(&self.txn, |txn| {
+            mdbx_result!(txn_execute(&self.txn, |txn| {
                 ffi::mdbx_dbi_flags_ex(txn, db.dbi(), &mut flags, ptr::null_mut())
             }))?;
         }
-        Ok(DatabaseFlags::from_bits_truncate(flags))
+        Ok(unsafe { std::mem::transmute::<libc::c_uint, MDBX_db_flags_t>(flags) })
     }
 
     /// Retrieves database statistics.
     pub fn db_stat<'txn>(&'txn self, db: &Database<'txn>) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            mdbx_result(txn_execute(&self.txn, |txn| {
+            mdbx_result!(txn_execute(&self.txn, |txn| {
                 ffi::mdbx_dbi_stat(txn, db.dbi(), stat.mdb_stat(), size_of::<Stat>())
             }))?;
             Ok(stat)
@@ -246,9 +245,9 @@ where
     fn open_db_with_flags<'txn>(
         &'txn self,
         name: Option<&str>,
-        flags: DatabaseFlags,
+        flags: MDBX_db_flags_t,
     ) -> Result<Database<'txn>> {
-        Database::new(self, name, flags.bits())
+        Database::new(self, name, flags)
     }
 
     /// Opens a handle to an MDBX database, creating the database if necessary.
@@ -266,9 +265,9 @@ where
     pub fn create_db<'txn>(
         &'txn self,
         name: Option<&str>,
-        flags: DatabaseFlags,
+        flags: MDBX_db_flags_t,
     ) -> Result<Database<'txn>> {
-        self.open_db_with_flags(name, flags | DatabaseFlags::CREATE)
+        self.open_db_with_flags(name, flags | MDBX_db_flags_t::MDBX_CREATE)
     }
 
     /// Stores an item into a database.
@@ -276,13 +275,13 @@ where
     /// This function stores key/data pairs in the database. The default
     /// behavior is to enter the new key/data pair, replacing any previously
     /// existing key if duplicates are disallowed, or adding a duplicate data
-    /// item if duplicates are allowed ([DatabaseFlags::DUP_SORT]).
+    /// item if duplicates are allowed ([MDBX_db_flags_t::DUP_SORT]).
     pub fn put<'txn>(
         &'txn self,
         db: &Database<'txn>,
         key: impl AsRef<[u8]>,
         data: impl AsRef<[u8]>,
-        flags: WriteFlags,
+        flags: MDBX_put_flags_t,
     ) -> Result<()> {
         let key = key.as_ref();
         let data = data.as_ref();
@@ -294,8 +293,8 @@ where
             iov_len: data.len(),
             iov_base: data.as_ptr() as *mut c_void,
         };
-        mdbx_result(txn_execute(&self.txn, |txn| unsafe {
-            ffi::mdbx_put(txn, db.dbi(), &key_val, &mut data_val, flags.bits())
+        mdbx_result!(txn_execute(&self.txn, |txn| unsafe {
+            ffi::mdbx_put(txn, db.dbi(), &key_val, &mut data_val, flags)
         }))?;
 
         Ok(())
@@ -309,7 +308,7 @@ where
         db: &Database<'txn>,
         key: impl AsRef<[u8]>,
         len: usize,
-        flags: WriteFlags,
+        flags: MDBX_put_flags_t,
     ) -> Result<&'txn mut [u8]> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
@@ -321,13 +320,13 @@ where
             iov_base: ptr::null_mut::<c_void>(),
         };
         unsafe {
-            mdbx_result(txn_execute(&self.txn, |txn| {
+            mdbx_result!(txn_execute(&self.txn, |txn| {
                 ffi::mdbx_put(
                     txn,
                     db.dbi(),
                     &key_val,
                     &mut data_val,
-                    flags.bits() | ffi::MDBX_RESERVE,
+                    flags | MDBX_put_flags_t::MDBX_RESERVE,
                 )
             }))?;
             Ok(slice::from_raw_parts_mut(
@@ -361,7 +360,7 @@ where
             iov_base: data.as_ptr() as *mut c_void,
         });
 
-        mdbx_result({
+        mdbx_result!({
             txn_execute(&self.txn, |txn| {
                 if let Some(d) = data_val {
                     unsafe { ffi::mdbx_del(txn, db.dbi(), &key_val, &d) }
@@ -379,7 +378,7 @@ where
 
     /// Empties the given database. All items will be removed.
     pub fn clear_db<'txn>(&'txn self, db: &Database<'txn>) -> Result<()> {
-        mdbx_result(txn_execute(&self.txn, |txn| unsafe {
+        mdbx_result!(txn_execute(&self.txn, |txn| unsafe {
             ffi::mdbx_drop(txn, db.dbi(), false)
         }))?;
 
@@ -391,7 +390,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Database] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_db<'txn>(&'txn self, db: Database<'txn>) -> Result<()> {
-        mdbx_result(txn_execute(&self.txn, |txn| {
+        mdbx_result!(txn_execute(&self.txn, |txn| {
             ffi::mdbx_drop(txn, db.dbi(), true)
         }))?;
 
@@ -408,7 +407,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Database] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn close_db(&self, db: Database<'_>) -> Result<()> {
-        mdbx_result(ffi::mdbx_dbi_close(self.env.env(), db.dbi()))?;
+        mdbx_result!(ffi::mdbx_dbi_close(self.env.env(), db.dbi()))?;
 
         Ok(())
     }
@@ -511,9 +510,12 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
@@ -533,16 +535,25 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        let db = txn.create_db(None, MDBX_db_flags_t::DUP_SORT).unwrap();
+        txn.put(&db, b"key1", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
@@ -582,14 +593,15 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.create_db(None, Default::default()).unwrap();
-        txn.put(&db, b"", b"hello", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"", b"hello", MDBX_put_flags_t::empty())
+            .unwrap();
         assert_eq!(txn.get(&db, b"").unwrap(), Some(*b"hello"));
         txn.commit().unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         assert_eq!(txn.get(&db, b"").unwrap(), Some(*b"hello"));
-        txn.put(&db, b"", b"", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"", b"", MDBX_put_flags_t::empty()).unwrap();
         assert_eq!(txn.get(&db, b"").unwrap(), Some(*b""));
     }
 
@@ -601,7 +613,9 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
         {
-            let mut writer = txn.reserve(&db, b"key1", 4, WriteFlags::empty()).unwrap();
+            let mut writer = txn
+                .reserve(&db, b"key1", 4, MDBX_put_flags_t::empty())
+                .unwrap();
             writer.write_all(b"val1").unwrap();
         }
         txn.commit().unwrap();
@@ -625,7 +639,7 @@ mod test {
             &txn.open_db(None).unwrap(),
             b"key1",
             b"val1",
-            WriteFlags::empty(),
+            MDBX_put_flags_t::empty(),
         )
         .unwrap();
 
@@ -633,7 +647,7 @@ mod test {
             let nested = txn.begin_nested_txn().unwrap();
             let db = nested.open_db(None).unwrap();
             nested
-                .put(&db, b"key2", b"val2", WriteFlags::empty())
+                .put(&db, b"key2", b"val2", MDBX_put_flags_t::empty())
                 .unwrap();
             assert_eq!(nested.get(&db, b"key1").unwrap(), Some(*b"val1"));
             assert_eq!(nested.get(&db, b"key2").unwrap(), Some(*b"val2"));
@@ -655,7 +669,7 @@ mod test {
                 &txn.open_db(None).unwrap(),
                 b"key",
                 b"val",
-                WriteFlags::empty(),
+                MDBX_put_flags_t::empty(),
             )
             .unwrap();
             assert!(!txn.commit().unwrap());
@@ -683,14 +697,15 @@ mod test {
             {
                 let txn = env.begin_rw_txn().unwrap();
                 txn.put(
-                    &txn.create_db(Some("test"), DatabaseFlags::empty()).unwrap(),
+                    &txn.create_db(Some("test"), MDBX_db_flags_t::empty())
+                        .unwrap(),
                     b"key",
                     b"val",
-                    WriteFlags::empty(),
+                    MDBX_put_flags_t::empty(),
                 )
                 .unwrap();
                 // Workaround for MDBX dbi drop issue
-                txn.create_db(Some("canary"), DatabaseFlags::empty())
+                txn.create_db(Some("canary"), MDBX_db_flags_t::empty())
                     .unwrap();
                 assert!(!txn.commit().unwrap());
             }
@@ -754,7 +769,7 @@ mod test {
         let db = txn.open_db(None).unwrap();
         println!("wait2");
         barrier.wait();
-        txn.put(&db, key, val, WriteFlags::empty()).unwrap();
+        txn.put(&db, key, val, MDBX_put_flags_t::empty()).unwrap();
         txn.commit().unwrap();
 
         println!("wait1");
@@ -784,7 +799,7 @@ mod test {
                     &db,
                     &format!("{}{}", key, i),
                     &format!("{}{}", val, i),
-                    WriteFlags::empty(),
+                    MDBX_put_flags_t::empty(),
                 )
                 .unwrap();
                 txn.commit().is_ok()
@@ -811,10 +826,13 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        let db = txn.create_db(None, MDBX_db_flags_t::empty()).unwrap();
+        txn.put(&db, b"key1", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
         txn.commit().unwrap();
 
         {
@@ -839,9 +857,12 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        txn.put(&db, b"key4", b"val4", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key5", b"val5", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key6", b"val6", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key4", b"val4", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key5", b"val5", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key6", b"val6", MDBX_put_flags_t::empty())
+            .unwrap();
         txn.commit().unwrap();
 
         {
@@ -858,16 +879,25 @@ mod test {
         let env = Environment::new().open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-        txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+        let db = txn.create_db(None, MDBX_db_flags_t::DUP_SORT).unwrap();
+        txn.put(&db, b"key1", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key1", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key2", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key3", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
         txn.commit().unwrap();
 
         {
@@ -890,9 +920,12 @@ mod test {
 
         let txn = env.begin_rw_txn().unwrap();
         let db = txn.open_db(None).unwrap();
-        txn.put(&db, b"key4", b"val1", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key4", b"val2", WriteFlags::empty()).unwrap();
-        txn.put(&db, b"key4", b"val3", WriteFlags::empty()).unwrap();
+        txn.put(&db, b"key4", b"val1", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key4", b"val2", MDBX_put_flags_t::empty())
+            .unwrap();
+        txn.put(&db, b"key4", b"val3", MDBX_put_flags_t::empty())
+            .unwrap();
         txn.commit().unwrap();
 
         {

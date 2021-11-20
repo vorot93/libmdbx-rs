@@ -1,6 +1,4 @@
-use bitflags::bitflags;
-use ffi::*;
-use libc::c_uint;
+use ffi::MDBX_env_flags_t;
 
 /// MDBX sync mode
 #[derive(Clone, Copy, Debug)]
@@ -110,57 +108,58 @@ pub struct EnvironmentFlags {
 }
 
 impl EnvironmentFlags {
-    pub(crate) fn make_flags(&self) -> ffi::MDBX_env_flags_t {
-        let mut flags = 0;
+    pub(crate) fn make_flags(&self) -> MDBX_env_flags_t {
+        let mut flags = MDBX_env_flags_t::MDBX_ENV_DEFAULTS;
 
         if self.no_sub_dir {
-            flags |= ffi::MDBX_NOSUBDIR;
+            flags |= MDBX_env_flags_t::MDBX_NOSUBDIR;
         }
 
         if self.exclusive {
-            flags |= ffi::MDBX_EXCLUSIVE;
+            flags |= MDBX_env_flags_t::MDBX_EXCLUSIVE;
         }
 
         if self.accede {
-            flags |= ffi::MDBX_ACCEDE;
+            flags |= MDBX_env_flags_t::MDBX_ACCEDE;
         }
 
         match self.mode {
             Mode::ReadOnly => {
-                flags |= ffi::MDBX_RDONLY;
+                flags |= MDBX_env_flags_t::MDBX_RDONLY;
             }
             Mode::ReadWrite { sync_mode } => {
                 flags |= match sync_mode {
-                    SyncMode::Durable => ffi::MDBX_SYNC_DURABLE,
-                    SyncMode::NoMetaSync => ffi::MDBX_NOMETASYNC,
-                    SyncMode::SafeNoSync => ffi::MDBX_SAFE_NOSYNC,
-                    SyncMode::UtterlyNoSync => ffi::MDBX_UTTERLY_NOSYNC,
+                    SyncMode::Durable => MDBX_env_flags_t::MDBX_SYNC_DURABLE,
+                    SyncMode::NoMetaSync => MDBX_env_flags_t::MDBX_NOMETASYNC,
+                    SyncMode::SafeNoSync => MDBX_env_flags_t::MDBX_SAFE_NOSYNC,
+                    SyncMode::UtterlyNoSync => MDBX_env_flags_t::MDBX_UTTERLY_NOSYNC,
                 };
             }
         }
 
         if self.no_rdahead {
-            flags |= ffi::MDBX_NORDAHEAD;
+            flags |= MDBX_env_flags_t::MDBX_NORDAHEAD;
         }
 
         if self.no_meminit {
-            flags |= ffi::MDBX_NOMEMINIT;
+            flags |= MDBX_env_flags_t::MDBX_NOMEMINIT;
         }
 
         if self.coalesce {
-            flags |= ffi::MDBX_COALESCE;
+            flags |= MDBX_env_flags_t::MDBX_COALESCE;
         }
 
         if self.liforeclaim {
-            flags |= ffi::MDBX_LIFORECLAIM;
+            flags |= MDBX_env_flags_t::MDBX_LIFORECLAIM;
         }
 
-        flags |= ffi::MDBX_NOTLS;
+        flags |= MDBX_env_flags_t::MDBX_NOTLS;
 
         flags
     }
 }
 
+/*
 bitflags! {
     #[doc="Database options."]
     #[derive(Default)]
@@ -175,19 +174,19 @@ bitflags! {
         const ACCEDE = MDBX_DB_ACCEDE;
     }
 }
-
 bitflags! {
     #[doc="Write options."]
     #[derive(Default)]
     pub struct WriteFlags: c_uint {
-        const UPSERT = MDBX_UPSERT;
-        const NO_OVERWRITE = MDBX_NOOVERWRITE;
-        const NO_DUP_DATA = MDBX_NODUPDATA;
-        const CURRENT = MDBX_CURRENT;
-        const ALLDUPS = MDBX_ALLDUPS;
-        const RESERVE = MDBX_RESERVE;
-        const APPEND = MDBX_APPEND;
-        const APPEND_DUP = MDBX_APPENDDUP;
-        const MULTIPLE = MDBX_MULTIPLE;
+        const UPSERT = ffi::MDBX_put_flags_t::MDBX_UPSERT;
+        const NO_OVERWRITE = ffi::MDBX_put_flags_t::MDBX_NOOVERWRITE;
+        const NO_DUP_DATA = ffi::MDBX_put_flags_t::MDBX_NODUPDATA;
+        const CURRENT = ffi::MDBX_put_flags_t::MDBX_CURRENT;
+        const ALLDUPS = ffi::MDBX_put_flags_t::MDBX_ALLDUPS;
+        const RESERVE = ffi::MDBX_put_flags_t::MDBX_RESERVE;
+        const APPEND = ffi::MDBX_put_flags_t::MDBX_APPEND;
+        const APPEND_DUP = ffi::MDBX_put_flags_t::ffi::MDBX_put_flags_t::MDBX_APPENDDUP;
+        const MULTIPLE = ffi::MDBX_put_flags_t::MDBX_MULTIPLE;
     }
 }
+*/

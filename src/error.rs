@@ -1,6 +1,5 @@
-use libc::c_int;
+use ffi::MDBX_error_t;
 use std::{ffi::CStr, fmt, result, str};
-
 /// An MDBX error kind.
 #[derive(Debug)]
 pub enum Error {
@@ -32,74 +31,74 @@ pub enum Error {
     Access,
     TooLarge,
     DecodeError(Box<dyn std::error::Error + Send + Sync + 'static>),
-    Other(c_int),
+    Other(MDBX_error_t),
 }
 
 impl Error {
     /// Converts a raw error code to an [Error].
-    pub fn from_err_code(err_code: c_int) -> Error {
+    pub fn from_err_code(err_code: MDBX_error_t) -> Error {
         match err_code {
-            ffi::MDBX_KEYEXIST => Error::KeyExist,
-            ffi::MDBX_NOTFOUND => Error::NotFound,
-            ffi::MDBX_PAGE_NOTFOUND => Error::PageNotFound,
-            ffi::MDBX_CORRUPTED => Error::Corrupted,
-            ffi::MDBX_PANIC => Error::Panic,
-            ffi::MDBX_VERSION_MISMATCH => Error::VersionMismatch,
-            ffi::MDBX_INVALID => Error::Invalid,
-            ffi::MDBX_MAP_FULL => Error::MapFull,
-            ffi::MDBX_DBS_FULL => Error::DbsFull,
-            ffi::MDBX_READERS_FULL => Error::ReadersFull,
-            ffi::MDBX_TXN_FULL => Error::TxnFull,
-            ffi::MDBX_CURSOR_FULL => Error::CursorFull,
-            ffi::MDBX_PAGE_FULL => Error::PageFull,
-            ffi::MDBX_UNABLE_EXTEND_MAPSIZE => Error::UnableExtendMapsize,
-            ffi::MDBX_INCOMPATIBLE => Error::Incompatible,
-            ffi::MDBX_BAD_RSLOT => Error::BadRslot,
-            ffi::MDBX_BAD_TXN => Error::BadTxn,
-            ffi::MDBX_BAD_VALSIZE => Error::BadValSize,
-            ffi::MDBX_BAD_DBI => Error::BadDbi,
-            ffi::MDBX_PROBLEM => Error::Problem,
-            ffi::MDBX_BUSY => Error::Busy,
-            ffi::MDBX_EMULTIVAL => Error::Multival,
-            ffi::MDBX_WANNA_RECOVERY => Error::WannaRecovery,
-            ffi::MDBX_EKEYMISMATCH => Error::KeyMismatch,
-            ffi::MDBX_EINVAL => Error::InvalidValue,
-            ffi::MDBX_EACCESS => Error::Access,
-            ffi::MDBX_TOO_LARGE => Error::TooLarge,
+            MDBX_error_t::MDBX_KEYEXIST => Error::KeyExist,
+            MDBX_error_t::MDBX_NOTFOUND => Error::NotFound,
+            MDBX_error_t::MDBX_PAGE_NOTFOUND => Error::PageNotFound,
+            MDBX_error_t::MDBX_CORRUPTED => Error::Corrupted,
+            MDBX_error_t::MDBX_PANIC => Error::Panic,
+            MDBX_error_t::MDBX_VERSION_MISMATCH => Error::VersionMismatch,
+            MDBX_error_t::MDBX_INVALID => Error::Invalid,
+            MDBX_error_t::MDBX_MAP_FULL => Error::MapFull,
+            MDBX_error_t::MDBX_DBS_FULL => Error::DbsFull,
+            MDBX_error_t::MDBX_READERS_FULL => Error::ReadersFull,
+            MDBX_error_t::MDBX_TXN_FULL => Error::TxnFull,
+            MDBX_error_t::MDBX_CURSOR_FULL => Error::CursorFull,
+            MDBX_error_t::MDBX_PAGE_FULL => Error::PageFull,
+            MDBX_error_t::MDBX_UNABLE_EXTEND_MAPSIZE => Error::UnableExtendMapsize,
+            MDBX_error_t::MDBX_INCOMPATIBLE => Error::Incompatible,
+            MDBX_error_t::MDBX_BAD_RSLOT => Error::BadRslot,
+            MDBX_error_t::MDBX_BAD_TXN => Error::BadTxn,
+            MDBX_error_t::MDBX_BAD_VALSIZE => Error::BadValSize,
+            MDBX_error_t::MDBX_BAD_DBI => Error::BadDbi,
+            MDBX_error_t::MDBX_PROBLEM => Error::Problem,
+            MDBX_error_t::MDBX_BUSY => Error::Busy,
+            MDBX_error_t::MDBX_EMULTIVAL => Error::Multival,
+            MDBX_error_t::MDBX_WANNA_RECOVERY => Error::WannaRecovery,
+            MDBX_error_t::MDBX_EKEYMISMATCH => Error::KeyMismatch,
+            MDBX_error_t::MDBX_EINVAL => Error::InvalidValue,
+            MDBX_error_t::MDBX_EACCESS => Error::Access,
+            MDBX_error_t::MDBX_TOO_LARGE => Error::TooLarge,
             other => Error::Other(other),
         }
     }
 
     /// Converts an [Error] to the raw error code.
-    fn to_err_code(&self) -> c_int {
+    fn to_err_code(&self) -> MDBX_error_t {
         match self {
-            Error::KeyExist => ffi::MDBX_KEYEXIST,
-            Error::NotFound => ffi::MDBX_NOTFOUND,
-            Error::PageNotFound => ffi::MDBX_PAGE_NOTFOUND,
-            Error::Corrupted => ffi::MDBX_CORRUPTED,
-            Error::Panic => ffi::MDBX_PANIC,
-            Error::VersionMismatch => ffi::MDBX_VERSION_MISMATCH,
-            Error::Invalid => ffi::MDBX_INVALID,
-            Error::MapFull => ffi::MDBX_MAP_FULL,
-            Error::DbsFull => ffi::MDBX_DBS_FULL,
-            Error::ReadersFull => ffi::MDBX_READERS_FULL,
-            Error::TxnFull => ffi::MDBX_TXN_FULL,
-            Error::CursorFull => ffi::MDBX_CURSOR_FULL,
-            Error::PageFull => ffi::MDBX_PAGE_FULL,
-            Error::UnableExtendMapsize => ffi::MDBX_UNABLE_EXTEND_MAPSIZE,
-            Error::Incompatible => ffi::MDBX_INCOMPATIBLE,
-            Error::BadRslot => ffi::MDBX_BAD_RSLOT,
-            Error::BadTxn => ffi::MDBX_BAD_TXN,
-            Error::BadValSize => ffi::MDBX_BAD_VALSIZE,
-            Error::BadDbi => ffi::MDBX_BAD_DBI,
-            Error::Problem => ffi::MDBX_PROBLEM,
-            Error::Busy => ffi::MDBX_BUSY,
-            Error::Multival => ffi::MDBX_EMULTIVAL,
-            Error::WannaRecovery => ffi::MDBX_WANNA_RECOVERY,
-            Error::KeyMismatch => ffi::MDBX_EKEYMISMATCH,
-            Error::InvalidValue => ffi::MDBX_EINVAL,
-            Error::Access => ffi::MDBX_EACCESS,
-            Error::TooLarge => ffi::MDBX_TOO_LARGE,
+            Error::KeyExist => MDBX_error_t::MDBX_KEYEXIST,
+            Error::NotFound => MDBX_error_t::MDBX_NOTFOUND,
+            Error::PageNotFound => MDBX_error_t::MDBX_PAGE_NOTFOUND,
+            Error::Corrupted => MDBX_error_t::MDBX_CORRUPTED,
+            Error::Panic => MDBX_error_t::MDBX_PANIC,
+            Error::VersionMismatch => MDBX_error_t::MDBX_VERSION_MISMATCH,
+            Error::Invalid => MDBX_error_t::MDBX_INVALID,
+            Error::MapFull => MDBX_error_t::MDBX_MAP_FULL,
+            Error::DbsFull => MDBX_error_t::MDBX_DBS_FULL,
+            Error::ReadersFull => MDBX_error_t::MDBX_READERS_FULL,
+            Error::TxnFull => MDBX_error_t::MDBX_TXN_FULL,
+            Error::CursorFull => MDBX_error_t::MDBX_CURSOR_FULL,
+            Error::PageFull => MDBX_error_t::MDBX_PAGE_FULL,
+            Error::UnableExtendMapsize => MDBX_error_t::MDBX_UNABLE_EXTEND_MAPSIZE,
+            Error::Incompatible => MDBX_error_t::MDBX_INCOMPATIBLE,
+            Error::BadRslot => MDBX_error_t::MDBX_BAD_RSLOT,
+            Error::BadTxn => MDBX_error_t::MDBX_BAD_TXN,
+            Error::BadValSize => MDBX_error_t::MDBX_BAD_VALSIZE,
+            Error::BadDbi => MDBX_error_t::MDBX_BAD_DBI,
+            Error::Problem => MDBX_error_t::MDBX_PROBLEM,
+            Error::Busy => MDBX_error_t::MDBX_BUSY,
+            Error::Multival => MDBX_error_t::MDBX_EMULTIVAL,
+            Error::WannaRecovery => MDBX_error_t::MDBX_WANNA_RECOVERY,
+            Error::KeyMismatch => MDBX_error_t::MDBX_EKEYMISMATCH,
+            Error::InvalidValue => MDBX_error_t::MDBX_EINVAL,
+            Error::Access => MDBX_error_t::MDBX_EACCESS,
+            Error::TooLarge => MDBX_error_t::MDBX_TOO_LARGE,
             Error::Other(err_code) => *err_code,
             _ => unreachable!(),
         }
@@ -112,7 +111,7 @@ impl fmt::Display for Error {
             Error::DecodeError(reason) => write!(fmt, "{}", reason),
             other => {
                 write!(fmt, "{}", unsafe {
-                    let err = ffi::mdbx_strerror(other.to_err_code());
+                    let err = ffi::mdbx_strerror(other.to_err_code().0);
                     str::from_utf8_unchecked(CStr::from_ptr(err).to_bytes())
                 })
             }
@@ -125,12 +124,19 @@ impl std::error::Error for Error {}
 /// An MDBX result.
 pub type Result<T> = result::Result<T, Error>;
 
-pub fn mdbx_result(err_code: c_int) -> Result<bool> {
+pub fn _mdbx_result(err_code: MDBX_error_t) -> Result<bool> {
     match err_code {
-        ffi::MDBX_SUCCESS => Ok(false),
-        ffi::MDBX_RESULT_TRUE => Ok(true),
+        MDBX_error_t::MDBX_SUCCESS => Ok(false),
+        MDBX_error_t::MDBX_RESULT_TRUE => Ok(true),
         other => Err(Error::from_err_code(other)),
     }
+}
+
+#[macro_export]
+macro_rules! mdbx_result {
+    ($expr:expr) => {
+        crate::error::_mdbx_result(ffi::MDBX_error_t($expr))
+    };
 }
 
 #[macro_export]
@@ -152,7 +158,7 @@ mod test {
     fn test_description() {
         assert_eq!("Permission denied", Error::from_err_code(13).to_string());
         assert_eq!(
-            "MDBX_INVALID: File is not an MDBX file",
+            "MDBX_error_t::MDBX_INVALID: File is not an MDBX file",
             Error::Invalid.to_string()
         );
     }

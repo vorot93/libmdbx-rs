@@ -23,8 +23,8 @@ categories = ["database", "external-ffi-bindings"]
 name = "mdbx_sys"
 
 [dependencies]
-libc = "0.2"
+libc = "0.2.107"
 
 [build-dependencies]
-cc = "1.0"
-bindgen = { version = "0.59", default-features = false, features = ["runtime"] }
+cc = "1.0.72"
+bindgen = { version = "0.59.1", default-features = false, features = ["runtime"] }

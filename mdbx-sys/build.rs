@@ -59,6 +59,8 @@ fn main() {
         .allowlist_var("^(MDBX|mdbx)_.*")
         .allowlist_type("^(MDBX|mdbx)_.*")
         .allowlist_function("^(MDBX|mdbx)_.*")
+        .rustified_enum("^(MDBX_option_t|MDBX_cursor_op)")
+        .bitfield_enum("^(MDBX_constants|MDBX_log_level_t|MDBX_debug_flags_t|MDBX_env_flags_t|MDBX_txn_flags_t|MDBX_db_flags_t|MDBX_put_flags_t|MDBX_copy_flags_t|MDBX_env_delete_mode_t|MDBX_dbi_state_t|MDBX_page_type_t|MDBX_error_t)")
         .size_t_is_usize(true)
         .ctypes_prefix("::libc")
         .parse_callbacks(Box::new(Callbacks))

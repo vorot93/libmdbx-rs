@@ -1,15 +1,16 @@
 use crate::{
     database::Database,
-    error::{mdbx_result, Error, Result},
+    error::{Error, Result},
     flags::EnvironmentFlags,
+    mdbx_result,
     transaction::{RO, RW},
     Mode, Transaction, TransactionKind,
 };
 use byteorder::{ByteOrder, NativeEndian};
+use ffi::{MDBX_env_flags_t, MDBX_option_t::*};
 use libc::c_uint;
 use mem::size_of;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
+use os_str_bytes::OsStrBytes;
 use std::{
     ffi::CString,
     fmt,
@@ -34,7 +35,7 @@ mod private {
 }
 
 pub trait EnvironmentKind: private::Sealed + Debug + 'static {
-    const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
+    const EXTRA_FLAGS: MDBX_env_flags_t;
 }
 
 #[derive(Debug)]
@@ -43,10 +44,10 @@ pub struct NoWriteMap;
 pub struct WriteMap;
 
 impl EnvironmentKind for NoWriteMap {
-    const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_ENV_DEFAULTS;
+    const EXTRA_FLAGS: MDBX_env_flags_t = ffi::MDBX_env_flags_t::MDBX_ENV_DEFAULTS;
 }
 impl EnvironmentKind for WriteMap {
-    const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_WRITEMAP;
+    const EXTRA_FLAGS: MDBX_env_flags_t = ffi::MDBX_env_flags_t::MDBX_WRITEMAP;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -146,14 +147,14 @@ where
 
     /// Flush the environment data buffers to disk.
     pub fn sync(&self, force: bool) -> Result<bool> {
-        mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.env(), force, false) })
+        mdbx_result!(unsafe { ffi::mdbx_env_sync_ex(self.env(), force, false) })
     }
 
     /// Retrieves statistics about this environment.
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
-            mdbx_result(ffi::mdbx_env_stat_ex(
+            mdbx_result!(ffi::mdbx_env_stat_ex(
                 self.env(),
                 ptr::null(),
                 stat.mdb_stat(),
@@ -167,7 +168,7 @@ where
     pub fn info(&self) -> Result<Info> {
         unsafe {
             let mut info = Info(mem::zeroed());
-            mdbx_result(ffi::mdbx_env_info_ex(
+            mdbx_result!(ffi::mdbx_env_info_ex(
                 self.env(),
                 ptr::null(),
                 &mut info.0,
@@ -430,7 +431,7 @@ where
     ) -> Result<Environment<E>> {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
-            mdbx_result(ffi::mdbx_env_create(&mut env))?;
+            mdbx_result!(ffi::mdbx_env_create(&mut env))?;
             if let Err(e) = (|| {
                 if let Some(geometry) = &self.geometry {
                     let mut min_size = -1;
@@ -446,7 +447,7 @@ where
                         }
                     }
 
-                    mdbx_result(ffi::mdbx_env_set_geometry(
+                    mdbx_result!(ffi::mdbx_env_set_geometry(
                         env,
                         min_size,
                         -1,
@@ -461,30 +462,24 @@ where
                     ))?;
                 }
                 for (opt, v) in [
-                    (ffi::MDBX_opt_max_db, self.max_dbs),
-                    (ffi::MDBX_opt_rp_augment_limit, self.rp_augment_limit),
-                    (ffi::MDBX_opt_loose_limit, self.loose_limit),
-                    (ffi::MDBX_opt_dp_reserve_limit, self.dp_reserve_limit),
-                    (ffi::MDBX_opt_txn_dp_limit, self.txn_dp_limit),
-                    (
-                        ffi::MDBX_opt_spill_max_denominator,
-                        self.spill_max_denominator,
-                    ),
-                    (
-                        ffi::MDBX_opt_spill_min_denominator,
-                        self.spill_min_denominator,
-                    ),
+                    (MDBX_opt_max_db, self.max_dbs),
+                    (MDBX_opt_rp_augment_limit, self.rp_augment_limit),
+                    (MDBX_opt_loose_limit, self.loose_limit),
+                    (MDBX_opt_dp_reserve_limit, self.dp_reserve_limit),
+                    (MDBX_opt_txn_dp_limit, self.txn_dp_limit),
+                    (MDBX_opt_spill_max_denominator, self.spill_max_denominator),
+                    (MDBX_opt_spill_min_denominator, self.spill_min_denominator),
                 ] {
                     if let Some(v) = v {
-                        mdbx_result(ffi::mdbx_env_set_option(env, opt, v))?;
+                        mdbx_result!(ffi::mdbx_env_set_option(env, opt, v))?;
                     }
                 }
 
-                let path = match CString::new(path.as_os_str().as_bytes()) {
+                let path = match CString::new(path.as_os_str().to_raw_bytes()) {
                     Ok(path) => path,
                     Err(..) => return Err(crate::Error::Invalid),
                 };
-                mdbx_result(ffi::mdbx_env_open(
+                mdbx_result!(ffi::mdbx_env_open(
                     env,
                     path.as_ptr(),
                     self.flags.make_flags() | E::EXTRA_FLAGS,
@@ -519,7 +514,7 @@ where
                             let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
                             sender
                                 .send(
-                                    mdbx_result(unsafe {
+                                    mdbx_result!(unsafe {
                                         ffi::mdbx_txn_begin_ex(
                                             e.0,
                                             parent.0,
@@ -534,12 +529,12 @@ where
                         }
                         TxnManagerMessage::Abort { tx, sender } => {
                             sender
-                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
+                                .send(mdbx_result!(unsafe { ffi::mdbx_txn_abort(tx.0) }))
                                 .unwrap();
                         }
                         TxnManagerMessage::Commit { tx, sender } => {
                             sender
-                                .send(mdbx_result(unsafe {
+                                .send(mdbx_result!(unsafe {
                                     ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
                                 }))
                                 .unwrap();
@@ -707,7 +702,7 @@ mod test {
         let txn = env.begin_rw_txn().unwrap();
         assert!(txn.open_db(Some("testdb")).is_err());
         assert!(txn
-            .create_db(Some("testdb"), DatabaseFlags::empty())
+            .create_db(Some("testdb"), ffi::MDBX_db_flags_t::empty())
             .is_ok());
         assert!(txn.open_db(Some("testdb")).is_ok())
     }
@@ -718,7 +713,8 @@ mod test {
         let env = Environment::new().set_max_dbs(10).open(dir.path()).unwrap();
 
         let txn = env.begin_rw_txn().unwrap();
-        txn.create_db(Some("db"), DatabaseFlags::empty()).unwrap();
+        txn.create_db(Some("db"), ffi::MDBX_db_flags_t::empty())
+            .unwrap();
         txn.open_db(Some("db")).unwrap();
     }
 
@@ -761,7 +757,7 @@ mod test {
                 &tx.open_db(None).unwrap(),
                 &value,
                 &value,
-                WriteFlags::default(),
+                ffi::MDBX_put_flags_t::default(),
             )
             .expect("tx.put");
             tx.commit().expect("tx.commit");
@@ -813,7 +809,7 @@ mod test {
                 &tx.open_db(None).unwrap(),
                 &value,
                 &value,
-                WriteFlags::default(),
+                ffi::MDBX_put_flags_t::default(),
             )
             .expect("tx.put");
             tx.commit().expect("tx.commit");
