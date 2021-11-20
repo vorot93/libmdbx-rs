@@ -3,7 +3,7 @@ name = "mdbx-sys"
 # NB: When modifying, also modify html_root_url in lib.rs
 # NB: The version must match the version of mdbx
 version = "0.9.3"
-edition = "2018"
+edition = "2021"
 authors = [
     "Dan Burkert <dan@danburkert.com>",
     "Victor Porof <vporof@mozilla.com>",
