@@ -16,6 +16,8 @@ pub use crate::{
     transaction::{Transaction, TransactionKind, RO, RW},
 };
 
+pub use ffi::{MDBX_db_flags_t,MDBX_env_flags_t,MDBX_error_t,MDBX_option_t};
+
 mod codec;
 mod cursor;
 mod database;
