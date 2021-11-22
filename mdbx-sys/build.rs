@@ -89,5 +89,10 @@ fn main() {
     builder.define("MDBX_BUILD_FLAGS", flags.as_str());
     builder.define("MDBX_TXN_CHECKOWNER", "0");
 
-    builder.compile("libmdbx.a")
+    builder.compile("libmdbx.a");
+
+    if cfg!(windows) {
+        println!(r"cargo:rustc-link-lib=ntdll");
+        println!(r"cargo:rustc-link-search=C:\windows\system32");
+    }
 }

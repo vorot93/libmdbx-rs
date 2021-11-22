@@ -34,7 +34,7 @@ trait OsStrExtLmdb {
 #[cfg(windows)]
 impl OsStrExtLmdb for OsStr {
     fn as_bytes(&self) -> &[u8] {
-        &self.to_str().unwrap().as_bytes()
+        self.to_str().unwrap().as_bytes()
     }
 }
 
