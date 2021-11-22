@@ -6,6 +6,7 @@ use std::{ffi::CStr, fmt, result, str};
 pub enum Error {
     KeyExist,
     NotFound,
+    NoData,
     PageNotFound,
     Corrupted,
     Panic,
@@ -41,6 +42,7 @@ impl Error {
         match err_code {
             ffi::MDBX_KEYEXIST => Error::KeyExist,
             ffi::MDBX_NOTFOUND => Error::NotFound,
+            ffi::MDBX_ENODATA => Error::NoData,
             ffi::MDBX_PAGE_NOTFOUND => Error::PageNotFound,
             ffi::MDBX_CORRUPTED => Error::Corrupted,
             ffi::MDBX_PANIC => Error::Panic,
@@ -137,7 +139,7 @@ pub fn mdbx_result(err_code: c_int) -> Result<bool> {
 macro_rules! mdbx_try_optional {
     ($expr:expr) => {{
         match $expr {
-            Err(Error::NotFound) => return Ok(None),
+            Err(Error::NotFound | Error::NoData) => return Ok(None),
             Err(e) => return Err(e),
             Ok(v) => v,
         }

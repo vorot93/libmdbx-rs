@@ -717,9 +717,9 @@ where
                                 };
                                 Some(Ok((key, data)))
                             }
-                            // EINVAL can occur when the cursor was previously seeked to a non-existent value,
+                            // EINVAL and MDBX_NODATA can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | libc::ENODATA => None,
+                            ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA | libc::ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })
@@ -1007,7 +1007,6 @@ mod test {
 
         assert!(cursor.iter::<(), ()>().next().is_none());
         assert!(cursor.iter_start::<(), ()>().next().is_none());
-        // FIXME: this assert fails because `mdbx_cursor_get` returns error code `ERROR_HANDLE_EOF` (38) past the end of the file on Windows
         assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
     }
 
@@ -1026,7 +1025,6 @@ mod test {
 
         assert!(cursor.iter::<(), ()>().next().is_none());
         assert!(cursor.iter_start::<(), ()>().next().is_none());
-        // FIXME: this assert fails because `mdbx_cursor_get` returns error code `ERROR_HANDLE_EOF` (38) past the end of the file on Windows
         assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
         assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
         assert!(cursor.iter_dup::<(), ()>().flatten().next().is_none());
