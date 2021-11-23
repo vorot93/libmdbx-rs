@@ -611,9 +611,9 @@ where
                                 };
                                 Some(Ok((key, data)))
                             }
-                            // EINVAL can occur when the cursor was previously seeked to a non-existent value,
+                            // MDBX_ENODATA can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | libc::ENODATA => None,
+                            ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })
@@ -717,9 +717,9 @@ where
                                 };
                                 Some(Ok((key, data)))
                             }
-                            // EINVAL and MDBX_NODATA can occur when the cursor was previously seeked to a non-existent value,
+                            // MDBX_NODATA can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA | libc::ENODATA => None,
+                            ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })

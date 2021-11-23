@@ -35,6 +35,9 @@ thiserror = "1"
 
 ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
 
+[features]
+cmake = ["ffi/cmake-build"]
+
 [dev-dependencies]
 criterion = "0.3"
 rand = "0.8"
