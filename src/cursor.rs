@@ -381,7 +381,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_NEXT)
+        IterDup::new(self, ffi::MDBX_NEXT as u32)
     }
 
     /// Iterate over duplicate database items starting from the beginning of the
@@ -391,7 +391,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_FIRST)
+        IterDup::new(self, ffi::MDBX_FIRST as u32)
     }
 
     /// Iterate over duplicate items in the database starting from the given
@@ -405,7 +405,7 @@ where
         if let Err(error) = res {
             return IterDup::Err(Some(error));
         };
-        IterDup::new(self, ffi::MDBX_GET_CURRENT)
+        IterDup::new(self, ffi::MDBX_GET_CURRENT as u32)
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
@@ -441,7 +441,7 @@ impl<'txn> Cursor<'txn, RW> {
         };
         mdbx_result(unsafe {
             txn_execute(&*self.txn, |_| {
-                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, flags.bits())
+                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, c_enum(flags.bits()))
             })
         })?;
 
@@ -457,7 +457,7 @@ impl<'txn> Cursor<'txn, RW> {
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
         mdbx_result(unsafe {
             txn_execute(&*self.txn, |_| {
-                ffi::mdbx_cursor_del(self.cursor, flags.bits())
+                ffi::mdbx_cursor_del(self.cursor, c_enum(flags.bits()))
             })
         })?;
 
@@ -611,9 +611,9 @@ where
                                 };
                                 Some(Ok((key, data)))
                             }
-                            // EINVAL can occur when the cursor was previously seeked to a non-existent value,
+                            // MDBX_ENODATA can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | libc::ENODATA => None,
+                            ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })
@@ -717,9 +717,9 @@ where
                                 };
                                 Some(Ok((key, data)))
                             }
-                            // EINVAL can occur when the cursor was previously seeked to a non-existent value,
+                            // MDBX_NODATA can occur when the cursor was previously seeked to a non-existent value,
                             // e.g. iter_from with a key greater than all values in the database.
-                            ffi::MDBX_NOTFOUND | libc::ENODATA => None,
+                            ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
                     })
@@ -808,11 +808,12 @@ where
                     iov_len: 0,
                     iov_base: ptr::null_mut(),
                 };
-                let op = mem::replace(op, ffi::MDBX_NEXT_NODUP);
+                let op = mem::replace(op, ffi::MDBX_NEXT_NODUP as u32);
 
                 txn_execute(&*cursor.txn, |_| {
-                    let err_code =
-                        unsafe { ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) };
+                    let err_code = unsafe {
+                        ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, c_enum(op))
+                    };
 
                     if err_code == ffi::MDBX_SUCCESS {
                         Some(IntoIter::new(

@@ -77,17 +77,40 @@ fn main() {
     let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     mdbx.push("libmdbx");
 
-    let mut builder = cc::Build::new();
-
-    builder
-        .file(mdbx.join("mdbx.c"))
+    let mut cc_builder = cc::Build::new();
+    cc_builder
         .flag_if_supported("-Wno-unused-parameter")
         .flag_if_supported("-Wbad-function-cast")
         .flag_if_supported("-Wuninitialized");
 
-    let flags = format!("{:?}", builder.get_compiler().cflags_env());
-    builder.define("MDBX_BUILD_FLAGS", flags.as_str());
-    builder.define("MDBX_TXN_CHECKOWNER", "0");
+    if cfg!(any(windows, feature = "cmake-build")) {
+        let dst = cmake::Config::new(&mdbx)
+            .define("MDBX_INSTALL_STATIC", "1")
+            .define("MDBX_BUILD_CXX", "0")
+            .define("MDBX_BUILD_TOOLS", "0")
+            .define("MDBX_BUILD_SHARED_LIBRARY", "0")
+            .define("MDBX_TXN_CHECKOWNER", "0")
+            // Setting HAVE_LIBM=1 is necessary to override issues with `pow` detection on Windows
+            .define("HAVE_LIBM", "1")
+            .init_c_cfg(cc_builder)
+            .build();
 
-    builder.compile("libmdbx.a")
+        println!("cargo:rustc-link-lib=mdbx");
+        println!(
+            "cargo:rustc-link-search=native={}",
+            dst.join("lib").display()
+        );
+
+        if cfg!(windows) {
+            println!(r"cargo:rustc-link-lib=ntdll");
+            println!(r"cargo:rustc-link-search=C:\windows\system32");
+        }
+    } else {
+        let flags = format!("{:?}", cc_builder.get_compiler().cflags_env());
+        cc_builder
+            .define("MDBX_BUILD_FLAGS", flags.as_str())
+            .define("MDBX_TXN_CHECKOWNER", "0")
+            .file(mdbx.join("mdbx.c"))
+            .compile("libmdbx.a");
+    }
 }
