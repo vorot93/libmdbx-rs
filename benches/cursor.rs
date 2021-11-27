@@ -2,7 +2,7 @@ mod utils;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use ffi::*;
-use mdbx::*;
+use libmdbx::*;
 use std::ptr;
 use utils::*;
 

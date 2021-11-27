@@ -1,6 +1,5 @@
 use crate::{error::mdbx_result, Error, TransactionKind};
 use derive_more::*;
-use lifetimed_bytes::Bytes;
 use std::{borrow::Cow, slice};
 use thiserror::Error;
 
@@ -46,7 +45,8 @@ impl<'tx> TableObject<'tx> for Cow<'tx, [u8]> {
     }
 }
 
-impl<'tx> TableObject<'tx> for Bytes<'tx> {
+#[cfg(feature = "lifetimed-bytes")]
+impl<'tx> TableObject<'tx> for lifetimed_bytes::Bytes<'tx> {
     fn decode(_: &[u8]) -> Result<Self, Error> {
         unreachable!()
     }

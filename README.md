@@ -1,7 +1,7 @@
-# mdbx-sys
+# libmdbx-rs
 
 This repo is a fork of [mozilla/lmdb-rs](https://github.com/mozilla/lmdb-rs)
-with patches \to make it work with [erthink/libmdbx](https://github.com/erthink/libmdbx).
+with patches to make it work with [libmdbx](https://github.com/erthink/libmdbx).
 
 ## Updating the libmdbx Version
 

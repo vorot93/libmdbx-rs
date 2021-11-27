@@ -1,24 +1,23 @@
 [package]
-name = "mdbx"
-# NB: When modifying, also modify html_root_url in lib.rs
+name = "libmdbx"
 version = "0.1.0"
 authors = [
   "Dan Burkert <dan@danburkert.com>",
   "Victor Porof <vporof@mozilla.com>",
   "Artem Vorotnikov <artem@vorotnikov.me>",
 ]
-edition = "2018"
+edition = "2021"
 license = "Apache-2.0"
 description = "Idiomatic and safe MDBX wrapper."
-documentation = "https://docs.rs/mdbx"
-homepage = "https://github.com/vorot93/mdbx-rs"
-repository = "https://github.com/vorot93/mdbx-rs"
+documentation = "https://docs.rs/libmdbx"
+homepage = "https://github.com/vorot93/libmdbx-rs"
+repository = "https://github.com/vorot93/libmdbx-rs"
 readme = "README.md"
-keywords = ["LMDB", "MDBX", "database", "storage-engine", "bindings", "library"]
+keywords = ["LMDB", "MDBX", "database", "storage-engine", "bindings"]
 categories = ["database"]
 
 [lib]
-name = "mdbx"
+name = "libmdbx"
 
 [workspace]
 members = ["mdbx-sys"]
@@ -29,11 +28,12 @@ byteorder = "1"
 derive_more = "0.99"
 indexmap = "1"
 libc = "0.2"
-lifetimed-bytes = { git = "https://github.com/vorot93/lifetimed-bytes" }
 parking_lot = "0.11"
 thiserror = "1"
 
-ffi = { package = "mdbx-sys", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "0.11.1", path = "./mdbx-sys" }
+
+lifetimed-bytes = { version = "0.1", optional = true }
 
 [features]
 cmake = ["ffi/cmake-build"]
