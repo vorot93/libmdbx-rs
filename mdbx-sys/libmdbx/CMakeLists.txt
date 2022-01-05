@@ -93,6 +93,10 @@ else()
 endif()
 
 if(DEFINED PROJECT_NAME)
+  option(MDBX_FORCE_BUILD_AS_MAIN_PROJECT "Force libmdbx to full control build options even it added as a subdirectory to your project." OFF)
+endif()
+
+if(DEFINED PROJECT_NAME AND NOT MDBX_FORCE_BUILD_AS_MAIN_PROJECT)
   set(SUBPROJECT ON)
   set(NOT_SUBPROJECT OFF)
   if(NOT MDBX_AMALGAMATED_SOURCE AND NOT DEFINED BUILD_TESTING)
@@ -294,11 +298,11 @@ else()
 
     if(UNIX)
       find_program(CLANG_FORMAT
-        NAMES clang-format-12 clang-format-11 clang-format-10 clang-format)
+        NAMES clang-format-13 clang-format)
       if(CLANG_FORMAT)
         execute_process(COMMAND ${CLANG_FORMAT} "--version" OUTPUT_VARIABLE clang_format_version_info)
         string(REGEX MATCH "version ([0-9]+)\\.([0-9]+)\\.([0-9]+)(.*)?" clang_format_version_info CLANG_FORMAT_VERSION)
-        if(clang_format_version_info AND NOT CLANG_FORMAT_VERSION VERSION_LESS 10.0)
+        if(clang_format_version_info AND NOT CLANG_FORMAT_VERSION VERSION_LESS 13.0)
           # Enable 'make reformat' target.
           add_custom_target(reformat
             VERBATIM
@@ -334,11 +338,18 @@ list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_11 HAS_CXX11)
 list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_14 HAS_CXX14)
 list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_17 HAS_CXX17)
 list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_20 HAS_CXX20)
+list(FIND CMAKE_CXX_COMPILE_FEATURES cxx_std_23 HAS_CXX23)
 if(NOT DEFINED MDBX_CXX_STANDARD)
+  if(DEFINED ENV{CMAKE_CXX_STANDARD})
+    set(CMAKE_CXX_STANDARD $ENV{CMAKE_CXX_STANDARD})
+  endif()
   if(DEFINED CMAKE_CXX_STANDARD)
     set(MDBX_CXX_STANDARD ${CMAKE_CXX_STANDARD})
+  elseif(NOT HAS_CXX23 LESS 0
+      AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12))
+    set(MDBX_CXX_STANDARD 23)
   elseif(NOT HAS_CXX20 LESS 0
-      AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9))
+      AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 10))
     set(MDBX_CXX_STANDARD 20)
   elseif(NOT HAS_CXX17 LESS 0
       AND NOT (CMAKE_COMPILER_IS_CLANG AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5))
@@ -423,7 +434,7 @@ endif()
 #           ####   #          #       #     ####   #    #   ####
 #
 
-set(MDBX_BUILD_OPTIONS ENABLE_ASAN MDBX_USE_VALGRIND ENABLE_GPROF ENABLE_GCOV)
+set(MDBX_BUILD_OPTIONS ENABLE_UBSAN ENABLE_ASAN MDBX_USE_VALGRIND ENABLE_GPROF ENABLE_GCOV)
 macro(add_mdbx_option NAME DESCRIPTION DEFAULT)
   list(APPEND MDBX_BUILD_OPTIONS ${NAME})
   if(NOT ${DEFAULT} STREQUAL "AUTO")
@@ -852,7 +863,7 @@ else()
 endif()
 
 # options
-set(options VERSION C_COMPILER CXX_COMPILER MDBX_BUILD_TARGET MDBX_BUILD_TYPE)
+set(options VERSION C_COMPILER CXX_COMPILER MDBX_BUILD_TARGET MDBX_BUILD_TYPE ${MDBX_BUILD_OPTIONS})
 foreach(item IN LISTS options)
   if(DEFINED ${item})
     set(value "${${item}}")
@@ -863,7 +874,7 @@ foreach(item IN LISTS options)
     set(item CMAKE_${item})
     set(value "${${item}}")
   else()
-    set(value "undefined")
+    set(value "AUTO (not pre-defined explicitly)")
   endif()
   message(STATUS "${item}: ${value}")
 endforeach(item)

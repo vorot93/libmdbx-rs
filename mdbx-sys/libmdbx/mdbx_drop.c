@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY e5282b30d89e877fff2a5d79d89fc4ade5841a57bccc0bd61d79cbb4e8cf271f_v0_11_1_0_g113162b6
+#define MDBX_BUILD_SOURCERY 149330d5cc89315fc253a1e4f8a3a820d853d58ef251c1577b93e9a0cd4a4ded_v0_11_3_13_g9822412
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -86,6 +86,19 @@
  * Studio 2015 Update 3). But you could remove this #error and try to continue
  * at your own risk. In such case please don't rise up an issues related ONLY to
  * old compilers.
+ *
+ * NOTE:
+ *   Unfortunately, there are several different builds of "Visual Studio" that
+ *   are called "Visual Studio 2015 Update 3".
+ *
+ *   The 190024234 is used here because it is minimal version of Visual Studio
+ *   that was used for build and testing libmdbx in recent years. Soon this
+ *   value will be increased to 19.0.24241.7, since build and testing using
+ *   "Visual Studio 2015" will be performed only at https://ci.appveyor.com.
+ *
+ *   Please ask Microsoft (but not us) for information about version differences
+ *   and how to and where you can obtain the latest "Visual Studio 2015" build
+ *   with all fixes.
  */
 #error                                                                         \
     "At least \"Microsoft C/C++ Compiler\" version 19.00.24234 (Visual Studio 2015 Update 3) is required."
@@ -656,11 +669,9 @@ extern "C" {
 #include <mach/mach_host.h>
 #include <mach/mach_port.h>
 #include <uuid/uuid.h>
-#undef P_DIRTY
 #endif
 
 #if defined(__linux__) || defined(__gnu_linux__)
-#include <linux/sysctl.h>
 #include <sched.h>
 #include <sys/sendfile.h>
 #include <sys/statfs.h>
@@ -1023,9 +1034,10 @@ typedef union MDBX_srwlock {
 } MDBX_srwlock;
 #endif /* Windows */
 
-#ifdef __cplusplus
-extern void mdbx_osal_jitter(bool tiny);
-#else
+#ifndef __cplusplus
+
+MDBX_MAYBE_UNUSED MDBX_INTERNAL_FUNC void mdbx_osal_jitter(bool tiny);
+MDBX_MAYBE_UNUSED static __inline void mdbx_jitter4testing(bool tiny);
 
 /*----------------------------------------------------------------------------*/
 /* Atomics */
@@ -1277,7 +1289,6 @@ MDBX_MAYBE_UNUSED static __inline uintptr_t mdbx_thread_self(void) {
   return (uintptr_t)thunk;
 }
 
-MDBX_MAYBE_UNUSED MDBX_INTERNAL_FUNC void mdbx_osal_jitter(bool tiny);
 MDBX_INTERNAL_FUNC uint64_t mdbx_osal_monotime(void);
 MDBX_INTERNAL_FUNC uint64_t
 mdbx_osal_16dot16_to_monotime(uint32_t seconds_16dot16);
@@ -2046,8 +2057,6 @@ static __always_inline memory_order mo_c11_load(enum MDBX_memory_order fence) {
 
 #ifndef __cplusplus
 
-static __inline void mdbx_jitter4testing(bool tiny);
-
 MDBX_MAYBE_UNUSED static __always_inline void
 mdbx_memory_fence(enum MDBX_memory_order order, bool write) {
 #ifdef MDBX_HAVE_C11ATOMICS
@@ -2089,70 +2098,6 @@ atomic_load32(const MDBX_atomic_uint32_t *p, enum MDBX_memory_order order) {
     mdbx_compiler_barrier();
   return value;
 #endif /* MDBX_HAVE_C11ATOMICS */
-}
-
-MDBX_MAYBE_UNUSED static __always_inline uint64_t
-atomic_store64(MDBX_atomic_uint64_t *p, const uint64_t value,
-               enum MDBX_memory_order order) {
-  STATIC_ASSERT(sizeof(MDBX_atomic_uint64_t) == 8);
-#if MDBX_64BIT_ATOMIC
-#ifdef MDBX_HAVE_C11ATOMICS
-  assert(atomic_is_lock_free(MDBX_c11a_rw(uint64_t, p)));
-  atomic_store_explicit(MDBX_c11a_rw(uint64_t, p), value, mo_c11_store(order));
-#else  /* MDBX_HAVE_C11ATOMICS */
-  if (order != mo_Relaxed)
-    mdbx_compiler_barrier();
-  p->weak = value;
-  mdbx_memory_fence(order, true);
-#endif /* MDBX_HAVE_C11ATOMICS */
-#else  /* !MDBX_64BIT_ATOMIC */
-  mdbx_compiler_barrier();
-  atomic_store32(&p->low, (uint32_t)value, mo_Relaxed);
-  mdbx_jitter4testing(true);
-  atomic_store32(&p->high, (uint32_t)(value >> 32), order);
-  mdbx_jitter4testing(true);
-#endif /* !MDBX_64BIT_ATOMIC */
-  return value;
-}
-
-MDBX_MAYBE_UNUSED static
-#if MDBX_64BIT_ATOMIC
-    __always_inline
-#endif /* MDBX_64BIT_ATOMIC */
-        uint64_t
-        atomic_load64(const MDBX_atomic_uint64_t *p,
-                      enum MDBX_memory_order order) {
-  STATIC_ASSERT(sizeof(MDBX_atomic_uint64_t) == 8);
-#if MDBX_64BIT_ATOMIC
-#ifdef MDBX_HAVE_C11ATOMICS
-  assert(atomic_is_lock_free(MDBX_c11a_ro(uint64_t, p)));
-  return atomic_load_explicit(MDBX_c11a_ro(uint64_t, p), mo_c11_load(order));
-#else  /* MDBX_HAVE_C11ATOMICS */
-  mdbx_memory_fence(order, false);
-  const uint64_t value = p->weak;
-  if (order != mo_Relaxed)
-    mdbx_compiler_barrier();
-  return value;
-#endif /* MDBX_HAVE_C11ATOMICS */
-#else  /* !MDBX_64BIT_ATOMIC */
-  mdbx_compiler_barrier();
-  uint64_t value = (uint64_t)atomic_load32(&p->high, order) << 32;
-  mdbx_jitter4testing(true);
-  value |= atomic_load32(&p->low, (order == mo_Relaxed) ? mo_Relaxed
-                                                        : mo_AcquireRelease);
-  mdbx_jitter4testing(true);
-  for (;;) {
-    mdbx_compiler_barrier();
-    uint64_t again = (uint64_t)atomic_load32(&p->high, order) << 32;
-    mdbx_jitter4testing(true);
-    again |= atomic_load32(&p->low, (order == mo_Relaxed) ? mo_Relaxed
-                                                          : mo_AcquireRelease);
-    mdbx_jitter4testing(true);
-    if (likely(value == again))
-      return value;
-    value = again;
-  }
-#endif /* !MDBX_64BIT_ATOMIC */
 }
 
 #endif /* !__cplusplus */
@@ -2270,8 +2215,6 @@ typedef struct MDBX_meta {
   MDBX_db mm_dbs[CORE_DBS]; /* first is free space, 2nd is main db */
                             /* The size of pages used in this DB */
 #define mm_psize mm_dbs[FREE_DBI].md_xsize
-/* Any persistent environment flags, see mdbx_env */
-#define mm_flags mm_dbs[FREE_DBI].md_flags
   MDBX_canary mm_canary;
 
 #define MDBX_DATASIGN_NONE 0u
@@ -3039,6 +2982,15 @@ extern uint8_t mdbx_runtime_flags;
 extern uint8_t mdbx_loglevel;
 extern MDBX_debug_func *mdbx_debug_logger;
 
+MDBX_MAYBE_UNUSED static __inline void mdbx_jitter4testing(bool tiny) {
+#if MDBX_DEBUG
+  if (MDBX_DBG_JITTER & mdbx_runtime_flags)
+    mdbx_osal_jitter(tiny);
+#else
+  (void)tiny;
+#endif
+}
+
 MDBX_INTERNAL_FUNC void MDBX_PRINTF_ARGS(4, 5)
     mdbx_debug_log(int level, const char *function, int line, const char *fmt,
                    ...) MDBX_PRINTF_ARGS(4, 5);
@@ -3208,15 +3160,6 @@ MDBX_INTERNAL_FUNC void mdbx_rthc_global_init(void);
 MDBX_INTERNAL_FUNC void mdbx_rthc_global_dtor(void);
 MDBX_INTERNAL_FUNC void mdbx_rthc_thread_dtor(void *ptr);
 
-MDBX_MAYBE_UNUSED static __inline void mdbx_jitter4testing(bool tiny) {
-#if MDBX_DEBUG
-  if (MDBX_DBG_JITTER & mdbx_runtime_flags)
-    mdbx_osal_jitter(tiny);
-#else
-  (void)tiny;
-#endif
-}
-
 #endif /* !__cplusplus */
 
 #define MDBX_IS_ERROR(rc)                                                      \
@@ -3351,10 +3294,11 @@ typedef struct MDBX_node {
  *                |  1, a > b
  *                \
  */
-#if 1
+#ifndef __e2k__
 /* LY: fast enough on most systems */
 #define CMP2INT(a, b) (((b) > (a)) ? -1 : (a) > (b))
 #else
+/* LY: more parallelable on VLIW Elbrus */
 #define CMP2INT(a, b) (((a) > (b)) - ((b) > (a)))
 #endif
 

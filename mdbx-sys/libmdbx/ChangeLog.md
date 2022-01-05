@@ -14,8 +14,87 @@ ChangeLog
  - [Support for RAW devices](https://github.com/erthink/libmdbx/issues/124).
  - [Support MessagePack for Keys & Values](https://github.com/erthink/libmdbx/issues/115).
  - [Engage new terminology](https://github.com/erthink/libmdbx/issues/137).
- - Finalize C++ API (few typos and bugs are still maybe for now).
  - Packages for [Astra Linux](https://astralinux.ru/), [ALT Linux](https://www.altlinux.org/), [ROSA Linux](https://www.rosalinux.ru/), etc.
+
+
+## v0.11.4 (underway)
+
+Acknowledgements:
+
+ - [Alex Sharov](https://github.com/AskAlexSharov) for reporting, testing and provide resources for remote debugging/investigation.
+
+Fixes:
+
+ - Fixed handling `MDBX_opt_rp_augment_limit` for GC's records from huge transactions (Erigon/Akula/Ethereum).
+ - [Fixed](https://github.com/erthink/libmdbx/issues/258) build on Android (avoid including `sys/sem.h`).
+
+Minors:
+
+ - Added workaround for CLANG bug [D79919/PR42445](https://reviews.llvm.org/D79919).
+ - Fixed build test on Android (using `pthread_barrier_t` stub).
+ - Disabled C++20 concepts for CLANG < 14 on Android.
+ - Fixed minor `unused parameter` warning.
+ - Added CI for Android.
+ - Refine/cleanup internal logging.
+
+
+## v0.11.3 at 2021-12-31
+
+Acknowledgements:
+
+ - [gcxfd <i@rmw.link>](https://github.com/gcxfd) for reporting, contributing and testing.
+ - [장세연 (Чан Се Ен)](https://github.com/sasgas) for reporting and testing.
+ - [Alex Sharov](https://github.com/AskAlexSharov) for reporting, testing and provide resources for remote debugging/investigation.
+
+New features, extensions and improvements:
+
+ - [Added](https://github.com/erthink/libmdbx/issues/236) `mdbx_cursor_get_batch()`.
+ - [Added](https://github.com/erthink/libmdbx/issues/250) `MDBX_SET_UPPERBOUND`.
+ - C++ API is finalized now.
+ - The GC update stage has been [significantly speeded](https://github.com/erthink/libmdbx/issues/254) when fixing huge Erigon's transactions (Ethereum ecosystem).
+
+Fixes:
+
+ - Disabled C++20 concepts for stupid AppleClang 13.x
+ - Fixed internal collision of `MDBX_SHRINK_ALLOWED` with `MDBX_ACCEDE`.
+
+Minors:
+
+ - Fixed returning `MDBX_RESULT_TRUE` (unexpected -1) from `mdbx_env_set_option()`.
+ - Added `mdbx_env_get_syncbytes()` and `mdbx_env_get_syncperiod()`.
+ - [Clarified](https://github.com/erthink/libmdbx/pull/249) description of `MDBX_INTEGERKEY`.
+ - Reworked/simplified `mdbx_env_sync_internal()`.
+ - [Fixed](https://github.com/erthink/libmdbx/issues/248) extra assertion inside `mdbx_cursor_put()` for `MDBX_DUPFIXED` cases.
+ - Avoiding extra looping inside `mdbx_env_info_ex()`.
+ - Explicitly enabled core dumps from stochastic tests scripts on Linux.
+ - [Fixed](https://github.com/erthink/libmdbx/issues/253) `mdbx_override_meta()` to avoid false-positive assertions.
+ - For compatibility reverted returning `MDBX_ENODATA`for some cases.
+
+
+## v0.11.2 at 2021-12-02
+
+Acknowledgements:
+
+ - [장세연 (Чан Се Ен)](https://github.com/sasgas) for contributing to C++ API.
+ - [Alain Picard](https://github.com/castortech) for [Java bindings](https://github.com/castortech/mdbxjni).
+ - [Alex Sharov](https://github.com/AskAlexSharov) for reporting and testing.
+ - [Kris Zyp](https://github.com/kriszyp) for reporting and testing.
+ - [Artem Vorotnikov](https://github.com/vorot93) for support [Rust wrapper](https://github.com/vorot93/libmdbx-rs).
+
+Fixes:
+
+ - [Fixed compilation](https://github.com/erthink/libmdbx/pull/239) with `devtoolset-9` on CentOS/RHEL 7.
+ - [Fixed unexpected `MDBX_PROBLEM` error](https://github.com/erthink/libmdbx/issues/242) because of update an obsolete meta-page.
+ - [Fixed returning `MDBX_NOTFOUND` error](https://github.com/erthink/libmdbx/issues/243) in case an inexact value found for `MDBX_GET_BOTH` operation.
+ - [Fixed compilation](https://github.com/erthink/libmdbx/issues/245) without kernel/libc-devel headers.
+
+Minors:
+
+ - Fixed `constexpr`-related macros for legacy compilers.
+ - Allowed to define 'CMAKE_CXX_STANDARD` using an environment variable.
+ - Simplified collection statistics of page operation .
+ - Added `MDBX_FORCE_BUILD_AS_MAIN_PROJECT` cmake option.
+ - Remove unneeded `#undef P_DIRTY`.
 
 
 ## v0.11.1 at 2021-10-23
@@ -60,14 +139,14 @@ Fixes:
 Minors:
 
  - Refined handling of weak or invalid meta-pages while a DB opening.
- - Refined providing information for the @MAIN and @GC sub-databases of a last committed modification transaction's ID.
+ - Refined providing information for the `@MAIN` and `@GC` sub-databases of a last committed modification transaction's ID.
 
 
 ## v0.10.4 at 2021-10-10
 
 Acknowledgements:
 
- - [Artem Vorotnikov](https://github.com/vorot93) for support [Rust wrapper](https://github.com/vorot93/mdbx-rs).
+ - [Artem Vorotnikov](https://github.com/vorot93) for support [Rust wrapper](https://github.com/vorot93/libmdbx-rs).
  - [Andrew Ashikhmin](https://github.com/yperbasis) for contributing to C++ API.
 
 Fixes:

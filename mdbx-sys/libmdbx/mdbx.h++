@@ -1,15 +1,16 @@
 ﻿/// \file mdbx.h++
-/// \brief The libmdbx C++ API header file (preliminary).
+/// \brief The libmdbx C++ API header file.
 ///
 /// \author Copyright (c) 2020-2021, Leonid Yuriev <leo@yuriev.ru>.
 /// \copyright SPDX-License-Identifier: Apache-2.0
 ///
 /// Tested with:
-///  - LCC >= 1.23 (http://www.mcst.ru/lcc),
-///  - GNU C++ >= 4.8,
-///  - clang >= 4.0,
-///  - MSVC >= 19.0 (Visual Studio 2015),
-///    but 19.2x could hang due optimizer bug.
+///  - Elbrus LCC >= 1.23 (http://www.mcst.ru/lcc);
+///  - GNU C++ >= 4.8;
+///  - clang >= 3.9;
+///  - MSVC >= 14.0 (Visual Studio 2015),
+///    but 19.2x could hang due optimizer bug;
+///  - AppleClang, but without C++20 concepts.
 ///
 
 #pragma once
@@ -19,7 +20,7 @@
 #error "C++11 compiler or better is required"
 #elif _MSC_VER >= 1910
 #error                                                                         \
-    "Please add ` /Zc:__cplusplus` to MSVC compiler options to enforce it conform ISO C++"
+    "Please add `/Zc:__cplusplus` to MSVC compiler options to enforce it conform ISO C++"
 #endif /* MSVC is mad and don't define __cplusplus properly */
 #endif /* __cplusplus < 201103L */
 
@@ -194,7 +195,11 @@
 #ifndef MDBX_CXX20_CONCEPT
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || __clang_major__ >= 12))
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
+      __clang_major__ >=                                                       \
+          /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_CXX20_CONCEPT(CONCEPT, NAME) CONCEPT NAME
 #else
 #define MDBX_CXX20_CONCEPT(CONCEPT, NAME) typename NAME
@@ -204,7 +209,11 @@
 #ifndef MDBX_ASSERT_CXX20_CONCEPT_SATISFIED
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || __clang_major__ >= 12))
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
+      __clang_major__ >=                                                       \
+          /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(CONCEPT, TYPE)                     \
   static_assert(CONCEPT<TYPE>)
 #else
@@ -286,7 +295,8 @@ class cursor;
 class cursor_managed;
 
 #if defined(DOXYGEN) ||                                                        \
-    defined(__cpp_lib_memory_resource) && __cpp_lib_memory_resource >= 201603L
+    (defined(__cpp_lib_memory_resource) &&                                     \
+     __cpp_lib_memory_resource >= 201603L && _GLIBCXX_USE_CXX11_ABI)
 /// \brief Default polymorphic allocator for modern code.
 using polymorphic_allocator = ::std::pmr::string::allocator_type;
 #endif /* __cpp_lib_memory_resource >= 201603L */
@@ -472,34 +482,31 @@ static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
 
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || __clang_major__ >= 12))
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
+      __clang_major__ >=                                                       \
+          /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 
 template <typename T>
 concept MutableByteProducer = requires(T a, char array[42]) {
-  { a.is_empty() }
-  ->std::same_as<bool>;
-  { a.envisage_result_length() }
-  ->std::same_as<size_t>;
-  { a.write_bytes(&array[0], size_t(42)) }
-  ->std::same_as<char *>;
+  { a.is_empty() } -> std::same_as<bool>;
+  { a.envisage_result_length() } -> std::same_as<size_t>;
+  { a.write_bytes(&array[0], size_t(42)) } -> std::same_as<char *>;
 };
 
 template <typename T>
 concept ImmutableByteProducer = requires(const T &a, char array[42]) {
-  { a.is_empty() }
-  ->std::same_as<bool>;
-  { a.envisage_result_length() }
-  ->std::same_as<size_t>;
-  { a.write_bytes(&array[0], size_t(42)) }
-  ->std::same_as<char *>;
+  { a.is_empty() } -> std::same_as<bool>;
+  { a.envisage_result_length() } -> std::same_as<size_t>;
+  { a.write_bytes(&array[0], size_t(42)) } -> std::same_as<char *>;
 };
 
 template <typename T>
-concept SliceTranscoder =
-    ImmutableByteProducer<T> &&requires(const slice &source, const T &a) {
+concept SliceTranscoder = ImmutableByteProducer<T> &&
+    requires(const slice &source, const T &a) {
   T(source);
-  { a.is_erroneous() }
-  ->std::same_as<bool>;
+  { a.is_erroneous() } -> std::same_as<bool>;
 };
 
 #endif /* __cpp_concepts >= 201907L*/
@@ -3949,7 +3956,7 @@ inline ::std::ostream &operator<<(::std::ostream &out,
 
 //==============================================================================
 //
-// Inline body of the libmdbx C++ API (preliminary draft)
+// Inline body of the libmdbx C++ API
 //
 
 MDBX_CXX11_CONSTEXPR const version_info &get_version() noexcept {
@@ -4404,9 +4411,9 @@ MDBX_CXX14_CONSTEXPR intptr_t slice::compare_fast(const slice &a,
                                                   const slice &b) noexcept {
   const intptr_t diff = intptr_t(a.length()) - intptr_t(b.length());
   return diff ? diff
-              : MDBX_UNLIKELY(a.length() == 0 || a.data() == b.data())
-                    ? 0
-                    : memcmp(a.data(), b.data(), a.length());
+         : MDBX_UNLIKELY(a.length() == 0 || a.data() == b.data())
+             ? 0
+             : memcmp(a.data(), b.data(), a.length());
 }
 
 MDBX_CXX14_CONSTEXPR intptr_t
