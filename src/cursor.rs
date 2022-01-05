@@ -886,12 +886,15 @@ mod test {
         assert_eq!(cursor.first_dup().unwrap(), Some(*b"val1"));
         assert_eq!(cursor.get_current().unwrap(), Some((*b"key1", *b"val1")));
         assert_eq!(cursor.next_nodup().unwrap(), Some((*b"key2", *b"val1")));
+        assert_eq!(cursor.next().unwrap(), Some((*b"key2", *b"val2")));
+        assert_eq!(cursor.prev().unwrap(), Some((*b"key2", *b"val1")));
         assert_eq!(cursor.next_dup().unwrap(), Some((*b"key2", *b"val2")));
         assert_eq!(cursor.next_dup().unwrap(), Some((*b"key2", *b"val3")));
         assert_eq!(cursor.next_dup::<(), ()>().unwrap(), None);
         assert_eq!(cursor.prev_dup().unwrap(), Some((*b"key2", *b"val2")));
         assert_eq!(cursor.last_dup().unwrap(), Some(*b"val3"));
         assert_eq!(cursor.prev_nodup().unwrap(), Some((*b"key1", *b"val3")));
+        assert_eq!(cursor.next_dup::<(), ()>().unwrap(), None);
         assert_eq!(cursor.set(b"key1").unwrap(), Some(*b"val1"));
         assert_eq!(cursor.set(b"key2").unwrap(), Some(*b"val1"));
         assert_eq!(
@@ -899,10 +902,19 @@ mod test {
             Some((*b"key2", *b"val1"))
         );
         assert_eq!(cursor.get_both(b"key1", b"val3").unwrap(), Some(*b"val3"));
+        assert_eq!(cursor.get_both_range::<()>(b"key1", b"val4").unwrap(), None);
         assert_eq!(
             cursor.get_both_range(b"key2", b"val").unwrap(),
             Some(*b"val1")
         );
+
+        assert_eq!(cursor.last().unwrap(), Some((*b"key2", *b"val3")));
+        cursor.del(WriteFlags::empty()).unwrap();
+        assert_eq!(cursor.last().unwrap(), Some((*b"key2", *b"val2")));
+        cursor.del(WriteFlags::empty()).unwrap();
+        assert_eq!(cursor.last().unwrap(), Some((*b"key2", *b"val1")));
+        cursor.del(WriteFlags::empty()).unwrap();
+        assert_eq!(cursor.last().unwrap(), Some((*b"key1", *b"val3")));
     }
 
     #[test]
@@ -1252,6 +1264,7 @@ mod test {
         );
 
         cursor.del(WriteFlags::empty()).unwrap();
+        assert_eq!(cursor.get_current::<Vec<u8>, Vec<u8>>().unwrap(), None);
         assert_eq!(
             cursor.last().unwrap().unwrap(),
             (
