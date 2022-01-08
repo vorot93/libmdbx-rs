@@ -1,6 +1,6 @@
 [package]
 name = "libmdbx"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
   "Dan Burkert <dan@danburkert.com>",
   "Victor Porof <vporof@mozilla.com>",
@@ -31,7 +31,7 @@ libc = "0.2"
 parking_lot = "0.11"
 thiserror = "1"
 
-ffi = { package = "mdbx-sys", version = "0.11.4-git", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "0.11.4-git.20210105", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
