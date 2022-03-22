@@ -28,7 +28,7 @@ byteorder = "1"
 derive_more = "0.99"
 indexmap = "1"
 libc = "0.2"
-parking_lot = "0.11"
+parking_lot = "0.12"
 thiserror = "1"
 
 ffi = { package = "mdbx-sys", version = "0.11.4-git.20210105", path = "./mdbx-sys" }
