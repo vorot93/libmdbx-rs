@@ -1,6 +1,6 @@
 [package]
 name = "mdbx-sys"
-version = "0.11.4-git.20210105"
+version = "0.11.5"
 edition = "2021"
 authors = [
     "Dan Burkert <dan@danburkert.com>",

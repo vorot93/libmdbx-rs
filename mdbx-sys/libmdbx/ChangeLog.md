@@ -17,16 +17,64 @@ ChangeLog
  - Packages for [Astra Linux](https://astralinux.ru/), [ALT Linux](https://www.altlinux.org/), [ROSA Linux](https://www.rosalinux.ru/), etc.
 
 
-## v0.11.4 (underway)
+## v0.11.5 at 2022-02-23
+
+The stable release with the hotfix/workaround for a flaw of Linux 4.19 (at least) unified page/buffer cache.
+See [issue#269](https://github.com/erthink/libmdbx/issues/269) for more information.
 
 Acknowledgements:
 
+ - [Simon Leier](https://github.com/leisim) for reporting and testing.
+ - [Kai Wetlesen](https://github.com/kaiwetlesen) for [RPMs](http://copr.fedorainfracloud.org/coprs/kwetlesen/libmdbx/).
+ - [Tullio Canepa](https://github.com/canepat) for reporting C++ API issue and contributing.
+
+Fixes:
+
+ - [Added workaround](https://github.com/erthink/libmdbx/issues/269) for a flaw of Linux 4.19 (at least) unified page/buffer cache.
+ - [Fixed/Reworked](https://github.com/erthink/libmdbx/pull/270) move-assignment operators for "managed" classes of C++ API.
+ - Fixed potential `SIGSEGV` while open DB with overrided non-default page size.
+ - [Made](https://github.com/erthink/libmdbx/issues/267) `mdbx_env_open()` idempotence in failure cases.
+ - Refined/Fixed pages reservation inside `mdbx_update_gc()` to avoid non-reclamation in a rare cases.
+ - Fixed typo in a retained space calculation for the hsr-callback.
+
+Minors:
+
+ - Reworked functions for meta-pages, split-off non-volatile.
+ - Disentangled C11-atomic fences/barriers and pure-functions (with `__attribute__((__pure__))`) to avoid compiler misoptimization.
+ - Fixed hypotetic unaligned access to 64-bit dwords on ARM with `__ARM_FEATURE_UNALIGNED` defined.
+ - Reasonable paranoia that makes clarity for code readers.
+ - Minor fixes Doxygen references, comments, descriptions, etc.
+
+
+## v0.11.4 at 2022-02-02
+
+The stable release with fixes for large and huge databases sized of 4..128 TiB.
+
+Acknowledgements:
+
+ - [Ledgerwatch](https://github.com/ledgerwatch), [Binance](https://github.com/binance-chain) and [Positive Technologies](https://www.ptsecurity.com/) teams for reporting, assistance in investigation and testing.
  - [Alex Sharov](https://github.com/AskAlexSharov) for reporting, testing and provide resources for remote debugging/investigation.
+ - [Kris Zyp](https://github.com/kriszyp) for [Deno](https://deno.land/) support.
+
+New features, extensions and improvements:
+
+ - Added treating the `UINT64_MAX` value as maximum for given option inside `mdbx_env_set_option()`.
+ - Added `to_hex/to_base58/to_base64::output(std::ostream&)` overloads without using temporary string objects as buffers.
+ - Added `--geometry-jitter=YES|no` option to the test framework.
+ - Added support for [Deno](https://deno.land/) support by [Kris Zyp](https://github.com/kriszyp).
 
 Fixes:
 
  - Fixed handling `MDBX_opt_rp_augment_limit` for GC's records from huge transactions (Erigon/Akula/Ethereum).
  - [Fixed](https://github.com/erthink/libmdbx/issues/258) build on Android (avoid including `sys/sem.h`).
+ - [Fixed](https://github.com/erthink/libmdbx/pull/261) missing copy assignment operator for `mdbx::move_result`.
+ - Fixed missing `&` for `std::ostream &operator<<()` overloads.
+ - Fixed unexpected `EXDEV` (Cross-device link) error from `mdbx_env_copy()`.
+ - Fixed base64 encoding/decoding bugs in auxillary C++ API.
+ - Fixed overflow of `pgno_t` during checking PNL on 64-bit platforms.
+ - [Fixed](https://github.com/erthink/libmdbx/issues/260) excessive PNL checking after sort for spilling.
+ - Reworked checking `MAX_PAGENO` and DB upper-size geometry limit.
+ - [Fixed](https://github.com/erthink/libmdbx/issues/265) build for some combinations of versions of  MSVC and Windows SDK.
 
 Minors:
 
@@ -36,6 +84,11 @@ Minors:
  - Fixed minor `unused parameter` warning.
  - Added CI for Android.
  - Refine/cleanup internal logging.
+ - Refined line splitting inside hex/base58/base64 encoding to avoid `\n` at the end.
+ - Added workaround for modern libstdc++ with CLANG < 4.x
+ - Relaxed txn-check rules for auxiliary functions.
+ - Clarified a comments and descriptions, etc.
+ - Using the `-fno-semantic interposition` option to reduce the overhead to calling self own public functions.
 
 
 ## v0.11.3 at 2021-12-31

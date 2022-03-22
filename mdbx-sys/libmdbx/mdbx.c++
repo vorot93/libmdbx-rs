@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 149330d5cc89315fc253a1e4f8a3a820d853d58ef251c1577b93e9a0cd4a4ded_v0_11_3_13_g9822412
+#define MDBX_BUILD_SOURCERY 6c4d894dab57b371b97f4deffd0943e367692232b8ace053cec44fd1aae843da_v0_11_5_0_gd01e44db
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -114,9 +114,13 @@
     disable : 4505) /* unreferenced local function has been removed */
 #endif              /* _MSC_VER (warnings) */
 
+#if defined(__GNUC__) && __GNUC__ < 9
+#pragma GCC diagnostic ignored "-Wattributes"
+#endif /* GCC < 9 */
+
 #include "mdbx.h++"
 /*
- * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -533,7 +537,7 @@ extern "C" {
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
- * Copyright 2015-2021 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -587,18 +591,21 @@ extern "C" {
 #include <string.h>
 #include <time.h>
 
-/* C11 stdalign.h */
+/* C11' alignas() */
 #if __has_include(<stdalign.h>)
 #include <stdalign.h>
-#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
-#define alignas(N) _Alignas(N)
-#elif defined(_MSC_VER)
-#define alignas(N) __declspec(align(N))
-#elif __has_attribute(__aligned__) || defined(__GNUC__)
-#define alignas(N) __attribute__((__aligned__(N)))
-#else
-#error "FIXME: Required _alignas() or equivalent."
 #endif
+#if defined(alignas) || defined(__cplusplus)
+#define MDBX_ALIGNAS(N) alignas(N)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+#define MDBX_ALIGNAS(N) _Alignas(N)
+#elif defined(_MSC_VER)
+#define MDBX_ALIGNAS(N) __declspec(align(N))
+#elif __has_attribute(__aligned__) || defined(__GNUC__)
+#define MDBX_ALIGNAS(N) __attribute__((__aligned__(N)))
+#else
+#error "FIXME: Required alignas() or equivalent."
+#endif /* MDBX_ALIGNAS */
 
 /*----------------------------------------------------------------------------*/
 /* Systems includes */
@@ -1898,17 +1905,29 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #endif /* MDBX_64BIT_CAS */
 
 #ifndef MDBX_UNALIGNED_OK
-#ifdef _MSC_VER
-#define MDBX_UNALIGNED_OK 1 /* avoid MSVC misoptimization */
+#if defined(__ALIGNED__) || defined(__SANITIZE_UNDEFINED__)
+#define MDBX_UNALIGNED_OK 0 /* no unaligned access allowed */
+#elif defined(__ARM_FEATURE_UNALIGNED)
+#define MDBX_UNALIGNED_OK 4 /* ok unaligned for 32-bit words */
 #elif __CLANG_PREREQ(5, 0) || __GNUC_PREREQ(5, 0)
-#define MDBX_UNALIGNED_OK 0 /* expecting optimization is well done */
-#elif (defined(__ia32__) || defined(__ARM_FEATURE_UNALIGNED)) &&               \
-    !defined(__ALIGNED__)
-#define MDBX_UNALIGNED_OK 1
-#else
+/* expecting an optimization will well done, also this
+ * hushes false-positives from UBSAN (undefined behaviour sanitizer) */
 #define MDBX_UNALIGNED_OK 0
+#elif defined(__e2k__) || defined(__elbrus__)
+#if __iset__ > 4
+#define MDBX_UNALIGNED_OK 8 /* ok unaligned for 64-bit words */
+#else
+#define MDBX_UNALIGNED_OK 4 /* ok unaligned for 32-bit words */
 #endif
-#endif /* MDBX_UNALIGNED_OK */
+#elif defined(__ia32__)
+#define MDBX_UNALIGNED_OK 8 /* ok unaligned for 64-bit words */
+#else
+#define MDBX_UNALIGNED_OK 0 /* no unaligned access allowed */
+#endif
+#elif MDBX_UNALIGNED_OK == 1
+#undef MDBX_UNALIGNED_OK
+#define MDBX_UNALIGNED_OK 32 /* any unaligned access allowed */
+#endif                       /* MDBX_UNALIGNED_OK */
 
 #ifndef MDBX_CACHELINE_SIZE
 #if defined(SYSTEM_CACHE_ALIGNMENT_SIZE)
@@ -2197,7 +2216,7 @@ typedef struct MDBX_meta {
 #define MDBX_DATASIGN_WEAK 1u
 #define SIGN_IS_STEADY(sign) ((sign) > MDBX_DATASIGN_WEAK)
 #define META_IS_STEADY(meta)                                                   \
-  SIGN_IS_STEADY(unaligned_peek_u64(4, (meta)->mm_datasync_sign))
+  SIGN_IS_STEADY(unaligned_peek_u64_volatile(4, (meta)->mm_datasync_sign))
   uint32_t mm_datasync_sign[2];
 
   /* txnid that committed this page, the second of a two-phase-update pair */
@@ -2426,19 +2445,19 @@ typedef struct MDBX_lockinfo {
   /* Marker to distinguish uniqueness of DB/CLK. */
   MDBX_atomic_uint64_t mti_bait_uniqueness;
 
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
 #if MDBX_ENABLE_PGOP_STAT
-      /* Statistics of costly ops of all (running, completed and aborted)
-       * transactions */
-      MDBX_pgop_stat_t mti_pgop_stat;
+  /* Statistics of costly ops of all (running, completed and aborted)
+   * transactions */
+  MDBX_pgop_stat_t mti_pgop_stat;
 #endif /* MDBX_ENABLE_PGOP_STAT*/
 
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
   /* Write transaction lock. */
 #if MDBX_LOCKING > 0
-      mdbx_ipclock_t mti_wlock;
+  mdbx_ipclock_t mti_wlock;
 #endif /* MDBX_LOCKING > 0 */
 
   atomic_txnid_t mti_oldest_reader;
@@ -2460,11 +2479,11 @@ typedef struct MDBX_lockinfo {
   /* Shared anchor for tracking readahead edge and enabled/disabled status. */
   pgno_t mti_readahead_anchor;
 
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
 
   /* Readeaders registration lock. */
 #if MDBX_LOCKING > 0
-      mdbx_ipclock_t mti_rlock;
+  mdbx_ipclock_t mti_rlock;
 #endif /* MDBX_LOCKING > 0 */
 
   /* The number of slots that have been used in the reader table.
@@ -2475,8 +2494,8 @@ typedef struct MDBX_lockinfo {
 
 #if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) ||              \
     (!defined(__cplusplus) && defined(_MSC_VER))
-  alignas(MDBX_CACHELINE_SIZE) /* cacheline ---------------------------------*/
-      MDBX_reader mti_readers[] /* dynamic size */;
+  MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
+  MDBX_reader mti_readers[] /* dynamic size */;
 #endif /* C99 */
 } MDBX_lockinfo;
 
@@ -2521,7 +2540,7 @@ typedef struct MDBX_lockinfo {
 #else
 #define MAX_MAPSIZE32 UINT32_C(0x7f000000)
 #endif
-#define MAX_MAPSIZE64 (MAX_PAGENO * (uint64_t)MAX_PAGESIZE)
+#define MAX_MAPSIZE64 ((MAX_PAGENO + 1) * (uint64_t)MAX_PAGESIZE)
 
 #if MDBX_WORDBITS >= 64
 #define MAX_MAPSIZE MAX_MAPSIZE64
@@ -2974,25 +2993,21 @@ MDBX_INTERNAL_FUNC void mdbx_debug_log_va(int level, const char *function,
                                           int line, const char *fmt,
                                           va_list args);
 
-#define mdbx_log_enabled(msg) unlikely(msg <= mdbx_loglevel)
-
 #if MDBX_DEBUG
-
-#define mdbx_assert_enabled() unlikely(mdbx_runtime_flags &MDBX_DBG_ASSERT)
-
-#define mdbx_audit_enabled() unlikely(mdbx_runtime_flags &MDBX_DBG_AUDIT)
-
+#define mdbx_log_enabled(msg) unlikely(msg <= mdbx_loglevel)
+#define mdbx_audit_enabled() unlikely((mdbx_runtime_flags & MDBX_DBG_AUDIT))
 #else /* MDBX_DEBUG */
-
+#define mdbx_log_enabled(msg) (msg < MDBX_LOG_VERBOSE && msg <= mdbx_loglevel)
 #define mdbx_audit_enabled() (0)
+#endif /* MDBX_DEBUG */
 
-#if !defined(NDEBUG) || MDBX_FORCE_ASSERTIONS
+#if MDBX_FORCE_ASSERTIONS
 #define mdbx_assert_enabled() (1)
+#elif MDBX_DEBUG
+#define mdbx_assert_enabled() likely((mdbx_runtime_flags & MDBX_DBG_ASSERT))
 #else
 #define mdbx_assert_enabled() (0)
-#endif /* NDEBUG */
-
-#endif /* MDBX_DEBUG */
+#endif /* assertions */
 
 #if !MDBX_DEBUG && defined(__ANDROID_API__)
 #define mdbx_assert_fail(env, msg, func, line)                                 \
@@ -3004,33 +3019,33 @@ void mdbx_assert_fail(const MDBX_env *env, const char *msg, const char *func,
 
 #define mdbx_debug_extra(fmt, ...)                                             \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_EXTRA))                        \
+    if (mdbx_log_enabled(MDBX_LOG_EXTRA))                                      \
       mdbx_debug_log(MDBX_LOG_EXTRA, __func__, __LINE__, fmt, __VA_ARGS__);    \
   } while (0)
 
 #define mdbx_debug_extra_print(fmt, ...)                                       \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_EXTRA))                        \
+    if (mdbx_log_enabled(MDBX_LOG_EXTRA))                                      \
       mdbx_debug_log(MDBX_LOG_EXTRA, NULL, 0, fmt, __VA_ARGS__);               \
   } while (0)
 
 #define mdbx_trace(fmt, ...)                                                   \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_TRACE))                        \
+    if (mdbx_log_enabled(MDBX_LOG_TRACE))                                      \
       mdbx_debug_log(MDBX_LOG_TRACE, __func__, __LINE__, fmt "\n",             \
                      __VA_ARGS__);                                             \
   } while (0)
 
 #define mdbx_debug(fmt, ...)                                                   \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_DEBUG))                        \
+    if (mdbx_log_enabled(MDBX_LOG_DEBUG))                                      \
       mdbx_debug_log(MDBX_LOG_DEBUG, __func__, __LINE__, fmt "\n",             \
                      __VA_ARGS__);                                             \
   } while (0)
 
 #define mdbx_verbose(fmt, ...)                                                 \
   do {                                                                         \
-    if (MDBX_DEBUG && mdbx_log_enabled(MDBX_LOG_VERBOSE))                      \
+    if (mdbx_log_enabled(MDBX_LOG_VERBOSE))                                    \
       mdbx_debug_log(MDBX_LOG_VERBOSE, __func__, __LINE__, fmt "\n",           \
                      __VA_ARGS__);                                             \
   } while (0)
@@ -3282,15 +3297,23 @@ typedef struct MDBX_node {
 #define MDBX_NOSPILL 0x8000
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
-pgno_add(pgno_t base, pgno_t augend) {
-  assert(base <= MAX_PAGENO);
-  return (augend < MAX_PAGENO - base) ? base + augend : MAX_PAGENO;
+int64pgno(int64_t i64) {
+  if (likely(i64 >= (int64_t)MIN_PAGENO && i64 <= (int64_t)MAX_PAGENO + 1))
+    return (pgno_t)i64;
+  return (i64 < (int64_t)MIN_PAGENO) ? MIN_PAGENO : MAX_PAGENO;
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
-pgno_sub(pgno_t base, pgno_t subtrahend) {
-  assert(base >= MIN_PAGENO);
-  return (subtrahend < base - MIN_PAGENO) ? base - subtrahend : MIN_PAGENO;
+pgno_add(size_t base, size_t augend) {
+  assert(base <= MAX_PAGENO + 1 && augend < MAX_PAGENO);
+  return int64pgno(base + augend);
+}
+
+MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
+pgno_sub(size_t base, size_t subtrahend) {
+  assert(base >= MIN_PAGENO && base <= MAX_PAGENO + 1 &&
+         subtrahend < MAX_PAGENO);
+  return int64pgno(base - subtrahend);
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __always_inline bool
@@ -3369,7 +3392,7 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
     ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
   } while (0)
 //
-// Copyright (c) 2020-2021, Leonid Yuriev <leo@yuriev.ru>.
+// Copyright (c) 2020-2022, Leonid Yuriev <leo@yuriev.ru>.
 // SPDX-License-Identifier: Apache-2.0
 //
 // Non-inline part of the libmdbx C++ API
@@ -3381,6 +3404,7 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
 
 
 
+#include <array>
 #include <atomic>
 #include <cctype> // for isxdigit(), etc
 #include <system_error>
@@ -3905,34 +3929,60 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
 
 //------------------------------------------------------------------------------
 
-char *to_hex::write_bytes(char *__restrict dest, size_t dest_size) const {
+char *to_hex::write_bytes(char *__restrict const dest, size_t dest_size) const {
   if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
     MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
+  auto ptr = dest;
   auto src = source.byte_ptr();
   const char alphabase = (uppercase ? 'A' : 'a') - 10;
-  auto line = dest;
+  auto line = ptr;
   for (const auto end = source.end_byte_ptr(); src != end; ++src) {
+    if (wrap_width && size_t(ptr - line) >= wrap_width) {
+      *ptr = '\n';
+      line = ++ptr;
+    }
     const int8_t hi = *src >> 4;
     const int8_t lo = *src & 15;
-    dest[0] = char(alphabase + hi + (((hi - 10) >> 7) & -7));
-    dest[1] = char(alphabase + lo + (((lo - 10) >> 7) & -7));
-    dest += 2;
-    if (wrap_width && size_t(dest - line) >= wrap_width) {
-      *dest = '\n';
-      line = ++dest;
-    }
+    ptr[0] = char(alphabase + hi + (((hi - 10) >> 7) & -7));
+    ptr[1] = char(alphabase + lo + (((lo - 10) >> 7) & -7));
+    ptr += 2;
+    assert(ptr <= dest + dest_size);
   }
-  return dest;
+  return ptr;
 }
 
-char *from_hex::write_bytes(char *__restrict dest, size_t dest_size) const {
+::std::ostream &to_hex::output(::std::ostream &out) const {
+  if (MDBX_LIKELY(!is_empty()))
+    MDBX_CXX20_LIKELY {
+      ::std::ostream::sentry sentry(out);
+      auto src = source.byte_ptr();
+      const char alphabase = (uppercase ? 'A' : 'a') - 10;
+      unsigned width = 0;
+      for (const auto end = source.end_byte_ptr(); src != end; ++src) {
+        if (wrap_width && width >= wrap_width) {
+          out << ::std::endl;
+          width = 0;
+        }
+        const int8_t hi = *src >> 4;
+        const int8_t lo = *src & 15;
+        out.put(char(alphabase + hi + (((hi - 10) >> 7) & -7)));
+        out.put(char(alphabase + lo + (((lo - 10) >> 7) & -7)));
+        width += 2;
+      }
+    }
+  return out;
+}
+
+char *from_hex::write_bytes(char *__restrict const dest,
+                            size_t dest_size) const {
   if (MDBX_UNLIKELY(source.length() % 2 && !ignore_spaces))
     MDBX_CXX20_UNLIKELY throw std::domain_error(
         "mdbx::from_hex:: odd length of hexadecimal string");
   if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
     MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
+  auto ptr = dest;
   auto src = source.byte_ptr();
   for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
@@ -3954,11 +4004,12 @@ char *from_hex::write_bytes(char *__restrict dest, size_t dest_size) const {
     lo = (lo | 0x20) - 'a';
     lo += 10 + ((lo >> 7) & 7);
 
-    *dest++ = hi << 4 | lo;
+    *ptr++ = hi << 4 | lo;
     src += 2;
     left -= 2;
+    assert(ptr <= dest + dest_size);
   }
-  return dest;
+  return ptr;
 }
 
 bool from_hex::is_erroneous() const noexcept {
@@ -4022,7 +4073,7 @@ static inline uint64_t bswap64(uint64_t v) noexcept {
 #endif
 }
 #endif /* __BYTE_ORDER__ */
-#endif /* ifdef bswap64 */
+#endif /* ifndef bswap64 */
 
 static inline char b58_8to11(uint64_t &v) noexcept {
   const unsigned i = unsigned(v % 58);
@@ -4030,15 +4081,16 @@ static inline char b58_8to11(uint64_t &v) noexcept {
   return b58_alphabet[i];
 }
 
-char *to_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
+char *to_base58::write_bytes(char *__restrict const dest,
+                             size_t dest_size) const {
   if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
     MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
+  auto ptr = dest;
   auto src = source.byte_ptr();
   size_t left = source.length();
-  auto line = dest;
+  auto line = ptr;
   while (MDBX_LIKELY(left > 7)) {
-    left -= 8;
     uint64_t v;
     std::memcpy(&v, src, 8);
     src += 8;
@@ -4048,23 +4100,25 @@ char *to_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
 #else
 #error "FIXME: Unsupported byte order"
 #endif /* __BYTE_ORDER__ */
-    dest[10] = b58_8to11(v);
-    dest[9] = b58_8to11(v);
-    dest[8] = b58_8to11(v);
-    dest[7] = b58_8to11(v);
-    dest[6] = b58_8to11(v);
-    dest[5] = b58_8to11(v);
-    dest[4] = b58_8to11(v);
-    dest[3] = b58_8to11(v);
-    dest[2] = b58_8to11(v);
-    dest[1] = b58_8to11(v);
-    dest[0] = b58_8to11(v);
+    ptr[10] = b58_8to11(v);
+    ptr[9] = b58_8to11(v);
+    ptr[8] = b58_8to11(v);
+    ptr[7] = b58_8to11(v);
+    ptr[6] = b58_8to11(v);
+    ptr[5] = b58_8to11(v);
+    ptr[4] = b58_8to11(v);
+    ptr[3] = b58_8to11(v);
+    ptr[2] = b58_8to11(v);
+    ptr[1] = b58_8to11(v);
+    ptr[0] = b58_8to11(v);
     assert(v == 0);
-    dest += 11;
-    if (wrap_width && size_t(dest - line) >= wrap_width) {
-      *dest = '\n';
-      line = ++dest;
+    ptr += 11;
+    left -= 8;
+    if (wrap_width && size_t(ptr - line) >= wrap_width && left) {
+      *ptr = '\n';
+      line = ++ptr;
     }
+    assert(ptr <= dest + dest_size);
   }
 
   if (left) {
@@ -4075,15 +4129,75 @@ char *to_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
       parrots += 43;
     } while (--left);
 
-    auto ptr = dest += parrots >> 5;
+    auto tail = ptr += parrots >> 5;
+    assert(ptr <= dest + dest_size);
     do {
-      *--ptr = b58_8to11(v);
+      *--tail = b58_8to11(v);
       parrots -= 32;
     } while (parrots > 31);
     assert(v == 0);
   }
 
-  return dest;
+  return ptr;
+}
+
+::std::ostream &to_base58::output(::std::ostream &out) const {
+  if (MDBX_LIKELY(!is_empty()))
+    MDBX_CXX20_LIKELY {
+      ::std::ostream::sentry sentry(out);
+      auto src = source.byte_ptr();
+      size_t left = source.length();
+      unsigned width = 0;
+      std::array<char, 11> buf;
+
+      while (MDBX_LIKELY(left > 7)) {
+        uint64_t v;
+        std::memcpy(&v, src, 8);
+        src += 8;
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+        v = bswap64(v);
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#else
+#error "FIXME: Unsupported byte order"
+#endif /* __BYTE_ORDER__ */
+        buf[10] = b58_8to11(v);
+        buf[9] = b58_8to11(v);
+        buf[8] = b58_8to11(v);
+        buf[7] = b58_8to11(v);
+        buf[6] = b58_8to11(v);
+        buf[5] = b58_8to11(v);
+        buf[4] = b58_8to11(v);
+        buf[3] = b58_8to11(v);
+        buf[2] = b58_8to11(v);
+        buf[1] = b58_8to11(v);
+        buf[0] = b58_8to11(v);
+        assert(v == 0);
+        out.write(&buf.front(), 11);
+        left -= 8;
+        if (wrap_width && (width += 11) >= wrap_width && left) {
+          out << ::std::endl;
+          width = 0;
+        }
+      }
+
+      if (left) {
+        uint64_t v = 0;
+        unsigned parrots = 31;
+        do {
+          v = (v << 8) + *src++;
+          parrots += 43;
+        } while (--left);
+
+        auto ptr = buf.end();
+        do {
+          *--ptr = b58_8to11(v);
+          parrots -= 32;
+        } while (parrots > 31);
+        assert(v == 0);
+        out.write(&*ptr, buf.end() - ptr);
+      }
+    }
+  return out;
 }
 
 const signed char b58_map[256] = {
@@ -4112,10 +4226,12 @@ static inline signed char b58_11to8(uint64_t &v, const byte c) noexcept {
   return m;
 }
 
-char *from_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
+char *from_base58::write_bytes(char *__restrict const dest,
+                               size_t dest_size) const {
   if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
     MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
+  auto ptr = dest;
   auto src = source.byte_ptr();
   for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(isspace(*src)) && ignore_spaces) {
@@ -4139,10 +4255,11 @@ char *from_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
 #else
 #error "FIXME: Unsupported byte order"
 #endif /* __BYTE_ORDER__ */
-      std::memcpy(dest, &v, 8);
-      dest += 8;
+      std::memcpy(ptr, &v, 8);
+      ptr += 8;
       src += 11;
       left -= 11;
+      assert(ptr <= dest + dest_size);
       continue;
     }
 
@@ -4158,14 +4275,15 @@ char *from_base58::write_bytes(char *__restrict dest, size_t dest_size) const {
       parrots += 32;
     } while (--left);
 
-    auto ptr = dest += parrots / 43;
+    auto tail = ptr += parrots / 43;
+    assert(ptr <= dest + dest_size);
     do {
-      *--ptr = byte(v);
+      *--tail = byte(v);
       v >>= 8;
     } while (v > 255);
     break;
   }
-  return dest;
+  return ptr;
 
 bailout:
   throw std::domain_error("mdbx::from_base58:: invalid base58 string");
@@ -4224,37 +4342,79 @@ static inline void b64_3to4(const byte x, const byte y, const byte z,
   dest[3] = alphabet[z & 0x3f];
 }
 
-char *to_base64::write_bytes(char *__restrict dest, size_t dest_size) const {
+char *to_base64::write_bytes(char *__restrict const dest,
+                             size_t dest_size) const {
   if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
     MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
+  auto ptr = dest;
   auto src = source.byte_ptr();
   size_t left = source.length();
-  auto line = dest;
+  auto line = ptr;
   while (true) {
     switch (left) {
     default:
       MDBX_CXX20_LIKELY left -= 3;
-      b64_3to4(src[0], src[1], src[2], dest);
-      dest += 4;
+      b64_3to4(src[0], src[1], src[2], ptr);
+      ptr += 4;
       src += 3;
-      if (wrap_width && size_t(dest - line) >= wrap_width) {
-        *dest = '\n';
-        line = ++dest;
+      if (wrap_width && size_t(ptr - line) >= wrap_width && left) {
+        *ptr = '\n';
+        line = ++ptr;
       }
+      assert(ptr <= dest + dest_size);
       continue;
     case 2:
-      b64_3to4(src[0], 0, 0, dest);
-      dest[2] = dest[3] = '=';
-      return dest + 4;
+      b64_3to4(src[0], src[1], 0, ptr);
+      ptr[3] = '=';
+      assert(ptr + 4 <= dest + dest_size);
+      return ptr + 4;
     case 1:
-      b64_3to4(src[0], src[1], 0, dest);
-      dest[3] = '=';
-      return dest + 4;
+      b64_3to4(src[0], 0, 0, ptr);
+      ptr[2] = ptr[3] = '=';
+      assert(ptr + 4 <= dest + dest_size);
+      return ptr + 4;
     case 0:
-      return dest;
+      return ptr;
     }
   }
+}
+
+::std::ostream &to_base64::output(::std::ostream &out) const {
+  if (MDBX_LIKELY(!is_empty()))
+    MDBX_CXX20_LIKELY {
+      ::std::ostream::sentry sentry(out);
+      auto src = source.byte_ptr();
+      size_t left = source.length();
+      unsigned width = 0;
+      std::array<char, 4> buf;
+
+      while (true) {
+        switch (left) {
+        default:
+          MDBX_CXX20_LIKELY left -= 3;
+          b64_3to4(src[0], src[1], src[2], &buf.front());
+          src += 3;
+          out.write(&buf.front(), 4);
+          if (wrap_width && (width += 4) >= wrap_width && left) {
+            out << ::std::endl;
+            width = 0;
+          }
+          continue;
+        case 2:
+          b64_3to4(src[0], src[1], 0, &buf.front());
+          buf[3] = '=';
+          return out.write(&buf.front(), 4);
+        case 1:
+          b64_3to4(src[0], 0, 0, &buf.front());
+          buf[2] = buf[3] = '=';
+          return out.write(&buf.front(), 4);
+        case 0:
+          return out;
+        }
+      }
+    }
+  return out;
 }
 
 static const signed char b64_map[256] = {
@@ -4286,13 +4446,15 @@ static inline signed char b64_4to3(signed char a, signed char b, signed char c,
   return a | b | c | d;
 }
 
-char *from_base64::write_bytes(char *__restrict dest, size_t dest_size) const {
+char *from_base64::write_bytes(char *__restrict const dest,
+                               size_t dest_size) const {
   if (MDBX_UNLIKELY(source.length() % 4 && !ignore_spaces))
     MDBX_CXX20_UNLIKELY throw std::domain_error(
         "mdbx::from_base64:: odd length of base64 string");
   if (MDBX_UNLIKELY(envisage_result_length() > dest_size))
     MDBX_CXX20_UNLIKELY throw_too_small_target_buffer();
 
+  auto ptr = dest;
   auto src = source.byte_ptr();
   for (auto left = source.length(); left > 0;) {
     if (MDBX_UNLIKELY(*src <= ' ') &&
@@ -4309,19 +4471,25 @@ char *from_base64::write_bytes(char *__restrict dest, size_t dest_size) const {
       }
     const signed char a = b64_map[src[0]], b = b64_map[src[1]],
                       c = b64_map[src[2]], d = b64_map[src[3]];
-    if (MDBX_UNLIKELY(b64_4to3(a, b, c, d, dest) < 0)) {
+    if (MDBX_UNLIKELY(b64_4to3(a, b, c, d, ptr) < 0)) {
       if (left == 4 && (a | b) >= 0 && d == EQ) {
-        if (c >= 0)
-          return dest + 2;
-        if (c == d)
-          return dest + 1;
+        if (c >= 0) {
+          assert(ptr + 2 <= dest + dest_size);
+          return ptr + 2;
+        }
+        if (c == d) {
+          assert(ptr + 1 <= dest + dest_size);
+          return ptr + 1;
+        }
       }
       MDBX_CXX20_UNLIKELY goto bailout;
     }
     src += 4;
     left -= 4;
+    ptr += 3;
+    assert(ptr <= dest + dest_size);
   }
-  return dest;
+  return ptr;
 }
 
 bool from_base64::is_erroneous() const noexcept {
@@ -4470,7 +4638,7 @@ bool env::is_pristine() const {
          get_info().mi_recent_txnid == INITIAL_TXNID;
 }
 
-bool env::is_empty() const { return get_stat().ms_branch_pages == 0; }
+bool env::is_empty() const { return get_stat().ms_leaf_pages == 0; }
 
 #ifdef MDBX_STD_FILESYSTEM_PATH
 env &env::copy(const ::std::filesystem::path &destination, bool compactify,
