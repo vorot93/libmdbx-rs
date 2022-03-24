@@ -2960,6 +2960,18 @@ public:
     inline geometry &make_fixed(intptr_t size) noexcept;
     inline geometry &make_dynamic(intptr_t lower = minimal_value,
                                   intptr_t upper = maximal_value) noexcept;
+    MDBX_CXX11_CONSTEXPR geometry() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    geometry(const geometry &) noexcept = default;
+    MDBX_CXX11_CONSTEXPR geometry(intptr_t size_lower,
+                                  intptr_t size_now = default_value,
+                                  intptr_t size_upper = maximal_value,
+                                  intptr_t growth_step = default_value,
+                                  intptr_t shrink_threshold = default_value,
+                                  intptr_t pagesize = default_value) noexcept
+        : size_lower(size_lower), size_now(size_now), size_upper(size_upper),
+          growth_step(growth_step), shrink_threshold(shrink_threshold),
+          pagesize(pagesize) {}
   };
 
   /// \brief Operation mode.
@@ -2984,6 +2996,10 @@ public:
     /// \copydoc MDBX_COALESCE
     bool coalesce{false};
     MDBX_CXX11_CONSTEXPR reclaiming_options() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    reclaiming_options(const reclaiming_options &) noexcept = default;
+    MDBX_CXX14_CONSTEXPR reclaiming_options &
+    operator=(const reclaiming_options &) noexcept = default;
     reclaiming_options(MDBX_env_flags_t) noexcept;
   };
 
@@ -2999,6 +3015,10 @@ public:
     /// \copydoc MDBX_NOMEMINIT
     bool disable_clear_memory{false};
     MDBX_CXX11_CONSTEXPR operate_options() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    operate_options(const operate_options &) noexcept = default;
+    MDBX_CXX14_CONSTEXPR operate_options &
+    operator=(const operate_options &) noexcept = default;
     operate_options(MDBX_env_flags_t) noexcept;
   };
 
@@ -3016,6 +3036,19 @@ public:
     env::operate_options options;
 
     MDBX_CXX11_CONSTEXPR operate_parameters() noexcept {}
+    MDBX_CXX11_CONSTEXPR
+    operate_parameters(
+        const unsigned max_maps, const unsigned max_readers = 0,
+        const env::mode mode = env::mode::write_mapped_io,
+        env::durability durability = env::durability::robust_synchronous,
+        const env::reclaiming_options &reclaiming = env::reclaiming_options(),
+        const env::operate_options &options = env::operate_options()) noexcept
+        : max_maps(max_maps), max_readers(max_readers), mode(mode),
+          durability(durability), reclaiming(reclaiming), options(options) {}
+    MDBX_CXX11_CONSTEXPR
+    operate_parameters(const operate_parameters &) noexcept = default;
+    MDBX_CXX14_CONSTEXPR operate_parameters &
+    operator=(const operate_parameters &) noexcept = default;
     MDBX_env_flags_t
     make_flags(bool accede = true, ///< \copydoc MDBX_ACCEDE
                bool use_subdirectory =
@@ -3027,7 +3060,6 @@ public:
     reclaiming_from_flags(MDBX_env_flags_t flags) noexcept;
     inline static env::operate_options
     options_from_flags(MDBX_env_flags_t flags) noexcept;
-    operate_parameters(const env &);
   };
 
   /// \brief Returns current operation parameters.
@@ -3423,6 +3455,8 @@ public:
     env::geometry geometry;
     mdbx_mode_t file_mode_bits{0640};
     bool use_subdirectory{false};
+    MDBX_CXX11_CONSTEXPR create_parameters() noexcept = default;
+    create_parameters(const create_parameters &) noexcept = default;
   };
 
   /// \brief Create new or open existing database.
@@ -4763,7 +4797,12 @@ inline size_t env::limits::transaction_size_max(intptr_t pagesize) {
 }
 
 inline env::operate_parameters env::get_operation_parameters() const {
-  return env::operate_parameters(*this);
+  const auto flags = get_flags();
+  return operate_parameters(max_maps(), max_readers(),
+                            operate_parameters::mode_from_flags(flags),
+                            operate_parameters::durability_from_flags(flags),
+                            operate_parameters::reclaiming_from_flags(flags),
+                            operate_parameters::options_from_flags(flags));
 }
 
 inline env::mode env::get_mode() const {
@@ -5628,7 +5667,7 @@ inline cursor::move_result cursor::move(move_operation operation,
 inline cursor::move_result cursor::find_multivalue(const slice &key,
                                                    const slice &value,
                                                    bool throw_notfound) {
-  return move(key_exact, key, value, throw_notfound);
+  return move(multi_find_pair, key, value, throw_notfound);
 }
 
 inline cursor::move_result cursor::lower_bound_multivalue(const slice &key,
@@ -5819,7 +5858,7 @@ inline bool cursor::erase(const slice &key, bool whole_multivalue) {
 
 inline bool cursor::erase(const slice &key, const slice &value) {
   move_result data = find_multivalue(key, value, false);
-  return data.done ? erase() : data.done;
+  return data.done && erase();
 }
 
 } // namespace mdbx
