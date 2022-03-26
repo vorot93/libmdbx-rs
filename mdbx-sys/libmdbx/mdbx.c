@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY f5a88d875e0ec532a5cf9bcfa4db00874612e579635543730c80919c9f1dc522_v0_11_6_0_gd5e4c198
+#define MDBX_BUILD_SOURCERY 7ebe63abaae8610ec036b3dcd4d2f2721ec01402afe3252d5634f893f28ee8e7_v0_11_6_4_ga6b506be
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -10673,6 +10673,10 @@ static int mdbx_cursor_shadow(MDBX_txn *parent, MDBX_txn *nested) {
         bk = mdbx_malloc(size);
         if (unlikely(!bk))
           return MDBX_ENOMEM;
+#if MDBX_DEBUG
+        memset(bk, 0xCD, size);
+        VALGRIND_MAKE_MEM_UNDEFINED(bk, size);
+#endif /* MDBX_DEBUG */
         *bk = *mc;
         mc->mc_backup = bk;
         /* Kill pointers into src to reduce abuse: The
@@ -11016,7 +11020,8 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
   }
   if (likely(freedb_root && freedb_mod_txnid)) {
     VALGRIND_MAKE_MEM_DEFINED(freedb_root, sizeof(freedb_root->mp_txnid));
-    MDBX_ASAN_UNPOISON_MEMORY_REGION(freedb_root, sizeof(freedb_root->mp_txnid));
+    MDBX_ASAN_UNPOISON_MEMORY_REGION(freedb_root,
+                                     sizeof(freedb_root->mp_txnid));
     const txnid_t root_txnid = freedb_root->mp_txnid;
     if (unlikely(root_txnid != freedb_mod_txnid)) {
       if (report)
@@ -11030,7 +11035,8 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
   }
   if (likely(maindb_root && maindb_mod_txnid)) {
     VALGRIND_MAKE_MEM_DEFINED(maindb_root, sizeof(maindb_root->mp_txnid));
-    MDBX_ASAN_UNPOISON_MEMORY_REGION(maindb_root, sizeof(maindb_root->mp_txnid));
+    MDBX_ASAN_UNPOISON_MEMORY_REGION(maindb_root,
+                                     sizeof(maindb_root->mp_txnid));
     const txnid_t root_txnid = maindb_root->mp_txnid;
     if (unlikely(root_txnid != maindb_mod_txnid)) {
       if (report)
@@ -11326,6 +11332,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
 
   /* Setup db info */
   mdbx_compiler_barrier();
+  memset(txn->mt_cursors, 0, sizeof(MDBX_cursor *) * txn->mt_numdbs);
   for (unsigned i = CORE_DBS; i < txn->mt_numdbs; i++) {
     const unsigned db_flags = env->me_dbflags[i];
     txn->mt_dbs[i].md_flags = db_flags & DB_PERSISTENT_FLAGS;
@@ -11528,11 +11535,14 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags,
     mdbx_debug("calloc: %s", "failed");
     return MDBX_ENOMEM;
   }
+#if MDBX_DEBUG
+  memset(txn, 0xCD, size);
+  VALGRIND_MAKE_MEM_UNDEFINED(txn, size);
+#endif /* MDBX_DEBUG */
   memset(txn, 0, tsize);
   txn->mt_dbxs = env->me_dbxs; /* static */
   txn->mt_dbs = (MDBX_db *)((char *)txn + tsize);
   txn->mt_cursors = (MDBX_cursor **)(txn->mt_dbs + env->me_maxdbs);
-  memset(txn->mt_cursors, 0, sizeof(MDBX_cursor *) * env->me_numdbs);
   txn->mt_dbistate = (uint8_t *)txn + size - env->me_maxdbs;
   txn->mt_flags = flags;
   txn->mt_env = env;
@@ -29088,9 +29098,9 @@ __dll_export
         0,
         11,
         6,
-        0,
-        {"2022-03-24T20:44:21+03:00", "03e1d2dd6fca64834cb889f89ed2fc9955de656b", "d5e4c198d8ab8319041d41ce7c6d44b8c7e7c876",
-         "v0.11.6-0-gd5e4c198"},
+        4,
+        {"2022-03-25T13:54:34+03:00", "48c2c9f4cfff32e32d043427a7c46b342ddf988f", "a6b506be45dbfe1bb3ab88ce8ac6e351adbe9f40",
+         "v0.11.6-4-ga6b506be"},
         sourcery};
 
 __dll_export
