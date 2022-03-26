@@ -1,6 +1,6 @@
 [package]
 name = "libmdbx"
-version = "0.1.3"
+version = "0.1.4"
 authors = [
   "Dan Burkert <dan@danburkert.com>",
   "Victor Porof <vporof@mozilla.com>",
