@@ -83,15 +83,13 @@ fn main() {
         .flag_if_supported("-Wbad-function-cast")
         .flag_if_supported("-Wuninitialized");
 
-    if cfg!(any(windows, feature = "cmake-build")) {
+    if cfg!(feature = "cmake-build") {
         let dst = cmake::Config::new(&mdbx)
             .define("MDBX_INSTALL_STATIC", "1")
             .define("MDBX_BUILD_CXX", "0")
             .define("MDBX_BUILD_TOOLS", "0")
             .define("MDBX_BUILD_SHARED_LIBRARY", "0")
             .define("MDBX_TXN_CHECKOWNER", "0")
-            // Setting HAVE_LIBM=1 is necessary to override issues with `pow` detection on Windows
-            .define("HAVE_LIBM", "1")
             .init_c_cfg(cc_builder)
             .build();
 
@@ -100,11 +98,6 @@ fn main() {
             "cargo:rustc-link-search=native={}",
             dst.join("lib").display()
         );
-
-        if cfg!(windows) {
-            println!(r"cargo:rustc-link-lib=ntdll");
-            println!(r"cargo:rustc-link-search=C:\windows\system32");
-        }
     } else {
         let flags = format!("{:?}", cc_builder.get_compiler().cflags_env());
         cc_builder

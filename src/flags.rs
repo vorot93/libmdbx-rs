@@ -191,21 +191,3 @@ bitflags! {
         const MULTIPLE = MDBX_MULTIPLE as u32;
     }
 }
-
-/// Compatibility shim to convert between `i32` and `u32` enums on Windows and UNIX.
-///
-/// Windows treats C enums as `i32`, while Unix uses `u32`. We use `u32` enums internally
-/// and then cast back to `i32` only where Windows requires it.
-///
-/// See https://github.com/rust-lang/rust-bindgen/issues/1907
-#[cfg(windows)]
-#[inline(always)]
-pub fn c_enum(rust_value: u32) -> i32 {
-    rust_value as i32
-}
-
-#[cfg(not(windows))]
-#[inline(always)]
-pub fn c_enum(rust_value: u32) -> u32 {
-    rust_value
-}

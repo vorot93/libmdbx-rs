@@ -441,7 +441,7 @@ impl<'txn> Cursor<'txn, RW> {
         };
         mdbx_result(unsafe {
             txn_execute(&*self.txn, |_| {
-                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, c_enum(flags.bits()))
+                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, flags.bits())
             })
         })?;
 
@@ -457,7 +457,7 @@ impl<'txn> Cursor<'txn, RW> {
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
         mdbx_result(unsafe {
             txn_execute(&*self.txn, |_| {
-                ffi::mdbx_cursor_del(self.cursor, c_enum(flags.bits()))
+                ffi::mdbx_cursor_del(self.cursor, flags.bits())
             })
         })?;
 
@@ -811,9 +811,8 @@ where
                 let op = mem::replace(op, ffi::MDBX_NEXT_NODUP as u32);
 
                 txn_execute(&*cursor.txn, |_| {
-                    let err_code = unsafe {
-                        ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, c_enum(op))
-                    };
+                    let err_code =
+                        unsafe { ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) };
 
                     if err_code == ffi::MDBX_SUCCESS {
                         Some(IntoIter::new(
