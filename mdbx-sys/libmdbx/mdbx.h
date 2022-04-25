@@ -14,6 +14,12 @@ break down. _libmdbx_ supports Linux, Windows, MacOS, OSX, iOS, Android,
 FreeBSD, DragonFly, Solaris, OpenSolaris, OpenIndiana, NetBSD, OpenBSD and other
 systems compliant with POSIX.1-2008.
 
+The origin has been migrated to
+[GitFlic](https://gitflic.ru/project/erthink/libmdbx) since on 2022-04-15
+the Github administration, without any warning nor explanation, deleted libmdbx
+along with a lot of other projects, simultaneously blocking access for many
+developers. For the same reason ~~Github~~ is blacklisted forever.
+
 _The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо._
 
 
@@ -203,7 +209,8 @@ typedef mode_t mdbx_mode_t;
 #pragma warning(pop)
 #endif
 
-/** @} close c_api
+/** end of c_api @}
+ *
  * \defgroup api_macros Common Macros
  * @{ */
 
@@ -229,12 +236,15 @@ typedef mode_t mdbx_mode_t;
 #define __has_builtin(x) (0)
 #endif /* __has_builtin */
 
-/** Many functions have no effects except the return value and their
+/** \brief The 'pure' function attribute for optimization.
+ * \details Many functions have no effects except the return value and their
  * return value depends only on the parameters and/or global variables.
  * Such a function can be subject to common subexpression elimination
  * and loop optimization just as an arithmetic operator would be.
  * These functions should be declared with the attribute pure. */
-#if (defined(__GNUC__) || __has_attribute(__pure__)) &&                        \
+#if defined(DOXYGEN)
+#define MDBX_PURE_FUNCTION [[gnu::pure]]
+#elif (defined(__GNUC__) || __has_attribute(__pure__)) &&                      \
     (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */     \
      || !defined(__cplusplus) || !__has_feature(cxx_exceptions))
 #define MDBX_PURE_FUNCTION __attribute__((__pure__))
@@ -247,9 +257,12 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_PURE_FUNCTION
 #endif /* MDBX_PURE_FUNCTION */
 
-/** Like \ref MDBX_PURE_FUNCTION with addition `noexcept` restriction
+/** \brief The 'pure nothrow' function attribute for optimization.
+ * \details Like \ref MDBX_PURE_FUNCTION with addition `noexcept` restriction
  * that is compatible to CLANG and proposed [[pure]]. */
-#if defined(__GNUC__) ||                                                       \
+#if defined(DOXYGEN)
+#define MDBX_NOTHROW_PURE_FUNCTION [[gnu::pure, gnu::nothrow]]
+#elif defined(__GNUC__) ||                                                     \
     (__has_attribute(__pure__) && __has_attribute(__nothrow__))
 #define MDBX_NOTHROW_PURE_FUNCTION __attribute__((__pure__, __nothrow__))
 #elif defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1920
@@ -270,7 +283,8 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_NOTHROW_PURE_FUNCTION
 #endif /* MDBX_NOTHROW_PURE_FUNCTION */
 
-/** Many functions do not examine any values except their arguments,
+/** \brief The 'const' function attribute for optimization.
+ * \details Many functions do not examine any values except their arguments,
  * and have no effects except the return value. Basically this is just
  * slightly more strict class than the PURE attribute, since function
  * is not allowed to read global memory.
@@ -279,7 +293,9 @@ typedef mode_t mdbx_mode_t;
  * data pointed to must not be declared const. Likewise, a function
  * that calls a non-const function usually must not be const.
  * It does not make sense for a const function to return void. */
-#if (defined(__GNUC__) || __has_attribute(__pure__)) &&                        \
+#if defined(DOXYGEN)
+#define MDBX_CONST_FUNCTION [[gnu::const]]
+#elif (defined(__GNUC__) || __has_attribute(__pure__)) &&                      \
     (!defined(__clang__) /* https://bugs.llvm.org/show_bug.cgi?id=43275 */     \
      || !defined(__cplusplus) || !__has_feature(cxx_exceptions))
 #define MDBX_CONST_FUNCTION __attribute__((__const__))
@@ -292,9 +308,12 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_CONST_FUNCTION MDBX_PURE_FUNCTION
 #endif /* MDBX_CONST_FUNCTION */
 
-/** Like \ref MDBX_CONST_FUNCTION with addition `noexcept` restriction
+/** \brief The 'const nothrow' function attribute for optimization.
+ * \details Like \ref MDBX_CONST_FUNCTION with addition `noexcept` restriction
  * that is compatible to CLANG and future [[const]]. */
-#if defined(__GNUC__) ||                                                       \
+#if defined(DOXYGEN)
+#define MDBX_NOTHROW_CONST_FUNCTION [[gnu::const, gnu::nothrow]]
+#elif defined(__GNUC__) ||                                                     \
     (__has_attribute(__const__) && __has_attribute(__nothrow__))
 #define MDBX_NOTHROW_CONST_FUNCTION __attribute__((__const__, __nothrow__))
 #elif defined(_MSC_VER) && !defined(__clang__) && _MSC_VER >= 1920
@@ -311,9 +330,19 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_NOTHROW_CONST_FUNCTION MDBX_NOTHROW_PURE_FUNCTION
 #endif /* MDBX_NOTHROW_CONST_FUNCTION */
 
-#ifndef MDBX_DEPRECATED /* may be predefined to avoid warnings "deprecated" */
+/** \brief The 'deprecated' attribute to produce warnings when used.
+ * \note This macro may be predefined as empty to avoid "deprecated" warnings.
+ */
+#ifndef MDBX_DEPRECATED
 #ifdef __deprecated
 #define MDBX_DEPRECATED __deprecated
+#elif defined(DOXYGEN) ||                                                      \
+    (defined(__cplusplus) && __cplusplus >= 201603L &&                         \
+     __has_cpp_attribute(maybe_unused) &&                                      \
+     __has_cpp_attribute(maybe_unused) >= 201603L) ||                          \
+    (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
+     __STDC_VERSION__ > 202005L)
+#define MDBX_DEPRECATED [[deprecated]]
 #elif defined(__GNUC__) || __has_attribute(__deprecated__)
 #define MDBX_DEPRECATED __attribute__((__deprecated__))
 #elif defined(_MSC_VER)
@@ -324,7 +353,8 @@ typedef mode_t mdbx_mode_t;
 #endif /* MDBX_DEPRECATED */
 
 #ifndef __dll_export
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__) ||               \
+    defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)
 #if defined(__GNUC__) || __has_attribute(__dllexport__)
 #define __dll_export __attribute__((__dllexport__))
 #elif defined(_MSC_VER)
@@ -340,7 +370,8 @@ typedef mode_t mdbx_mode_t;
 #endif /* __dll_export */
 
 #ifndef __dll_import
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32) || defined(_WIN64) || defined(__CYGWIN__) ||               \
+    defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)
 #if defined(__GNUC__) || __has_attribute(__dllimport__)
 #define __dll_import __attribute__((__dllimport__))
 #elif defined(_MSC_VER)
@@ -384,15 +415,21 @@ typedef mode_t mdbx_mode_t;
 #endif
 #endif /* bool without __cplusplus */
 
-#if !defined(DOXYGEN) && (!defined(__cpp_noexcept_function_type) ||            \
-                          __cpp_noexcept_function_type < 201510L)
+/** Workaround for old compilers without support for C++17 `noexcept`. */
+#if defined(DOXYGEN)
+#define MDBX_CXX17_NOEXCEPT noexcept
+#elif !defined(__cpp_noexcept_function_type) ||                                \
+    __cpp_noexcept_function_type < 201510L
 #define MDBX_CXX17_NOEXCEPT
 #else
 #define MDBX_CXX17_NOEXCEPT noexcept
 #endif /* MDBX_CXX17_NOEXCEPT */
 
-/* Workaround for old compilers without properly support for constexpr. */
-#if !defined(__cplusplus)
+/** Workaround for old compilers without support for any kind of `constexpr`. */
+#if defined(DOXYGEN)
+#define MDBX_CXX01_CONSTEXPR constexpr
+#define MDBX_CXX01_CONSTEXPR_VAR constexpr
+#elif !defined(__cplusplus)
 #define MDBX_CXX01_CONSTEXPR __inline
 #define MDBX_CXX01_CONSTEXPR_VAR const
 #elif !defined(DOXYGEN) &&                                                     \
@@ -410,7 +447,12 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_CXX01_CONSTEXPR_VAR constexpr
 #endif /* MDBX_CXX01_CONSTEXPR */
 
-#if !defined(__cplusplus)
+/** Workaround for old compilers without properly support for C++11 `constexpr`.
+ */
+#if defined(DOXYGEN)
+#define MDBX_CXX11_CONSTEXPR constexpr
+#define MDBX_CXX11_CONSTEXPR_VAR constexpr
+#elif !defined(__cplusplus)
 #define MDBX_CXX11_CONSTEXPR __inline
 #define MDBX_CXX11_CONSTEXPR_VAR const
 #elif !defined(DOXYGEN) &&                                                     \
@@ -427,7 +469,12 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_CXX11_CONSTEXPR_VAR constexpr
 #endif /* MDBX_CXX11_CONSTEXPR */
 
-#if !defined(__cplusplus)
+/** Workaround for old compilers without properly support for C++14 `constexpr`.
+ */
+#if defined(DOXYGEN)
+#define MDBX_CXX14_CONSTEXPR constexpr
+#define MDBX_CXX14_CONSTEXPR_VAR constexpr
+#elif !defined(__cplusplus)
 #define MDBX_CXX14_CONSTEXPR __inline
 #define MDBX_CXX14_CONSTEXPR_VAR const
 #elif defined(DOXYGEN) ||                                                      \
@@ -447,6 +494,10 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_NORETURN __noreturn
 #elif defined(_Noreturn)
 #define MDBX_NORETURN _Noreturn
+#elif defined(DOXYGEN) || (defined(__cplusplus) && __cplusplus >= 201103L) ||  \
+    (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
+     __STDC_VERSION__ > 202005L)
+#define MDBX_NORETURN [[noreturn]]
 #elif defined(__GNUC__) || __has_attribute(__noreturn__)
 #define MDBX_NORETURN __attribute__((__noreturn__))
 #elif defined(_MSC_VER) && !defined(__clang__)
@@ -456,18 +507,23 @@ typedef mode_t mdbx_mode_t;
 #endif /* MDBX_NORETURN */
 
 #ifndef MDBX_PRINTF_ARGS
-#if defined(__GNUC__) || __has_attribute(__format__)
+#if defined(__GNUC__) || __has_attribute(__format__) || defined(DOXYGEN)
+#if defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)
+#define MDBX_PRINTF_ARGS(format_index, first_arg)                              \
+  __attribute__((__format__(__gnu_printf__, format_index, first_arg)))
+#else
 #define MDBX_PRINTF_ARGS(format_index, first_arg)                              \
   __attribute__((__format__(__printf__, format_index, first_arg)))
+#endif /* MinGW */
 #else
 #define MDBX_PRINTF_ARGS(format_index, first_arg)
 #endif
 #endif /* MDBX_PRINTF_ARGS */
 
 #if defined(DOXYGEN) ||                                                        \
-    (defined(__cplusplus) && __cplusplus >= 201603 &&                          \
+    (defined(__cplusplus) && __cplusplus >= 201603L &&                         \
      __has_cpp_attribute(maybe_unused) &&                                      \
-     __has_cpp_attribute(maybe_unused) >= 201603) ||                           \
+     __has_cpp_attribute(maybe_unused) >= 201603L) ||                          \
     (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
      __STDC_VERSION__ > 202005L)
 #define MDBX_MAYBE_UNUSED [[maybe_unused]]
@@ -477,7 +533,7 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_MAYBE_UNUSED
 #endif /* MDBX_MAYBE_UNUSED */
 
-#if __has_attribute(no_sanitize)
+#if __has_attribute(no_sanitize) || defined(DOXYGEN)
 #define MDBX_NOSANITIZE_ENUM __attribute((__no_sanitize__("enum")))
 #else
 #define MDBX_NOSANITIZE_ENUM
@@ -561,7 +617,7 @@ typedef mode_t mdbx_mode_t;
 
 #endif /* DEFINE_ENUM_FLAG_OPERATORS */
 
-/** @} end of Common Macros */
+/** end of api_macros @} */
 
 /*----------------------------------------------------------------------------*/
 
@@ -948,7 +1004,7 @@ LIBMDBX_API const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
 /** \brief Panics with message and causes abnormal process termination. */
 LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS(1, 2);
 
-/** @} end of logging & debug */
+/** end of c_debug @} */
 
 /** \brief Environment flags
  * \ingroup c_opening
@@ -1348,7 +1404,7 @@ enum MDBX_env_flags_t {
    * \ref mdbx_txn_begin() for particular write transaction. \see sync_modes */
   MDBX_UTTERLY_NOSYNC = MDBX_SAFE_NOSYNC | UINT32_C(0x100000),
 
-  /** @} end of SYNC MODES */
+  /** end of sync_modes @} */
 };
 #ifndef __cplusplus
 /** \ingroup c_opening */
@@ -1408,6 +1464,7 @@ DEFINE_ENUM_FLAG_OPERATORS(MDBX_txn_flags_t)
  * \anchor db_flags
  * \see mdbx_dbi_open() */
 enum MDBX_db_flags_t {
+  /** Variable length unique keys with usual byte-by-byte string comparison. */
   MDBX_DB_DEFAULTS = 0,
 
   /** Use reverse string comparison for keys. */
@@ -2103,19 +2160,19 @@ LIBMDBX_API int mdbx_env_get_option(const MDBX_env *env,
  *                       the database files reside. In the case of directory it
  *                       must already exist and be writable.
  *
- * \param [in] flags     Special options for this environment. This parameter
- *                       must be set to 0 or by bitwise OR'ing together one
- *                       or more of the values described above in the
- *                       \ref env_flags and \ref sync_modes sections.
+ * \param [in] flags     Specifies options for this environment.
+ *                       This parameter must be bitwise OR'ing together
+ *                       any constants described above in the \ref env_flags
+ *                       and \ref sync_modes sections.
  *
  * Flags set by mdbx_env_set_flags() are also used:
- *  - \ref MDBX_NOSUBDIR, \ref MDBX_RDONLY, \ref MDBX_EXCLUSIVE,
- *    \ref MDBX_WRITEMAP, \ref MDBX_NOTLS, \ref MDBX_NORDAHEAD,
- *    \ref MDBX_NOMEMINIT, \ref MDBX_COALESCE, \ref MDBX_LIFORECLAIM.
- *    See \ref env_flags section.
+ *  - \ref MDBX_ENV_DEFAULTS, \ref MDBX_NOSUBDIR, \ref MDBX_RDONLY,
+ *    \ref MDBX_EXCLUSIVE, \ref MDBX_WRITEMAP, \ref MDBX_NOTLS,
+ *    \ref MDBX_NORDAHEAD, \ref MDBX_NOMEMINIT, \ref MDBX_COALESCE,
+ *    \ref MDBX_LIFORECLAIM. See \ref env_flags section.
  *
- *  - \ref MDBX_NOMETASYNC, \ref MDBX_SAFE_NOSYNC, \ref MDBX_UTTERLY_NOSYNC.
- *    See \ref sync_modes section.
+ *  - \ref MDBX_SYNC_DURABLE, \ref MDBX_NOMETASYNC, \ref MDBX_SAFE_NOSYNC,
+ *    \ref MDBX_UTTERLY_NOSYNC. See \ref sync_modes section.
  *
  * \note `MDB_NOLOCK` flag don't supported by MDBX,
  *       try use \ref MDBX_EXCLUSIVE as a replacement.
@@ -2192,8 +2249,8 @@ typedef enum MDBX_env_delete_mode_t MDBX_env_delete_mode_t;
  * \param [in] pathname  The pathname for the database or the directory in which
  *                       the database files reside.
  *
- * \param [in] mode      Special deletion mode for the environment. This
- *                       parameter must be set to one of the values described
+ * \param [in] mode      Specifies deletion mode for the environment. This
+ *                       parameter must be set to one of the constants described
  *                       above in the \ref MDBX_env_delete_mode_t section.
  *
  * \note The \ref MDBX_ENV_JUST_DELETE don't supported on Windows since system
@@ -2220,9 +2277,12 @@ LIBMDBX_API int mdbx_env_delete(const char *pathname,
  * \param [in] dest   The pathname of a file in which the copy will reside.
  *                    This file must not be already exist, but parent directory
  *                    must be writable.
- * \param [in] flags  Special options for this operation. This parameter must
- *                    be set to 0 or by bitwise OR'ing together one or more
- *                    of the values described here:
+ * \param [in] flags  Specifies options for this operation. This parameter
+ *                    must be bitwise OR'ing together any of the constants
+ *                    described here:
+ *
+ *  - \ref MDBX_CP_DEFAULTS
+ *      Perform copy as-is without compaction, etc.
  *
  *  - \ref MDBX_CP_COMPACT
  *      Perform compaction while copying: omit free pages and sequentially
@@ -2880,10 +2940,15 @@ LIBMDBX_API int mdbx_env_get_fd(const MDBX_env *env, mdbx_filehandle_t *fd);
  *          some possible errors are:
  * \retval MDBX_EINVAL    An invalid parameter was specified,
  *                        or the environment has an active write transaction.
- * \retval MDBX_EPERM     Specific for Windows: Shrinking was disabled before
- *                        and now it wanna be enabled, but there are reading
- *                        threads that don't use the additional `SRWL` (that
- *                        is required to avoid Windows issues).
+ * \retval MDBX_EPERM     Two specific cases for Windows:
+ *                        1) Shrinking was disabled before via geometry settings
+ *                        and now it enabled, but there are reading threads that
+ *                        don't use the additional `SRWL` (which is required to
+ *                        avoid Windows issues).
+ *                        2) Temporary close memory mapped is required to change
+ *                        geometry, but there read transaction(s) is running
+ *                        and no corresponding thread(s) could be suspended
+ *                        since the \ref MDBX_NOTLS mode is used.
  * \retval MDBX_EACCESS   The environment opened in read-only.
  * \retval MDBX_MAP_FULL  Specified size smaller than the space already
  *                        consumed by the environment.
@@ -3113,7 +3178,7 @@ mdbx_env_get_maxvalsize_ex(const MDBX_env *env, MDBX_db_flags_t flags);
 /** \deprecated Please use \ref mdbx_env_get_maxkeysize_ex()
  *              and/or \ref mdbx_env_get_maxvalsize_ex()
  * \ingroup c_statinfo */
-MDBX_NOTHROW_PURE_FUNCTION MDBX_DEPRECATED LIBMDBX_API int
+MDBX_DEPRECATED MDBX_NOTHROW_PURE_FUNCTION LIBMDBX_API int
 mdbx_env_get_maxkeysize(const MDBX_env *env);
 
 /** \brief Sets application information (a context pointer) associated with
@@ -3672,12 +3737,14 @@ typedef int(MDBX_cmp_func)(const MDBX_val *a,
  *                    database is needed in the environment,
  *                    this value may be NULL.
  * \param [in] flags  Special options for this database. This parameter must
- *                    be set to 0 or by bitwise OR'ing together one or more
- *                    of the values described here:
+ *                    be bitwise OR'ing together any of the constants
+ *                    described here:
+ *
+ *  - \ref MDBX_DB_DEFAULTS
+ *      Keys are arbitrary byte strings and compared from beginning to end.
  *  - \ref MDBX_REVERSEKEY
- *      Keys are strings to be compared in reverse order, from the end
- *      of the strings to the beginning. By default, Keys are treated as
- *      strings and compared from beginning to end.
+ *      Keys are arbitrary byte strings to be compared in reverse order,
+ *      from the end of the strings to the beginning.
  *  - \ref MDBX_INTEGERKEY
  *      Keys are binary integers in native byte order, either uint32_t or
  *      uint64_t, and will be sorted as such. The keys must all be of the
@@ -3782,7 +3849,7 @@ MDBX_NOTHROW_CONST_FUNCTION LIBMDBX_INLINE_API(uint32_t, mdbx_key_from_int32,
                                                (const int32_t i32)) {
   return UINT32_C(0x80000000) + i32;
 }
-/** @} */
+/** end of value2key @} */
 
 /** \defgroup key2value Key-to-Value functions
  * \brief Key-to-Value functions to
@@ -3803,7 +3870,7 @@ mdbx_int32_from_key(const MDBX_val);
 
 MDBX_NOTHROW_PURE_FUNCTION LIBMDBX_API int64_t
 mdbx_int64_from_key(const MDBX_val);
-/** @} */
+/** end of value2key @} */
 
 /** \brief Retrieve statistics for a database.
  * \ingroup c_statinfo
@@ -4808,26 +4875,26 @@ mdbx_get_datacmp(MDBX_db_flags_t flags);
 /** \brief A callback function used to enumerate the reader lock table.
  * \ingroup c_statinfo
  *
- * \param [in] ctx           An arbitrary context pointer for the callback.
- * \param [in] num           The serial number during enumeration,
- *                           starting from 1.
- * \param [in] slot          The reader lock table slot number.
- * \param [in] txnid         The ID of the transaction being read,
- *                           i.e. the MVCC-snapshot number.
- * \param [in] lag           The lag from a recent MVCC-snapshot,
- *                           i.e. the number of committed write transactions
- *                           since the current read transaction started.
- * \param [in] pid           The reader process ID.
- * \param [in] thread        The reader thread ID.
- * \param [in] bytes_used    The number of last used page in the MVCC-snapshot
- *                           which being read,
- *                           i.e. database file can't shrinked beyond this.
- * \param [in] bytes_retired The total size of the database pages that were
- *                           retired by committed write transactions after
- *                           the reader's MVCC-snapshot,
- *                           i.e. the space which would be freed after
- *                           the Reader releases the MVCC-snapshot
- *                           for reuse by completion read transaction.
+ * \param [in] ctx            An arbitrary context pointer for the callback.
+ * \param [in] num            The serial number during enumeration,
+ *                            starting from 1.
+ * \param [in] slot           The reader lock table slot number.
+ * \param [in] txnid          The ID of the transaction being read,
+ *                            i.e. the MVCC-snapshot number.
+ * \param [in] lag            The lag from a recent MVCC-snapshot,
+ *                            i.e. the number of committed write transactions
+ *                            since the current read transaction started.
+ * \param [in] pid            The reader process ID.
+ * \param [in] thread         The reader thread ID.
+ * \param [in] bytes_used     The number of last used page
+ *                            in the MVCC-snapshot which being read,
+ *                            i.e. database file can't shrinked beyond this.
+ * \param [in] bytes_retained The total size of the database pages that were
+ *                            retired by committed write transactions after
+ *                            the reader's MVCC-snapshot,
+ *                            i.e. the space which would be freed after
+ *                            the Reader releases the MVCC-snapshot
+ *                            for reuse by completion read transaction.
  *
  * \returns < 0 on failure, >= 0 on success. \see mdbx_reader_list() */
 typedef int(MDBX_reader_list_func)(void *ctx, int num, int slot, mdbx_pid_t pid,
@@ -5076,7 +5143,7 @@ LIBMDBX_API int mdbx_env_open_for_recovery(MDBX_env *env, const char *pathname,
  * leg(s). */
 LIBMDBX_API int mdbx_env_turn_for_recovery(MDBX_env *env, unsigned target_meta);
 
-/** @} B-tree Traversal */
+/** end of btree_traversal @} */
 
 /**** Attribute support functions for Nexenta (scheduled for removal)
  * *****************************************************************/
@@ -5246,10 +5313,10 @@ LIBMDBX_API int mdbx_cursor_get_attr(MDBX_cursor *cursor, MDBX_val *key,
  * \retval MDBX_EINVAL    An invalid parameter was specified. */
 LIBMDBX_API int mdbx_get_attr(MDBX_txn *txn, MDBX_dbi dbi, MDBX_val *key,
                               MDBX_val *data, mdbx_attr_t *pattr);
-/** @} end of Attribute support functions for Nexenta */
+/** end of nexenta @} */
 #endif /* MDBX_NEXENTA_ATTRS */
 
-/** @} end of C API */
+/** end of c_api @} */
 
 /*******************************************************************************
  * Workaround for mmaped-lookahead-cross-page-boundary bug

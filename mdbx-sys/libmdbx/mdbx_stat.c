@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 7ebe63abaae8610ec036b3dcd4d2f2721ec01402afe3252d5634f893f28ee8e7_v0_11_6_4_ga6b506be
+#define MDBX_BUILD_SOURCERY 61c8988b68bb458de441a18928d39cdfd1ce73cdfae90f58d17c133d873b04bb_v0_11_7_6_gce229c75
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -70,7 +70,8 @@
 /*----------------------------------------------------------------------------*/
 
 /* Should be defined before any includes */
-#ifndef _FILE_OFFSET_BITS
+#if !defined(_FILE_OFFSET_BITS) && !defined(__ANDROID_API__) &&                \
+    !defined(ANDROID)
 #define _FILE_OFFSET_BITS 64
 #endif
 
@@ -111,6 +112,11 @@
 #pragma warning(disable : 5045) /* Compiler will insert Spectre mitigation...  \
                                  */
 #endif
+#if _MSC_VER > 1914
+#pragma warning(                                                               \
+    disable : 5105) /* winbase.h(9531): warning C5105: macro expansion         \
+                       producing 'defined' has undefined behavior */
+#endif
 #pragma warning(disable : 4710) /* 'xyz': function not inlined */
 #pragma warning(disable : 4711) /* function 'xyz' selected for automatic       \
                                    inline expansion */
@@ -139,6 +145,11 @@
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
 #endif /* GCC < 9 */
+
+#if (defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)) &&    \
+    !defined(__USE_MINGW_ANSI_STDIO)
+#define __USE_MINGW_ANSI_STDIO 1
+#endif /* __USE_MINGW_ANSI_STDIO */
 
 #include "mdbx.h"
 /*
@@ -248,6 +259,11 @@
 #if !defined(__noop) && !defined(_MSC_VER)
 #   define __noop(...) do {} while(0)
 #endif /* __noop */
+
+#if defined(__fallthrough) &&                                                  \
+    (defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__))
+#undef __fallthrough
+#endif /* __fallthrough workaround for MinGW */
 
 #ifndef __fallthrough
 #  if defined(__cplusplus) && (__has_cpp_attribute(fallthrough) &&             \
@@ -889,6 +905,14 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
 #define MDBX_WORDBITS 32
 #endif /* MDBX_WORDBITS */
 
+#if defined(__ANDROID_API__) || defined(ANDROID)
+#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
+#error "_FILE_OFFSET_BITS != MDBX_WORDBITS" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
+#elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
+#error "__FILE_OFFSET_BITS != MDBX_WORDBITS" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
+#endif
+#endif /* Android */
+
 /*----------------------------------------------------------------------------*/
 /* Compiler's includes for builtins/intrinsics */
 
@@ -1031,7 +1055,7 @@ typedef union bin128 {
 
 #if defined(_WIN32) || defined(_WIN64)
 typedef union MDBX_srwlock {
-  struct {
+  __anonymous_struct_extension__ struct {
     long volatile readerCount;
     long volatile writerCount;
   };
@@ -1279,6 +1303,7 @@ MDBX_MAYBE_UNUSED static __inline uint32_t mdbx_getpid(void) {
 #if defined(_WIN32) || defined(_WIN64)
   return GetCurrentProcessId();
 #else
+  STATIC_ASSERT(sizeof(pid_t) <= sizeof(uint32_t));
   return getpid();
 #endif
 }
@@ -1293,6 +1318,20 @@ MDBX_MAYBE_UNUSED static __inline uintptr_t mdbx_thread_self(void) {
 #endif
   return (uintptr_t)thunk;
 }
+
+#if !defined(_WIN32) && !defined(_WIN64)
+#if defined(__ANDROID_API__) || defined(ANDROID) || defined(BIONIC)
+MDBX_INTERNAL_FUNC int mdbx_check_tid4bionic(void);
+#else
+static __inline int mdbx_check_tid4bionic(void) { return 0; }
+#endif /* __ANDROID_API__ || ANDROID) || BIONIC */
+
+MDBX_MAYBE_UNUSED static __inline int
+mdbx_pthread_mutex_lock(pthread_mutex_t *mutex) {
+  int err = mdbx_check_tid4bionic();
+  return unlikely(err) ? err : pthread_mutex_lock(mutex);
+}
+#endif /* !Windows */
 
 MDBX_INTERNAL_FUNC uint64_t mdbx_osal_monotime(void);
 MDBX_INTERNAL_FUNC uint64_t
@@ -1524,6 +1563,8 @@ typedef LSTATUS(WINAPI *MDBX_RegGetValueA)(HKEY hkey, LPCSTR lpSubKey,
                                            LPDWORD pdwType, PVOID pvData,
                                            LPDWORD pcbData);
 MDBX_INTERNAL_VAR MDBX_RegGetValueA mdbx_RegGetValueA;
+
+NTSYSAPI ULONG RtlRandomEx(PULONG Seed);
 
 #endif /* Windows */
 
