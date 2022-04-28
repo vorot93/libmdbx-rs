@@ -1,12 +1,12 @@
 # libmdbx-rs
 
 This repo is a fork of [mozilla/lmdb-rs](https://github.com/mozilla/lmdb-rs)
-with patches to make it work with [libmdbx](https://github.com/erthink/libmdbx).
+with patches to make it work with [libmdbx](https://gitflic.ru/project/erthink/libmdbx).
 
 ## Updating the libmdbx Version
 
 To update the libmdbx version you must clone it and copy the `dist/` folder in `mdbx-sys/`.
-Make sure to follow the [building steps](https://github.com/erthink/libmdbx#building).
+Make sure to follow the [building steps](https://gitflic.ru/project/erthink/libmdbx#building-and-testing).
 
 ```bash
 # clone libmmdbx to a repository outside at specific tag
