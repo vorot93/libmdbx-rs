@@ -1,7 +1,5 @@
-//! Idiomatic and safe APIs for interacting with the
-//! [libmdbx](https://erthink.github.io/libmdbx/).
-
 #![allow(clippy::type_complexity)]
+#![doc = include_str!("../README.md")]
 
 pub use crate::{
     codec::*,
