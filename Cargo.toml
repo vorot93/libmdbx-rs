@@ -35,9 +35,6 @@ ffi = { package = "mdbx-sys", version = "=0.11.7-6", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
-[features]
-cmake = ["ffi/cmake-build"]
-
 [dev-dependencies]
 criterion = "0.3"
 rand = "0.8"

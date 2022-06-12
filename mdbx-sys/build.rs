@@ -83,27 +83,10 @@ fn main() {
         .flag_if_supported("-Wbad-function-cast")
         .flag_if_supported("-Wuninitialized");
 
-    if cfg!(feature = "cmake-build") {
-        let dst = cmake::Config::new(&mdbx)
-            .define("MDBX_INSTALL_STATIC", "1")
-            .define("MDBX_BUILD_CXX", "0")
-            .define("MDBX_BUILD_TOOLS", "0")
-            .define("MDBX_BUILD_SHARED_LIBRARY", "0")
-            .define("MDBX_TXN_CHECKOWNER", "0")
-            .init_c_cfg(cc_builder)
-            .build();
-
-        println!("cargo:rustc-link-lib=mdbx");
-        println!(
-            "cargo:rustc-link-search=native={}",
-            dst.join("lib").display()
-        );
-    } else {
-        let flags = format!("{:?}", cc_builder.get_compiler().cflags_env());
-        cc_builder
-            .define("MDBX_BUILD_FLAGS", flags.as_str())
-            .define("MDBX_TXN_CHECKOWNER", "0")
-            .file(mdbx.join("mdbx.c"))
-            .compile("libmdbx.a");
-    }
+    let flags = format!("{:?}", cc_builder.get_compiler().cflags_env());
+    cc_builder
+        .define("MDBX_BUILD_FLAGS", flags.as_str())
+        .define("MDBX_TXN_CHECKOWNER", "0")
+        .file(mdbx.join("mdbx.c"))
+        .compile("libmdbx.a");
 }
