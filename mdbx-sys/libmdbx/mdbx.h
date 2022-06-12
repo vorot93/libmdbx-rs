@@ -88,7 +88,6 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 /* *INDENT-OFF* */
 /* clang-format off */
-
 /**
  \file mdbx.h
  \brief The libmdbx C API header file
@@ -171,7 +170,6 @@ as a duplicates or as like a multiple values corresponds to keys.
  \defgroup c_rqest Range query estimation
  \defgroup c_extra Extra operations
 */
-
 /* *INDENT-ON* */
 /* clang-format on */
 
@@ -1004,6 +1002,10 @@ LIBMDBX_API const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
 /** \brief Panics with message and causes abnormal process termination. */
 LIBMDBX_API void mdbx_panic(const char *fmt, ...) MDBX_PRINTF_ARGS(1, 2);
 
+/** \brief Panics with asserton failed message and causes abnormal process
+ * termination. */
+LIBMDBX_API void mdbx_assert_fail(const MDBX_env *env, const char *msg,
+                                  const char *func, unsigned line);
 /** end of c_debug @} */
 
 /** \brief Environment flags
@@ -1446,12 +1448,49 @@ enum MDBX_txn_flags_t {
   MDBX_TXN_TRY = UINT32_C(0x10000000),
 
   /** Exactly the same as \ref MDBX_NOMETASYNC,
-   * but for this transaction only */
+   * but for this transaction only. */
   MDBX_TXN_NOMETASYNC = MDBX_NOMETASYNC,
 
   /** Exactly the same as \ref MDBX_SAFE_NOSYNC,
-   * but for this transaction only */
-  MDBX_TXN_NOSYNC = MDBX_SAFE_NOSYNC
+   * but for this transaction only. */
+  MDBX_TXN_NOSYNC = MDBX_SAFE_NOSYNC,
+
+  /* Transaction state flags ---------------------------------------------- */
+
+  /** Transaction is invalid.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_INVALID = INT32_MIN,
+
+  /** Transaction is finished or never began.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_FINISHED = 0x01,
+
+  /** Transaction is unusable after an error.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_ERROR = 0x02,
+
+  /** Transaction must write, even if dirty list is empty.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_DIRTY = 0x04,
+
+  /** Transaction or a parent has spilled pages.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_SPILLS = 0x08,
+
+  /** Transaction has a nested child transaction.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_HAS_CHILD = 0x10,
+
+  /** Most operations on the transaction are currently illegal.
+   * \note Transaction state flag. Returned from \ref mdbx_txn_flags()
+   * but can't be used with \ref mdbx_txn_begin(). */
+  MDBX_TXN_BLOCKED = MDBX_TXN_FINISHED | MDBX_TXN_ERROR | MDBX_TXN_HAS_CHILD
 };
 #ifndef __cplusplus
 typedef enum MDBX_txn_flags_t MDBX_txn_flags_t;
@@ -1861,7 +1900,7 @@ typedef enum MDBX_error_t MDBX_error_t;
  * \ingroup c_err
  * \deprecated Please review your code to use MDBX_UNABLE_EXTEND_MAPSIZE
  * instead. */
-MDBX_DEPRECATED static __inline int MDBX_MAP_RESIZED_is_deprecated() {
+MDBX_DEPRECATED static __inline int MDBX_MAP_RESIZED_is_deprecated(void) {
   return MDBX_UNABLE_EXTEND_MAPSIZE;
 }
 #define MDBX_MAP_RESIZED MDBX_MAP_RESIZED_is_deprecated()
@@ -3429,7 +3468,7 @@ mdbx_txn_env(const MDBX_txn *txn);
 /** \brief Return the transaction's flags.
  * \ingroup c_transactions
  *
- * This returns the flags associated with this transaction.
+ * This returns the flags, including internal, associated with this transaction.
  *
  * \param [in] txn  A transaction handle returned by \ref mdbx_txn_begin().
  *
@@ -3453,6 +3492,7 @@ mdbx_txn_id(const MDBX_txn *txn);
 
 /** \brief Latency of commit stages in 1/65536 of seconds units.
  * \warning This structure may be changed in future releases.
+ * \ingroup c_statinfo
  * \see mdbx_txn_commit_ex() */
 struct MDBX_commit_latency {
   /** \brief Duration of preparation (commit child transactions, update
@@ -3481,7 +3521,7 @@ typedef struct MDBX_commit_latency MDBX_commit_latency;
 /** \brief Commit all the operations of a transaction into the database and
  * collect latency information.
  * \see mdbx_txn_commit()
- * \ingroup c_statinfo
+ * \ingroup c_transactions
  * \warning This function may be changed in future releases. */
 LIBMDBX_API int mdbx_txn_commit_ex(MDBX_txn *txn, MDBX_commit_latency *latency);
 

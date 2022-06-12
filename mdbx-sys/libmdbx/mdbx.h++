@@ -189,7 +189,9 @@
 
 /** Workaround for old compilers without properly support for C++20 `if
  * constexpr`. */
-#if defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606L
+#if defined(DOXYGEN)
+#define MDBX_IF_CONSTEXPR constexpr
+#elif defined(__cpp_if_constexpr) && __cpp_if_constexpr >= 201606L
 #define MDBX_IF_CONSTEXPR constexpr
 #else
 #define MDBX_IF_CONSTEXPR
@@ -222,17 +224,12 @@
 
 #ifndef MDBX_HAVE_CXX20_CONCEPTS
 #if defined(DOXYGEN) ||                                                        \
-    (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || __has_include(<concepts>) ||                      \
-  (defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L)))
-#if __has_include(<concepts>) ||                                               \
-  (defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L)
+    (defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L)
 #include <concepts>
-#endif /* <concepts> */
 #define MDBX_HAVE_CXX20_CONCEPTS 1
 #else
 #define MDBX_HAVE_CXX20_CONCEPTS 0
-#endif
+#endif /* <concepts> */
 #endif /* MDBX_HAVE_CXX20_CONCEPTS */
 
 #ifndef MDBX_CXX20_CONCEPT
@@ -265,6 +262,16 @@
  * optimization (copy elision, etc). */
 #pragma warning(disable : 4702) /* unreachable code */
 #endif                          /* _MSC_VER (warnings) */
+
+#if defined(__LCC__) && __LCC__ >= 126
+#pragma diagnostic push
+#if __LCC__ < 127
+#pragma diag_suppress 3058 /* workaround: call to is_constant_evaluated()      \
+                              appearing in a constant expression `true` */
+#pragma diag_suppress 3060 /* workaround: call to is_constant_evaluated()      \
+                              appearing in a constant expression `false` */
+#endif
+#endif /* E2K LCC (warnings) */
 
 //------------------------------------------------------------------------------
 /// \brief The libmdbx C++ API namespace
@@ -312,8 +319,15 @@ using build_info = ::MDBX_build_info;
 /// \brief Returns libmdbx build information.
 MDBX_CXX11_CONSTEXPR const build_info &get_build() noexcept;
 
-/// \brief constexpr-compatible strlen().
+/// \brief constexpr-enabled strlen().
 static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept;
+
+/// \brief constexpr-enabled memcpy().
+static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
+                                         size_t bytes) noexcept;
+/// \brief constexpr-enabled memcmp().
+static MDBX_CXX20_CONSTEXPR int memcmp(const void *a, const void *b,
+                                       size_t bytes) noexcept;
 
 /// \brief Legacy default allocator
 /// but it is recommended to use \ref polymorphic_allocator.
@@ -532,9 +546,6 @@ static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom, size_t payload,
 
 /// end of cxx_exceptions @}
 
-static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept;
-static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
-                                         size_t bytes) noexcept;
 //------------------------------------------------------------------------------
 
 /// \defgroup cxx_data slices and buffers
@@ -6012,6 +6023,10 @@ template <> struct hash<::mdbx::slice> {
 
 /// end cxx_api @}
 } // namespace std
+
+#if defined(__LCC__) && __LCC__ >= 126
+#pragma diagnostic pop
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(pop)

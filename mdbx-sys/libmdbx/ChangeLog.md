@@ -1,6 +1,56 @@
 ChangeLog
 ---------
 
+## v0.11.8 at 2022-06-12
+
+Acknowledgements:
+
+ - [Masatoshi Fukunaga](https://github.com/mah0x211) for [Lua bindings](https://github.com/mah0x211/lua-libmdbx).
+
+New:
+
+ - Added most of transactions flags to the public API.
+ - Added `MDBX_NOSUCCESS_EMPTY_COMMIT` build option to return non-success result (`MDBX_RESULT_TRUE`) on empty commit.
+ - Reworked validation and import of DBI-handles into a transaction.
+   Assumes  these changes will be invisible to most users, but will cause fewer surprises in complex DBI cases.
+ - Added ability to open DB in without-LCK (exclusive read-only) mode in case no permissions to create/write LCK-file.
+
+Fixes:
+
+ - A series of fixes and improvements for automatically generated documentation (Doxygen).
+ - Fixed copy&paste bug with could lead to `SIGSEGV` (nullptr dereference) in the exclusive/no-lck mode.
+ - Fixed minor warnings from modern Apple's CLANG 13.
+ - Fixed minor warnings from CLANG 14 and in-development CLANG 15.
+ - Fixed `SIGSEGV` regression in without-LCK (exclusive read-only) mode.
+ - Fixed `mdbx_check_fs_local()` for CDROM case on Windows.
+ - Fixed nasty typo of typename which caused false `MDBX_CORRUPTED` error in a rare execution path,
+   when the size of the thread-ID type not equal to 8.
+ - Fixed write-after-free memory corruption on latest `macOS` during finalization/cleanup of thread(s) that executed read transaction(s).
+   > The issue was suddenly discovered by a [CI](https://en.wikipedia.org/wiki/Continuous_integration)
+   > after adding an iteration with macOS 11 "Big Sur", and then reproduced on recent release of macOS 12 "Monterey".
+   > The issue was never noticed nor reported on macOS 10 "Catalina" nor others.
+   > Analysis shown that the problem caused by a change in the behavior of the system library (internals of dyld and pthread)
+   > during thread finalization/cleanup: now a memory allocated for a `__thread` variable(s) is released
+   > before execution of the registered Thread-Local-Storage destructor(s),
+   > thus a TLS-destructor will write-after-free just by legitime dereference any `__thread` variable.
+   > This is unexpected crazy-like behavior since the order of resources releasing/destroying
+   > is not the reverse of ones acquiring/construction order. Nonetheless such surprise
+   > is now workarounded by using atomic compare-and-swap operations on a 64-bit signatures/cookies.
+ - Fixed Elbrus/E2K LCC 1.26 compiler warnings (memory model for atomic operations, etc).
+
+Minors:
+
+ - Refined `release-assets` GNU Make target.
+ - Added logging to `mdbx_fetch_sdb()` to help debugging complex DBI-handels use cases.
+ - Added explicit error message from probe of no-support for `std::filesystem`.
+ - Added contributors "score" table by `git fame` to generated docs.
+ - Added `mdbx_assert_fail()` to public API (mostly for backtracing).
+ - Now C++20 concepts used/enabled only when `__cpp_lib_concepts >= 202002`.
+ - Don't provide nor report package information if used as a CMake subproject.
+
+
+-------------------------------------------------------------------------------
+
 ## v0.11.7 at 2022-04-22
 
 The stable risen release after the Github's intentional malicious disaster.
@@ -21,7 +71,7 @@ New:
  - Support for Microsoft Visual Studio 2022.
  - Support build by MinGW' make from command line without CMake.
  - Added `mdbx::filesystem` C++ API namespace that corresponds to `std::filesystem` or `std::experimental::filesystem`.
- - Created [website](https://libmdbx.website.yandexcloud.net/) for online auto-generated documentation.
+ - Created [website](https://libmdbx.dqdkfa.ru/) for online auto-generated documentation.
  - Used `https://web.archive.org/web/20220414235959/https://github.com/erthink/` for dead (or temporarily lost) resources deleted by ~~Github~~.
  - Added `--loglevel=` command-line option to the `mdbx_test` tool.
  - Added few fast smoke-like tests into CMake builds.
@@ -37,19 +87,20 @@ Fixes:
  - [Fixed](https://github.com/ledgerwatch/erigon/issues/3874) minor assertion regression (only debug builds were affected).
  - Fixed detection of `C++20` concepts accessibility.
  - Fixed detection of Clang's LTO availability for Android.
+ - Fixed extra definition of `_FILE_OFFSET_BITS=64` for Android that is problematic for 32-bit Bionic.
  - Fixed build for ARM/ARM64 by MSVC.
  - Fixed non-x86 Windows builds with `MDBX_WITHOUT_MSVC_CRT=ON` and `MDBX_BUILD_SHARED_LIBRARY=ON`.
 
 Minors:
 
  - Resolve minor MSVC warnings: avoid `/INCREMENTAL[:YES]` with `/LTCG`, `/W4` with `/W3`, the `C5105` warning.
- - Switched to using `MDBX_EPERM` instead of `MDBX_RESULT_TRUE' to indicate that the geometry cannot be updated.
+ - Switched to using `MDBX_EPERM` instead of `MDBX_RESULT_TRUE` to indicate that the geometry cannot be updated.
  - Added `NULL` checking during memory allocation inside `mdbx_chk`.
  - Resolved all warnings from MinGW while used without CMake.
  - Added inheretable `target_include_directories()` to `CMakeLists.txt` for easy integration.
  - Added build-time checks and paranoid runtime assertions for the `off_t` arguments of `fcntl()` which are used for locking.
  - Added `-Wno-lto-type-mismatch` to avoid false-positive warnings from old GCC during LTO-enabled builds.
- - Added checking for TID (system thread id) to avoid hang on 32-bit Bionic/Android  within `pthread_mutex_lock()`.
+ - Added checking for TID (system thread id) to avoid hang on 32-bit Bionic/Android within `pthread_mutex_lock()`.
  - Reworked `MDBX_BUILD_TARGET` of CMake builds.
  - Added `CMAKE_HOST_ARCH` and `CMAKE_HOST_CAN_RUN_EXECUTABLES_BUILT_FOR_TARGET`.
 
@@ -585,7 +636,7 @@ Fixes:
 Added features:
 
  - Preliminary C++ API with support for C++17 polymorphic allocators.
- - [Online C++ API reference](https://libmdbx.website.yandexcloud.net/) by Doxygen.
+ - [Online C++ API reference](https://libmdbx.dqdkfa.ru/) by Doxygen.
  - Quick reference for Insert/Update/Delete operations.
  - Explicit `MDBX_SYNC_DURABLE` to sync modes for API clarity.
  - Explicit `MDBX_ALLDUPS` and `MDBX_UPSERT` for API clarity.
@@ -630,7 +681,7 @@ Fixes:
 
 Added features:
 
- - [Online C API reference](https://libmdbx.website.yandexcloud.net/) by Doxygen.
+ - [Online C API reference](https://libmdbx.dqdkfa.ru/) by Doxygen.
  - Separated enums for environment, sub-databases, transactions, copying and data-update flags.
 
 Deprecated functions and flags:

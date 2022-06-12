@@ -19,8 +19,8 @@ including English 和 中文, in the near future.
 
 *The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
 
-> Please refer to the online [documentation](https://libmdbx.website.yandexcloud.net)
-> with [`C` API description](https://libmdbx.website.yandexcloud.net/group__c__api.html)
+> Please refer to the online [documentation](https://libmdbx.dqdkfa.ru)
+> with [`C` API description](https://libmdbx.dqdkfa.ru/group__c__api.html)
 > and pay attention to the [`C++` API](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h%2B%2B#line-num-1).
 
 > Questions, feedback and suggestions are welcome to the [Telegram' group](https://t.me/libmdbx).
@@ -220,52 +220,45 @@ the user's point of view.
 ## Added Features
 
 1. Keys could be more than 2 times longer than _LMDB_.
-
-    > For DB with default page size _libmdbx_ support keys up to 2022 bytes
-    > and up to 32742 bytes for 64K page size. _LMDB_ allows key size up to
-    > 511 bytes and may silently loses data with large values.
+   > For DB with default page size _libmdbx_ support keys up to 2022 bytes
+   > and up to 32742 bytes for 64K page size. _LMDB_ allows key size up to
+   > 511 bytes and may silently loses data with large values.
 
 2. Up to 30% faster than _LMDB_ in [CRUD](https://en.wikipedia.org/wiki/Create,_read,_update_and_delete) benchmarks.
-
-    > Benchmarks of the in-[tmpfs](https://en.wikipedia.org/wiki/Tmpfs) scenarios,
-    > that tests the speed of the engine itself, showned that _libmdbx_ 10-20% faster than _LMDB_,
-    > and up to 30% faster when _libmdbx_ compiled with specific build options
-    > which downgrades several runtime checks to be match with LMDB behaviour.
-    >
-    > These and other results could be easily reproduced with [ioArena](https://github.com/pmwkaa/ioarena) just by `make bench-quartet` command,
-    > including comparisons with [RockDB](https://en.wikipedia.org/wiki/RocksDB)
-    > and [WiredTiger](https://en.wikipedia.org/wiki/WiredTiger).
+   > Benchmarks of the in-[tmpfs](https://en.wikipedia.org/wiki/Tmpfs) scenarios,
+   > that tests the speed of the engine itself, showned that _libmdbx_ 10-20% faster than _LMDB_,
+   > and up to 30% faster when _libmdbx_ compiled with specific build options
+   > which downgrades several runtime checks to be match with LMDB behaviour.
+   >
+   > These and other results could be easily reproduced with [ioArena](https://github.com/pmwkaa/ioarena) just by `make bench-quartet` command,
+   > including comparisons with [RockDB](https://en.wikipedia.org/wiki/RocksDB)
+   > and [WiredTiger](https://en.wikipedia.org/wiki/WiredTiger).
 
 3. Automatic on-the-fly database size adjustment, both increment and reduction.
-
-    > _libmdbx_ manages the database size according to parameters specified
-    > by `mdbx_env_set_geometry()` function,
-    > ones include the growth step and the truncation threshold.
-    >
-    > Unfortunately, on-the-fly database size adjustment doesn't work under [Wine](https://en.wikipedia.org/wiki/Wine_(software))
-    > due to its internal limitations and unimplemented functions, i.e. the `MDBX_UNABLE_EXTEND_MAPSIZE` error will be returned.
+   > _libmdbx_ manages the database size according to parameters specified
+   > by `mdbx_env_set_geometry()` function,
+   > ones include the growth step and the truncation threshold.
+   >
+   > Unfortunately, on-the-fly database size adjustment doesn't work under [Wine](https://en.wikipedia.org/wiki/Wine_(software))
+   > due to its internal limitations and unimplemented functions, i.e. the `MDBX_UNABLE_EXTEND_MAPSIZE` error will be returned.
 
 4. Automatic continuous zero-overhead database compactification.
-
-    > During each commit _libmdbx_ merges a freeing pages which adjacent with the unallocated area
-    > at the end of file, and then truncates unused space when a lot enough of.
+   > During each commit _libmdbx_ merges a freeing pages which adjacent with the unallocated area
+   > at the end of file, and then truncates unused space when a lot enough of.
 
 5. The same database format for 32- and 64-bit builds.
-
-    > _libmdbx_ database format depends only on the [endianness](https://en.wikipedia.org/wiki/Endianness) but not on the [bitness](https://en.wiktionary.org/wiki/bitness).
+   > _libmdbx_ database format depends only on the [endianness](https://en.wikipedia.org/wiki/Endianness) but not on the [bitness](https://en.wiktionary.org/wiki/bitness).
 
 6. LIFO policy for Garbage Collection recycling. This can significantly increase write performance due write-back disk cache up to several times in a best case scenario.
-
-    > LIFO means that for reuse will be taken the latest becomes unused pages.
-    > Therefore the loop of database pages circulation becomes as short as possible.
-    > In other words, the set of pages, that are (over)written in memory and on disk during a series of write transactions, will be as small as possible.
-    > Thus creates ideal conditions for the battery-backed or flash-backed disk cache efficiency.
+   > LIFO means that for reuse will be taken the latest becomes unused pages.
+   > Therefore the loop of database pages circulation becomes as short as possible.
+   > In other words, the set of pages, that are (over)written in memory and on disk during a series of write transactions, will be as small as possible.
+   > Thus creates ideal conditions for the battery-backed or flash-backed disk cache efficiency.
 
 7. Fast estimation of range query result volume, i.e. how many items can
 be found between a `KEY1` and a `KEY2`. This is a prerequisite for build
 and/or optimize query execution plans.
-
-    > _libmdbx_ performs a rough estimate based on common B-tree pages of the paths from root to corresponding keys.
+   > _libmdbx_ performs a rough estimate based on common B-tree pages of the paths from root to corresponding keys.
 
 8. `mdbx_chk` utility for database integrity check.
 Since version 0.9.1, the utility supports checking the database using any of the three meta pages and the ability to switch to it.
@@ -278,14 +271,12 @@ Since version 0.9.1, the utility supports checking the database using any of the
 or not, that allows to avoid copy-out before updates.
 
 12. Extended information of whole-database, sub-databases, transactions, readers enumeration.
-
-    > _libmdbx_ provides a lot of information, including dirty and leftover pages
-    > for a write transaction, reading lag and holdover space for read transactions.
+   > _libmdbx_ provides a lot of information, including dirty and leftover pages
+   > for a write transaction, reading lag and holdover space for read transactions.
 
 13. Extended update and delete operations.
-
-    > _libmdbx_ allows one _at once_ with getting previous value
-    > and addressing the particular item from multi-value with the same key.
+   > _libmdbx_ allows one _at once_ with getting previous value
+   > and addressing the particular item from multi-value with the same key.
 
 14. Useful runtime options for tuning engine to application's requirements and use cases specific.
 
@@ -315,10 +306,9 @@ pre-opening is not needed.
 4. Returning `MDBX_EMULTIVAL` error in case of ambiguous update or delete.
 
 5. Guarantee of database integrity even in asynchronous unordered write-to-disk mode.
-
-    > _libmdbx_ propose additional trade-off by `MDBX_SAFE_NOSYNC` with append-like manner for updates,
-    > that avoids database corruption after a system crash contrary to LMDB.
-    > Nevertheless, the `MDBX_UTTERLY_NOSYNC` mode is available to match LMDB's behaviour for `MDB_NOSYNC`.
+   > _libmdbx_ propose additional trade-off by `MDBX_SAFE_NOSYNC` with append-like manner for updates,
+   > that avoids database corruption after a system crash contrary to LMDB.
+   > Nevertheless, the `MDBX_UTTERLY_NOSYNC` mode is available to match LMDB's behaviour for `MDB_NOSYNC`.
 
 6. On **MacOS & iOS** the `fcntl(F_FULLFSYNC)` syscall is used _by
 default_ to synchronize data with the disk, as this is [the only way to
@@ -358,7 +348,7 @@ explanation, deleted _libmdbx_ along with a lot of other projects,
 simultaneously blocking access for many developers. Therefore on
 2022-04-21 we have migrated to a reliable trusted infrastructure.
 The origin for now is at [GitFlic](https://gitflic.ru/project/erthink/libmdbx)
-with backup at [ABF by ROSA Лаб](https://abf.io/erthink/libmdbx).
+with backup at [ABF by ROSA Лаб](https://abf.rosalinux.ru/erthink/libmdbx).
 For the same reason ~~Github~~ is blacklisted forever.
 
 ## Acknowledgments
@@ -387,14 +377,12 @@ since release the version 1.0.
 _libmdbx_ provides two official ways for integration in source code form:
 
 1. Using the amalgamated source code.
-
-    > The amalgamated source code includes all files required to build and
-    > use _libmdbx_, but not for testing _libmdbx_ itself.
+   > The amalgamated source code includes all files required to build and
+   > use _libmdbx_, but not for testing _libmdbx_ itself.
 
 2. Adding the complete original source code as a `git submodule`.
-
-    > This allows you to build as _libmdbx_ and testing tool.
-    >  On the other hand, this way requires you to pull git tags, and use C++11 compiler for test tool.
+   > This allows you to build as _libmdbx_ and testing tool.
+   >  On the other hand, this way requires you to pull git tags, and use C++11 compiler for test tool.
 
 _**Please, avoid using any other techniques.**_ Otherwise, at least
 don't ask for support and don't name such chimeras `libmdbx`.
@@ -591,7 +579,7 @@ from the [ios-cmake](https://github.com/leetal/ios-cmake) project.
 
 ## API description
 
-Please refer to the online [_libmdbx_ API reference](https://libmdbx.website.yandexcloud.net/docs)
+Please refer to the online [_libmdbx_ API reference](https://libmdbx.dqdkfa.ru/docs)
 and/or see the [mdbx.h++](mdbx.h%2B%2B) and [mdbx.h](mdbx.h) headers.
 
 <!-- section-begin bindings -->
@@ -608,6 +596,7 @@ Bindings
 | Ruby    | [ruby-mdbx](https://rubygems.org/gems/mdbx/)          | [Mahlon E. Smith](https://github.com/mahlonsmith) |
 | Go      | [mdbx-go](https://github.com/torquem-ch/mdbx-go)      | [Alex Sharov](https://github.com/AskAlexSharov) |
 | [Nim](https://en.wikipedia.org/wiki/Nim_(programming_language)) | [NimDBX](https://github.com/snej/nimdbx) | [Jens Alfke](https://github.com/snej)
+| Lua     | [lua-libmdbx](https://github.com/mah0x211/lua-libmdbx) | [Masatoshi Fukunaga](https://github.com/mah0x211) |
 | Rust    | [libmdbx-rs](https://github.com/vorot93/libmdbx-rs)   | [Artem Vorotnikov](https://github.com/vorot93) |
 | Rust    | [mdbx](https://crates.io/crates/mdbx)                 | [gcxfd](https://github.com/gcxfd) |
 | Java    | [mdbxjni](https://github.com/castortech/mdbxjni)      | [Castor Technologies](https://castortech.com/) |
@@ -650,7 +639,7 @@ Here showed sum of performance metrics in 3 benchmarks:
 
   2. Performance gap is too high to compare in any meaningful way.
 
-![Comparison #1: Integral Performance](https://libmdbx.website.yandexcloud.net/img/perf-slide-1.png)
+![Comparison #1: Integral Performance](https://libmdbx.dqdkfa.ru/img/perf-slide-1.png)
 
 --------------------------------------------------------------------------------
 
@@ -659,7 +648,7 @@ Here showed sum of performance metrics in 3 benchmarks:
 Summary performance with concurrent read/search queries in 1-2-4-8
 threads on the machine with 4 logical CPUs in HyperThreading mode (i.e. actually 2 physical CPU cores).
 
-![Comparison #2: Read Scalability](https://libmdbx.website.yandexcloud.net/img/perf-slide-2.png)
+![Comparison #2: Read Scalability](https://libmdbx.dqdkfa.ru/img/perf-slide-2.png)
 
 --------------------------------------------------------------------------------
 
@@ -681,7 +670,7 @@ In the benchmark each transaction contains combined CRUD operations (2
 inserts, 1 read, 1 update, 1 delete). Benchmark starts on an empty database
 and after full run the database contains 10,000 small key-value records.
 
-![Comparison #3: Sync-write mode](https://libmdbx.website.yandexcloud.net/img/perf-slide-3.png)
+![Comparison #3: Sync-write mode](https://libmdbx.dqdkfa.ru/img/perf-slide-3.png)
 
 --------------------------------------------------------------------------------
 
@@ -708,7 +697,7 @@ and after full run the database contains 100,000 small key-value
 records.
 
 
-![Comparison #4: Lazy-write mode](https://libmdbx.website.yandexcloud.net/img/perf-slide-4.png)
+![Comparison #4: Lazy-write mode](https://libmdbx.dqdkfa.ru/img/perf-slide-4.png)
 
 --------------------------------------------------------------------------------
 
@@ -732,7 +721,7 @@ In the benchmark each transaction contains combined CRUD operations (2
 inserts, 1 read, 1 update, 1 delete). Benchmark starts on an empty database
 and after full run the database contains 10,000 small key-value records.
 
-![Comparison #5: Async-write mode](https://libmdbx.website.yandexcloud.net/img/perf-slide-5.png)
+![Comparison #5: Async-write mode](https://libmdbx.dqdkfa.ru/img/perf-slide-5.png)
 
 --------------------------------------------------------------------------------
 
@@ -756,6 +745,6 @@ All benchmark data is gathered by
 [getrusage()](http://man7.org/linux/man-pages/man2/getrusage.2.html)
 syscall and by scanning the data directory.
 
-![Comparison #6: Cost comparison](https://libmdbx.website.yandexcloud.net/img/perf-slide-6.png)
+![Comparison #6: Cost comparison](https://libmdbx.dqdkfa.ru/img/perf-slide-6.png)
 
 <!-- section-end -->

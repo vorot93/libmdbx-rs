@@ -21,6 +21,25 @@ endif()
 
 cmake_policy(PUSH)
 cmake_policy(VERSION ${CMAKE_MINIMUM_REQUIRED_VERSION})
+if(NOT CMAKE_VERSION VERSION_LESS 3.21)
+  cmake_policy(SET CMP0126 NEW)
+endif()
+if(NOT CMAKE_VERSION VERSION_LESS 3.17)
+  cmake_policy(SET CMP0102 NEW)
+endif()
+if(NOT CMAKE_VERSION VERSION_LESS 3.15)
+  cmake_policy(SET CMP0091 NEW)
+endif()
+if(NOT CMAKE_VERSION VERSION_LESS 3.13)
+  cmake_policy(SET CMP0077 NEW)
+endif()
+if(NOT CMAKE_VERSION VERSION_LESS 3.12)
+  cmake_policy(SET CMP0075 NEW)
+endif()
+if(NOT CMAKE_VERSION VERSION_LESS 3.9)
+  cmake_policy(SET CMP0068 NEW)
+  cmake_policy(SET CMP0069 NEW)
+endif()
 
 if(CMAKE_VERSION MATCHES ".*MSVC.*" AND CMAKE_VERSION VERSION_LESS 3.16)
   message(FATAL_ERROR "CMake from MSVC kit is unfit! "
@@ -742,7 +761,7 @@ macro(setup_compile_flags)
       add_compile_flags("CXX" "/Zc:__cplusplus")
     endif()
     remove_compile_flag("C;CXX" "/W3")
-    add_compile_flags("C;CXX" "/W4 /utf-8")
+    add_compile_flags("C;CXX" "/W4 /utf-8 /bigobj")
   else()
     if(CC_HAS_WALL)
       add_compile_flags("C;CXX" "-Wall")
@@ -790,10 +809,12 @@ macro(setup_compile_flags)
 
   if(ENABLE_ASAN)
     add_compile_flags("C;CXX" "-fsanitize=address")
+    add_definitions(-DASAN_ENABLED=1)
   endif()
 
   if(ENABLE_UBSAN)
     add_compile_flags("C;CXX" "-fsanitize=undefined" "-fsanitize-undefined-trap-on-error")
+    add_definitions(-DUBSAN_ENABLED=1)
   endif()
 
   if(ENABLE_GCOV)
@@ -965,6 +986,10 @@ macro(probe_libcxx_filesystem)
         namespace fs = ::std::filesystem;
         #elif defined(__cpp_lib_experimental_filesystem) && __cpp_lib_experimental_filesystem >= 201406L
         namespace fs = ::std::experimental::filesystem;
+        #elif (defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && __MAC_OS_X_VERSION_MIN_REQUIRED < 101500) || (defined(__IPHONE_OS_VERSION_MIN_REQUIRED) && __IPHONE_OS_VERSION_MIN_REQUIRED < 130100)
+        #error "Select a newer target OSX/iOS to support C++17 std::filesystem"
+        #else
+        #error "No support for C++17 std::filesystem"
         #endif
 
         int main(int argc, const char*argv[]) {
