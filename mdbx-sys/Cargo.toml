@@ -2,12 +2,6 @@
 name = "mdbx-sys"
 version = "0.11.8-0"
 edition = "2021"
-authors = [
-    "Dan Burkert <dan@danburkert.com>",
-    "Victor Porof <vporof@mozilla.com>",
-    "Kerollmops <renault.cle@gmail.com>",
-    "Artem Vorotnikov <artem@vorotnikov.me>",
-]
 license = "Apache-2.0"
 description = "Rust bindings for libmdbx."
 documentation = "https://docs.rs/mdbx-sys"

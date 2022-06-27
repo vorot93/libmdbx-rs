@@ -1,11 +1,6 @@
 [package]
 name = "libmdbx"
 version = "0.1.6"
-authors = [
-  "Dan Burkert <dan@danburkert.com>",
-  "Victor Porof <vporof@mozilla.com>",
-  "Artem Vorotnikov <artem@vorotnikov.me>",
-]
 edition = "2021"
 license = "Apache-2.0"
 description = "Idiomatic and safe MDBX wrapper."
