@@ -19,3 +19,6 @@ cp -R ../libmdbx/dist mdbx-sys/libmdbx
 # add the changes to the next commit you will make
 git add mdbx-sys/libmdbx
 ```
+
+## License
+The entire code within this repository is licensed under the [Mozilla Public License v2.0](./LICENSE)
