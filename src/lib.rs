@@ -6,8 +6,8 @@ pub use crate::{
     cursor::{Cursor, Iter, IterDup},
     database::Database,
     environment::{
-        Environment, EnvironmentBuilder, EnvironmentKind, Geometry, Info, NoWriteMap, Stat,
-        WriteMap,
+        Environment, EnvironmentBuilder, EnvironmentKind, Geometry, Info, NoWriteMap, PageSize,
+        Stat, WriteMap,
     },
     error::{Error, Result},
     flags::*,
