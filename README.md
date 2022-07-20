@@ -19,3 +19,6 @@ cp -R ../libmdbx/dist mdbx-sys/libmdbx
 # add the changes to the next commit you will make
 git add mdbx-sys/libmdbx
 ```
+
+## License
+[GPL-3.0-or-later WITH Classpath-exception-2.0](./LICENSE)
