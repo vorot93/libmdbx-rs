@@ -2,7 +2,7 @@
 name = "libmdbx"
 version = "0.1.6"
 edition = "2021"
-license = "Apache-2.0"
+license = "GPL-3.0-only WITH Classpath-exception-2.0"
 description = "Idiomatic and safe MDBX wrapper."
 documentation = "https://docs.rs/libmdbx"
 homepage = "https://github.com/vorot93/libmdbx-rs"
