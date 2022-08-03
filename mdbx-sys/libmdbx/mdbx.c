@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY e88c2083bb74c3b9e61253604256e2cd7d7c8bdb222d763e82b3b4abad7e4634_v0_11_8_0_gbd80e01e
+#define MDBX_BUILD_SOURCERY 79dcdc042fdfb4f8867db5fb13b26507f6aa08acce010c9b53f39078933b2912_v0_11_9_0_ge444c70c
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -289,6 +289,7 @@
 #endif
 
 #ifdef __APPLE__
+#include <AvailabilityMacros.h>
 #ifndef MAC_OS_X_VERSION_MIN_REQUIRED
 #define MAC_OS_X_VERSION_MIN_REQUIRED 1070 /* Mac OS X 10.7, 2011 */
 #endif
@@ -4105,6 +4106,7 @@ page_room(const MDBX_page *mp) {
   return mp->mp_upper - mp->mp_lower;
 }
 
+/* Maximum free space in an empty page */
 MDBX_NOTHROW_PURE_FUNCTION static __always_inline unsigned
 page_space(const MDBX_env *env) {
   STATIC_ASSERT(PAGEHDRSZ % 2 == 0);
@@ -10040,9 +10042,9 @@ no_loose:
         while (true) {
           if (re_list[range_begin - wanna_range] - pgno == wanna_range)
             goto done;
-          if (range_begin == wanna_range)
+          if (--range_begin == wanna_range)
             break;
-          pgno = re_list[--range_begin];
+          pgno = re_list[range_begin];
         }
 #endif /* MDBX_PNL sort-order */
       }
@@ -11157,7 +11159,7 @@ __cold int mdbx_thread_unregister(const MDBX_env *env) {
 /* check against todo4recovery://erased_by_github/libmdbx/issues/269 */
 static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
                             bool report) {
-  const txnid_t meta_txnid = constmeta_txnid(env, meta);
+  const txnid_t head_txnid = meta_txnid(env, meta);
   const txnid_t freedb_mod_txnid = meta->mm_dbs[FREE_DBI].md_mod_txnid;
   const txnid_t maindb_mod_txnid = meta->mm_dbs[MAIN_DBI].md_mod_txnid;
 
@@ -11174,25 +11176,25 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
   const uint64_t magic_and_version =
       unaligned_peek_u64(4, &meta->mm_magic_and_version);
   bool ok = true;
-  if (unlikely(meta_txnid < freedb_mod_txnid ||
+  if (unlikely(!head_txnid || head_txnid < freedb_mod_txnid ||
                (!freedb_mod_txnid && freedb_root &&
                 likely(magic_and_version == MDBX_DATA_MAGIC)))) {
     if (report)
       mdbx_warning(
-          "catch invalid %sdb_mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
+          "catch invalid %sdb.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
           " %s",
-          "free", freedb_mod_txnid, meta_txnid,
+          "free", freedb_mod_txnid, head_txnid,
           "(workaround for incoherent flaw of unified page/buffer cache)");
     ok = false;
   }
-  if (unlikely(meta_txnid < maindb_mod_txnid ||
+  if (unlikely(head_txnid < maindb_mod_txnid ||
                (!maindb_mod_txnid && maindb_root &&
                 likely(magic_and_version == MDBX_DATA_MAGIC)))) {
     if (report)
       mdbx_warning(
-          "catch invalid %sdb_mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
+          "catch invalid %sdb.mod_txnid %" PRIaTXN " for meta_txnid %" PRIaTXN
           " %s",
-          "main", maindb_mod_txnid, meta_txnid,
+          "main", maindb_mod_txnid, head_txnid,
           "(workaround for incoherent flaw of unified page/buffer cache)");
     ok = false;
   }
@@ -11204,9 +11206,9 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
     if (unlikely(root_txnid != freedb_mod_txnid)) {
       if (report)
         mdbx_warning(
-            "catch invalid root_page_txnid %" PRIaTXN
-            " for %sdb_mod_txnid %" PRIaTXN " %s",
-            root_txnid, "free", maindb_mod_txnid,
+            "catch invalid root_page %" PRIaPGNO " mod_txnid %" PRIaTXN
+            " for %sdb.mod_txnid %" PRIaTXN " %s",
+            freedb_root_pgno, root_txnid, "free", freedb_mod_txnid,
             "(workaround for incoherent flaw of unified page/buffer cache)");
       ok = false;
     }
@@ -11219,9 +11221,9 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
     if (unlikely(root_txnid != maindb_mod_txnid)) {
       if (report)
         mdbx_warning(
-            "catch invalid root_page_txnid %" PRIaTXN
-            " for %sdb_mod_txnid %" PRIaTXN " %s",
-            root_txnid, "main", maindb_mod_txnid,
+            "catch invalid root_page %" PRIaPGNO " mod_txnid %" PRIaTXN
+            " for %sdb.mod_txnid %" PRIaTXN " %s",
+            maindb_root_pgno, root_txnid, "main", maindb_mod_txnid,
             "(workaround for incoherent flaw of unified page/buffer cache)");
       ok = false;
     }
@@ -11233,7 +11235,7 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
  * for todo4recovery://erased_by_github/libmdbx/issues/269 */
 static int meta_waittxnid(const MDBX_env *env, const MDBX_meta *meta,
                           uint64_t *timestamp) {
-  if (likely(meta_checktxnid(env, (const MDBX_meta *)meta, !*timestamp)))
+  if (likely(meta_checktxnid(env, meta, !*timestamp)))
     return MDBX_SUCCESS;
 
   if (!*timestamp)
@@ -15229,8 +15231,13 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
   }
 
   if ((uint64_t)size_lower / pagesize < MIN_PAGENO) {
-    rc = MDBX_EINVAL;
-    goto bailout;
+    size_lower = pagesize * MIN_PAGENO;
+    if (unlikely(size_lower > size_upper)) {
+      rc = MDBX_EINVAL;
+      goto bailout;
+    }
+    if (size_now < size_lower)
+      size_now = size_lower;
   }
 
   if (unlikely((size_t)size_upper > MAX_MAPSIZE ||
@@ -20737,6 +20744,7 @@ static int mdbx_node_move(MDBX_cursor *csrc, MDBX_cursor *cdst, bool fromleft) {
   } break;
 
   default:
+    assert(false);
     goto bailout;
   }
 
@@ -22055,6 +22063,7 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       (newindx < nkeys)
           ? /* split at the middle */ (nkeys + 1) / 2
           : /* split at the end (i.e. like append-mode ) */ nkeys - minkeys + 1;
+  mdbx_assert(env, split_indx >= minkeys && split_indx <= nkeys - minkeys + 1);
 
   mdbx_cassert(mc, !IS_BRANCH(mp) || newindx > 0);
   /* It is reasonable and possible to split the page at the begin */
@@ -22152,17 +22161,16 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
           goto done;
       }
     } else {
-      /* Maximum free space in an empty page */
-      const unsigned max_space = page_space(env);
-      const size_t new_size = IS_LEAF(mp) ? leaf_size(env, newkey, newdata)
-                                          : branch_size(env, newkey);
-
       /* grab a page to hold a temporary copy */
       tmp_ki_copy = mdbx_page_malloc(mc->mc_txn, 1);
       if (unlikely(tmp_ki_copy == NULL)) {
         rc = MDBX_ENOMEM;
         goto done;
       }
+
+      const unsigned max_space = page_space(env);
+      const size_t new_size = IS_LEAF(mp) ? leaf_size(env, newkey, newdata)
+                                          : branch_size(env, newkey);
 
       /* prepare to insert */
       for (unsigned j = i = 0; i < nkeys; ++i, ++j) {
@@ -22176,34 +22184,35 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
       tmp_ki_copy->mp_lower = 0;
       tmp_ki_copy->mp_upper = (indx_t)max_space;
 
-      /* When items are relatively large the split point needs
-       * to be checked, because being off-by-one will make the
-       * difference between success or failure in mdbx_node_add.
+      /* Добавляемый узел может не поместиться в страницу-половину вместе
+       * с количественной половиной узлов из исходной страницы. В худшем случае,
+       * в страницу-половину с добавляемым узлом могут попасть самые больше узлы
+       * из исходной страницы, а другую половину только узлы с самыми короткими
+       * ключами и с пустыми данными. Поэтому, чтобы найти подходящую границу
+       * разреза требуется итерировать узлы и считая их объем.
        *
-       * It's also relevant if a page happens to be laid out
-       * such that one half of its nodes are all "small" and
-       * the other half of its nodes are "large". If the new
-       * item is also "large" and falls on the half with
-       * "large" nodes, it also may not fit.
-       *
-       * As a final tweak, if the new item goes on the last
-       * spot on the page (and thus, onto the new page), bias
-       * the split so the new page is emptier than the old page.
-       * This yields better packing during sequential inserts. */
+       * Однако, при простом количественном делении (без учета размера ключей
+       * и данных) на страницах-половинах будет примерно вдвое меньше узлов.
+       * Поэтому добавляемый узел точно поместится, если его размер не больше
+       * чем место "освобождающееся" от заголовков узлов, которые переедут
+       * в другую страницу-половину. Кроме этого, как минимум по одному байту
+       * будет в каждом ключе, в худшем случае кроме одного, который может быть
+       * нулевого размера. */
 
-      if (nkeys < 32 || new_size > max_space / 16) {
+      if (newindx == split_indx && split_indx + minkeys <= nkeys)
+        split_indx += 1;
+      mdbx_assert(env,
+                  split_indx >= minkeys && split_indx <= nkeys - minkeys + 1);
+      const unsigned dim_nodes =
+          (newindx >= split_indx) ? split_indx : nkeys - split_indx;
+      const unsigned dim_used = (sizeof(indx_t) + NODESIZE + 1) * dim_nodes;
+      if (new_size >= dim_used) {
         /* Find split point */
-        int dir;
-        if (newindx <= split_indx) {
-          i = 0;
-          dir = 1;
-        } else {
-          i = nkeys;
-          dir = -1;
-        }
+        i = (newindx < split_indx) ? 0 : nkeys;
+        int dir = (newindx < split_indx) ? 1 : -1;
         size_t before = 0, after = new_size + page_used(env, mp);
-        int best = split_indx;
-        int best_offset = nkeys + 1;
+        unsigned best_split = split_indx;
+        unsigned best_offset = INT_MAX;
 
         mdbx_trace("seek separator from %u, step %i, default %u, new-idx %u, "
                    "new-size %zu",
@@ -22216,8 +22225,8 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
                 (MDBX_node *)((char *)mp + tmp_ki_copy->mp_ptrs[i] + PAGEHDRSZ);
             size = NODESIZE + node_ks(node) + sizeof(indx_t);
             if (IS_LEAF(mp))
-              size += F_ISSET(node_flags(node), F_BIGDATA) ? sizeof(pgno_t)
-                                                           : node_ds(node);
+              size += (node_flags(node) & F_BIGDATA) ? sizeof(pgno_t)
+                                                     : node_ds(node);
             size = EVEN(size);
           }
 
@@ -22227,21 +22236,23 @@ static int mdbx_page_split(MDBX_cursor *mc, const MDBX_val *const newkey,
                      size, before, after, max_space);
 
           if (before <= max_space && after <= max_space) {
-            int offset = branchless_abs(split_indx - i);
-            if (offset >= best_offset)
-              break;
-            best_offset = offset;
-            best = i;
+            const unsigned split = i + (dir > 0);
+            if (split >= minkeys && split <= nkeys + 1 - minkeys) {
+              const unsigned offset = branchless_abs(split_indx - split);
+              if (offset >= best_offset)
+                break;
+              best_offset = offset;
+              best_split = split;
+            }
           }
           i += dir;
         } while (i < nkeys);
 
-        split_indx = best + (dir > 0);
-        split_indx = (split_indx <= nkeys - minkeys + 1) ? split_indx
-                                                         : nkeys - minkeys + 1;
-        split_indx = (split_indx >= minkeys) ? split_indx : minkeys;
+        split_indx = best_split;
         mdbx_trace("chosen %u", split_indx);
       }
+      mdbx_assert(env,
+                  split_indx >= minkeys && split_indx <= nkeys - minkeys + 1);
 
       sepkey.iov_len = newkey->iov_len;
       sepkey.iov_base = newkey->iov_base;
@@ -22990,7 +23001,8 @@ __cold static int mdbx_env_compact(MDBX_env *env, MDBX_txn *read_txn,
       }
       if (rc == MDBX_SUCCESS)
         rc = mdbx_env_cwalk(&ctx, &root, 0);
-      mdbx_env_cthr_toggle(&ctx);
+      if (ctx.mc_wlen[ctx.mc_head & 1])
+        mdbx_env_cthr_toggle(&ctx);
       mdbx_env_cthr_toggle(&ctx);
       thread_err = mdbx_thread_join(thread);
       mdbx_assert(env, (ctx.mc_tail == ctx.mc_head &&
@@ -29383,10 +29395,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         11,
-        8,
+        9,
         0,
-        {"2022-06-12T23:47:18+03:00", "42c5683febaffacc19a4e3e6dbebfffbd9ea92da", "bd80e01eda6f0220dd06a80da838ebbe3efca95c",
-         "v0.11.8-0-gbd80e01e"},
+        {"2022-08-02T12:00:30+03:00", "4938f4a41328ec31aba1a144f0c6e389bd9ae6e3", "e444c70cb719a7d715736f76533939892e230b5c",
+         "v0.11.9-0-ge444c70c"},
         sourcery};
 
 __dll_export

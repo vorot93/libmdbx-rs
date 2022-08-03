@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY e88c2083bb74c3b9e61253604256e2cd7d7c8bdb222d763e82b3b4abad7e4634_v0_11_8_0_gbd80e01e
+#define MDBX_BUILD_SOURCERY 79dcdc042fdfb4f8867db5fb13b26507f6aa08acce010c9b53f39078933b2912_v0_11_9_0_ge444c70c
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -311,6 +311,7 @@
 #endif
 
 #ifdef __APPLE__
+#include <AvailabilityMacros.h>
 #ifndef MAC_OS_X_VERSION_MIN_REQUIRED
 #define MAC_OS_X_VERSION_MIN_REQUIRED 1070 /* Mac OS X 10.7, 2011 */
 #endif
