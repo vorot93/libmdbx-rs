@@ -1,6 +1,6 @@
 [package]
 name = "libmdbx"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 license = "GPL-3.0-only WITH Classpath-exception-2.0"
 description = "Idiomatic and safe MDBX wrapper."
@@ -26,7 +26,7 @@ libc = "0.2"
 parking_lot = "0.12"
 thiserror = "1"
 
-ffi = { package = "mdbx-sys", version = "=0.11.8-0", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "=0.11.9-0", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
