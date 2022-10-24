@@ -356,6 +356,19 @@ where
         Iter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
     }
 
+    /// Iterate over database items starting from the beginning of the database.
+    ///
+    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// duplicate data items of each key will be returned before moving on to
+    /// the next key.
+    pub fn into_iter_start<Key, Value>(self) -> IntoIter<'txn, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        IntoIter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
+    }
+
     /// Iterate over database items starting from the given key.
     ///
     /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
@@ -371,6 +384,23 @@ where
             return Iter::Err(Some(error));
         };
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
+    }
+
+    /// Iterate over database items starting from the given key.
+    ///
+    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// duplicate data items of each key will be returned before moving on to
+    /// the next key.
+    pub fn into_iter_from<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        let res: Result<Option<((), ())>> = self.set_range(key);
+        if let Err(error) = res {
+            return IntoIter::Err(Some(error));
+        };
+        IntoIter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
     }
 
     /// Iterate over duplicate database items. The iterator will begin with the
@@ -424,6 +454,24 @@ where
             Err(error) => return Iter::Err(Some(error)),
         };
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
+    }
+
+    /// Iterate over the duplicates of the item in the database with the given key.
+    pub fn into_iter_dup_of<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
+    where
+        Key: TableObject<'txn>,
+        Value: TableObject<'txn>,
+    {
+        let res: Result<Option<()>> = self.set(key);
+        match res {
+            Ok(Some(_)) => (),
+            Ok(None) => {
+                let _: Result<Option<((), ())>> = self.last();
+                return IntoIter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT);
+            }
+            Err(error) => return IntoIter::Err(Some(error)),
+        };
+        IntoIter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
     }
 }
 
