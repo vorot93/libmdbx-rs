@@ -56,7 +56,7 @@ mod test_utils {
             let index = tx
                 .create_db(None, DatabaseFlags::DUP_SORT)
                 .expect("open index db");
-            tx.put(&index, &HEIGHT_KEY, &value, WriteFlags::empty())
+            tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
                 .expect("tx.put");
             tx.commit().expect("tx.commit");
         }

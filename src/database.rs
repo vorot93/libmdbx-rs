@@ -33,7 +33,7 @@ impl<'txn> Database<'txn> {
             ptr::null()
         };
         let mut dbi: ffi::MDBX_dbi = 0;
-        mdbx_result(txn_execute(&*txn.txn_mutex(), |txn| unsafe {
+        mdbx_result(txn_execute(&txn.txn_mutex(), |txn| unsafe {
             ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi)
         }))?;
         Ok(Self::new_from_ptr(dbi))
