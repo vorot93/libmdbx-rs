@@ -117,8 +117,8 @@ fn test_stat() {
         let tx = env.begin_rw_txn().expect("begin_rw_txn");
         tx.put(
             &tx.open_db(None).unwrap(),
-            &value,
-            &value,
+            value,
+            value,
             WriteFlags::default(),
         )
         .expect("tx.put");
@@ -168,8 +168,8 @@ fn test_freelist() {
         let tx = env.begin_rw_txn().expect("begin_rw_txn");
         tx.put(
             &tx.open_db(None).unwrap(),
-            &value,
-            &value,
+            value,
+            value,
             WriteFlags::default(),
         )
         .expect("tx.put");
