@@ -21,4 +21,4 @@ git add mdbx-sys/libmdbx
 ```
 
 ## License
-The entire code within this repository is licensed under the [GNU General Public License v3 with Classpath exception](LICENSE)
+The entire code within this repository is licensed under the [Mozilla Public License v2.0](./LICENSE)
