@@ -87,6 +87,7 @@ fn main() {
     cc_builder
         .define("MDBX_BUILD_FLAGS", flags.as_str())
         .define("MDBX_TXN_CHECKOWNER", "0")
+        .define("NDEBUG", "1")
         .file(mdbx.join("mdbx.c"))
         .compile("libmdbx.a");
 }
