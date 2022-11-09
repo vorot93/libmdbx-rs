@@ -83,7 +83,16 @@ fn main() {
         .flag_if_supported("-Wbad-function-cast")
         .flag_if_supported("-Wuninitialized");
 
-    let flags = format!("{:?}", cc_builder.get_compiler().cflags_env());
+    let flags = format!(
+        "\"-NDEBUG={} {}\"",
+        u8::from(!cfg!(debug_assertions)),
+        cc_builder
+            .get_compiler()
+            .cflags_env()
+            .to_str()
+            .unwrap()
+            .trim()
+    );
     cc_builder
         .define("MDBX_BUILD_FLAGS", flags.as_str())
         .define("MDBX_TXN_CHECKOWNER", "0")
