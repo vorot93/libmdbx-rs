@@ -3,7 +3,7 @@ use crate::{
     error::{mdbx_result, Error, Result},
     flags::EnvironmentFlags,
     transaction::{RO, RW},
-    Mode, Transaction, TransactionKind,
+    Transaction, TransactionKind,
 };
 use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
@@ -18,9 +18,6 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::Path,
     ptr, result,
-    sync::mpsc::{sync_channel, SyncSender},
-    thread::sleep,
-    time::Duration,
 };
 
 mod private {
@@ -58,29 +55,12 @@ pub(crate) struct EnvPtr(pub *mut ffi::MDBX_env);
 unsafe impl Send for EnvPtr {}
 unsafe impl Sync for EnvPtr {}
 
-pub(crate) enum TxnManagerMessage {
-    Begin {
-        parent: TxnPtr,
-        flags: ffi::MDBX_txn_flags_t,
-        sender: SyncSender<Result<TxnPtr>>,
-    },
-    Abort {
-        tx: TxnPtr,
-        sender: SyncSender<Result<bool>>,
-    },
-    Commit {
-        tx: TxnPtr,
-        sender: SyncSender<Result<bool>>,
-    },
-}
-
 /// An environment supports multiple databases, all residing in the same shared-memory map.
 pub struct Environment<E>
 where
     E: EnvironmentKind,
 {
     env: *mut ffi::MDBX_env,
-    pub(crate) txn_manager: Option<SyncSender<TxnManagerMessage>>,
     _marker: PhantomData<E>,
 }
 
@@ -122,25 +102,17 @@ where
     /// Create a read-write transaction for use with the environment. This method will block while
     /// there are any other read-write transactions open on the environment.
     pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW, E>> {
-        let sender = self.txn_manager.as_ref().ok_or(Error::Access)?;
-        let txn = loop {
-            let (tx, rx) = sync_channel(0);
-            sender
-                .send(TxnManagerMessage::Begin {
-                    parent: TxnPtr(ptr::null_mut()),
-                    flags: RW::OPEN_FLAGS,
-                    sender: tx,
-                })
-                .unwrap();
-            let res = rx.recv().unwrap();
-            if let Err(Error::Busy) = &res {
-                sleep(Duration::from_millis(250));
-                continue;
-            }
-
-            break res;
-        }?;
-        Ok(Transaction::new_from_ptr(self, txn.0))
+        let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
+        mdbx_result(unsafe {
+            ffi::mdbx_txn_begin_ex(
+                self.env,
+                ptr::null_mut(),
+                RW::OPEN_FLAGS,
+                &mut txn,
+                ptr::null_mut(),
+            )
+        })
+        .map(|_| Transaction::new_from_ptr(self, txn))
     }
 
     /// Flush the environment data buffers to disk.
@@ -494,59 +466,10 @@ where
             }
         }
 
-        let mut env = Environment {
+        let env = Environment {
             env,
-            txn_manager: None,
             _marker: PhantomData,
         };
-
-        if let Mode::ReadWrite { .. } = self.flags.mode {
-            let (tx, rx) = std::sync::mpsc::sync_channel(0);
-            let e = EnvPtr(env.env);
-            std::thread::spawn(move || loop {
-                match rx.recv() {
-                    Ok(msg) => match msg {
-                        TxnManagerMessage::Begin {
-                            parent,
-                            flags,
-                            sender,
-                        } => {
-                            let e = e;
-                            let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-                            sender
-                                .send(
-                                    mdbx_result(unsafe {
-                                        ffi::mdbx_txn_begin_ex(
-                                            e.0,
-                                            parent.0,
-                                            flags,
-                                            &mut txn,
-                                            ptr::null_mut(),
-                                        )
-                                    })
-                                    .map(|_| TxnPtr(txn)),
-                                )
-                                .unwrap()
-                        }
-                        TxnManagerMessage::Abort { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
-                                .unwrap();
-                        }
-                        TxnManagerMessage::Commit { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe {
-                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                }))
-                                .unwrap();
-                        }
-                    },
-                    Err(_) => return,
-                }
-            });
-
-            env.txn_manager = Some(tx);
-        }
 
         Ok(env)
     }

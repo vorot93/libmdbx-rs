@@ -1,6 +1,6 @@
 use crate::{
     database::Database,
-    environment::{Environment, EnvironmentKind, NoWriteMap, TxnManagerMessage, TxnPtr},
+    environment::{Environment, EnvironmentKind, NoWriteMap},
     error::{mdbx_result, Result},
     flags::{DatabaseFlags, WriteFlags},
     Cursor, Error, Stat, TableObject,
@@ -9,14 +9,7 @@ use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
 use libc::{c_uint, c_void};
 use parking_lot::Mutex;
-use std::{
-    fmt,
-    fmt::Debug,
-    marker::PhantomData,
-    mem::size_of,
-    ptr, result, slice,
-    sync::{mpsc::sync_channel, Arc},
-};
+use std::{fmt, fmt::Debug, marker::PhantomData, mem::size_of, ptr, result, slice, sync::Arc};
 
 mod private {
     use super::*;
@@ -160,21 +153,7 @@ where
     pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Database<'env>>)> {
         let txnlck = self.txn.lock();
         let txn = *txnlck;
-        let result = if K::ONLY_CLEAN {
-            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
-        } else {
-            let (sender, rx) = sync_channel(0);
-            self.env
-                .txn_manager
-                .as_ref()
-                .unwrap()
-                .send(TxnManagerMessage::Commit {
-                    tx: TxnPtr(txn),
-                    sender,
-                })
-                .unwrap();
-            rx.recv().unwrap()
-        };
+        let result = mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) });
         self.committed = true;
         result.map(|v| {
             (
@@ -418,21 +397,17 @@ impl<'env> Transaction<'env, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
     pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
         txn_execute(&self.txn, |txn| {
-            let (tx, rx) = sync_channel(0);
-            self.env
-                .txn_manager
-                .as_ref()
-                .unwrap()
-                .send(TxnManagerMessage::Begin {
-                    parent: TxnPtr(txn),
-                    flags: RW::OPEN_FLAGS,
-                    sender: tx,
-                })
-                .unwrap();
-
-            rx.recv()
-                .unwrap()
-                .map(|ptr| Transaction::new_from_ptr(self.env, ptr.0))
+            let mut new_txn: *mut ffi::MDBX_txn = ptr::null_mut();
+            mdbx_result(unsafe {
+                ffi::mdbx_txn_begin_ex(
+                    self.env.env(),
+                    txn,
+                    RW::OPEN_FLAGS,
+                    &mut new_txn,
+                    ptr::null_mut(),
+                )
+            })
+            .map(|_| Transaction::new_from_ptr(self.env, new_txn))
         })
     }
 }
@@ -460,17 +435,7 @@ where
                         ffi::mdbx_txn_abort(txn);
                     }
                 } else {
-                    let (sender, rx) = sync_channel(0);
-                    self.env
-                        .txn_manager
-                        .as_ref()
-                        .unwrap()
-                        .send(TxnManagerMessage::Abort {
-                            tx: TxnPtr(txn),
-                            sender,
-                        })
-                        .unwrap();
-                    rx.recv().unwrap().unwrap();
+                    mdbx_result(unsafe { ffi::mdbx_txn_abort(txn) }).unwrap();
                 }
             }
         })
