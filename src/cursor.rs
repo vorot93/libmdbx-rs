@@ -411,7 +411,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_NEXT as u32)
+        IterDup::new(self, ffi::MDBX_NEXT)
     }
 
     /// Iterate over duplicate database items starting from the beginning of the
@@ -421,7 +421,7 @@ where
         Key: TableObject<'txn>,
         Value: TableObject<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_FIRST as u32)
+        IterDup::new(self, ffi::MDBX_FIRST)
     }
 
     /// Iterate over duplicate items in the database starting from the given
@@ -435,7 +435,7 @@ where
         if let Err(error) = res {
             return IterDup::Err(Some(error));
         };
-        IterDup::new(self, ffi::MDBX_GET_CURRENT as u32)
+        IterDup::new(self, ffi::MDBX_GET_CURRENT)
     }
 
     /// Iterate over the duplicates of the item in the database with the given key.
@@ -856,7 +856,7 @@ where
                     iov_len: 0,
                     iov_base: ptr::null_mut(),
                 };
-                let op = mem::replace(op, ffi::MDBX_NEXT_NODUP as u32);
+                let op = mem::replace(op, ffi::MDBX_NEXT_NODUP);
 
                 txn_execute(&cursor.txn, |_| {
                     let err_code =

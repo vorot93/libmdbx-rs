@@ -287,8 +287,8 @@ fn test_concurrent_writers() {
             let db = txn.open_db(None).unwrap();
             txn.put(
                 &db,
-                &format!("{}{}", key, i),
-                &format!("{}{}", val, i),
+                format!("{}{}", key, i),
+                format!("{}{}", val, i),
                 WriteFlags::empty(),
             )
             .unwrap();
