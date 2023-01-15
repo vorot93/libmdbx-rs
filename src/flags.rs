@@ -12,7 +12,7 @@ pub enum SyncMode {
     /// Don't sync the meta-page after commit.
     ///
     /// Flush system buffers to disk only once per transaction commit, omit the metadata flush.
-    /// Defer that until the system flushes files to disk, or next non-read-only commit or [Environment::sync()](crate::Environment::sync).
+    /// Defer that until the system flushes files to disk, or next non-read-only commit or [Database::sync()](crate::Database::sync).
     /// Depending on the platform and hardware, with [SyncMode::NoMetaSync] you may get a doubling of write performance.
     ///
     /// This trade-off maintains database integrity, but a system crash may undo the last committed transaction.
@@ -37,7 +37,7 @@ pub enum SyncMode {
     /// The last steady transaction makes an effect similar to "long-lived" read transaction since prevents reuse of pages freed by newer write transactions, thus the any data changes will be placed in newly allocated pages.
     /// To avoid rapid database growth, the system will sync data and issue a steady commit-point to resume reuse pages, each time there is insufficient space and before increasing the size of the file on disk.
     /// In other words, with [SyncMode::SafeNoSync] flag MDBX protects you from the whole database corruption, at the cost increasing database size and/or number of disk IOPs.
-    /// So, [SyncMode::SafeNoSync] flag could be used with [Environment::sync()](crate::Environment::sync) as alternatively for batch committing or nested transaction (in some cases).
+    /// So, [SyncMode::SafeNoSync] flag could be used with [Database::sync()](crate::Database::sync) as alternatively for batch committing or nested transaction (in some cases).
     ///
     /// The number and volume of of disk IOPs with [SyncMode::SafeNoSync] flag will exactly the as without any no-sync flags.
     /// However, you should expect a larger process's work set and significantly worse a locality of reference, due to the more intensive allocation of previously unused pages and increase the size of the database.
@@ -49,20 +49,20 @@ pub enum SyncMode {
     /// This optimization means a system crash can corrupt the database, if buffers are not yet flushed to disk.
     /// Depending on the platform and hardware, with [SyncMode::UtterlyNoSync] you may get a multiple increase of write performance, even 100 times or more.
     ///
-    /// If the filesystem preserves write order (which is rare and never provided unless explicitly noted) and the [WriteMap](crate::WriteMap) and [EnvironmentFlags::liforeclaim] flags are not used,
+    /// If the filesystem preserves write order (which is rare and never provided unless explicitly noted) and the [WriteMap](crate::WriteMap) and [DatabaseFlags::liforeclaim] flags are not used,
     /// then a system crash can't corrupt the database, but you can lose the last transactions, if at least one buffer is not yet flushed to disk.
-    /// The risk is governed by how often the system flushes dirty buffers to disk and how often [Environment::sync()](crate::Environment::sync) is called.
+    /// The risk is governed by how often the system flushes dirty buffers to disk and how often [Database::sync()](crate::Database::sync) is called.
     /// So, transactions exhibit ACI (atomicity, consistency, isolation) properties and only lose D (durability).
     /// I.e. database integrity is maintained, but a system crash may undo the final transactions.
     ///
-    /// Otherwise, if the filesystem not preserves write order (which is typically) or [WriteMap](crate::WriteMap) or [EnvironmentFlags::liforeclaim] flags are used, you should expect the corrupted database after a system crash.
+    /// Otherwise, if the filesystem not preserves write order (which is typically) or [WriteMap](crate::WriteMap) or [DatabaseFlags::liforeclaim] flags are used, you should expect the corrupted database after a system crash.
     ///
     /// So, most important thing about [SyncMode::UtterlyNoSync]:
     ///
     /// A system crash immediately after commit the write transaction high likely lead to database corruption.
-    /// Successful completion of [Environment::sync(force=true)](crate::Environment::sync) after one or more committed transactions guarantees consistency and durability.
+    /// Successful completion of [Database::sync(force=true)](crate::Database::sync) after one or more committed transactions guarantees consistency and durability.
     /// BUT by committing two or more transactions you back database into a weak state, in which a system crash may lead to database corruption!
-    /// In case single transaction after [Environment::sync()](crate::Environment::sync), you may lose transaction itself, but not a whole database.
+    /// In case single transaction after [Database::sync()](crate::Database::sync), you may lose transaction itself, but not a whole database.
     /// Nevertheless, [SyncMode::UtterlyNoSync] provides "weak" durability in case of an application crash (but no durability on system failure),
     /// and therefore may be very useful in scenarios where data durability is not required over a system failure (e.g for short-lived data), or if you can take such risk.
     UtterlyNoSync,
@@ -88,7 +88,7 @@ impl Default for Mode {
     }
 }
 
-impl From<Mode> for EnvironmentFlags {
+impl From<Mode> for DatabaseFlags {
     fn from(mode: Mode) -> Self {
         Self {
             mode,
@@ -98,7 +98,7 @@ impl From<Mode> for EnvironmentFlags {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct EnvironmentFlags {
+pub struct DatabaseFlags {
     pub no_sub_dir: bool,
     pub exclusive: bool,
     pub accede: bool,
@@ -109,7 +109,7 @@ pub struct EnvironmentFlags {
     pub liforeclaim: bool,
 }
 
-impl EnvironmentFlags {
+impl DatabaseFlags {
     pub(crate) fn make_flags(&self) -> ffi::MDBX_env_flags_t {
         let mut flags = 0;
 

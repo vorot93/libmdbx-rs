@@ -4,9 +4,9 @@
 pub use crate::{
     codec::*,
     cursor::{Cursor, Iter, IterDup},
-    environment::{
-        Environment, EnvironmentBuilder, EnvironmentKind, Geometry, Info, NoWriteMap, PageSize,
-        Stat, WriteMap,
+    database::{
+        Database, DatabaseBuilder, DatabaseKind, Geometry, Info, NoWriteMap, PageSize, Stat,
+        WriteMap,
     },
     error::{Error, Result},
     flags::*,
@@ -16,7 +16,7 @@ pub use crate::{
 
 mod codec;
 mod cursor;
-mod environment;
+mod database;
 mod error;
 mod flags;
 mod table;
@@ -28,7 +28,7 @@ mod test_utils {
     use byteorder::{ByteOrder, LittleEndian};
     use tempfile::tempdir;
 
-    type Environment = crate::Environment<NoWriteMap>;
+    type Database = crate::Database<NoWriteMap>;
 
     /// Regression test for https://github.com/danburkert/lmdb-rs/issues/21.
     /// This test reliably segfaults when run against lmbdb compiled with opt level -O3 and newer
@@ -39,8 +39,8 @@ mod test_utils {
 
         let dir = tempdir().unwrap();
 
-        let env = {
-            let mut builder = Environment::new();
+        let db = {
+            let mut builder = Database::new();
             builder.set_max_tables(2);
             builder.set_geometry(Geometry {
                 size: Some(1_000_000..1_000_000),
@@ -52,7 +52,7 @@ mod test_utils {
         for height in 0..1000 {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, height);
-            let tx = env.begin_rw_txn().unwrap();
+            let tx = db.begin_rw_txn().unwrap();
             let index = tx.create_table(None, TableFlags::DUP_SORT).unwrap();
             tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
                 .unwrap();

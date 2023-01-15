@@ -1,5 +1,5 @@
 use crate::{
-    environment::{Environment, EnvironmentKind, NoWriteMap, TxnManagerMessage, TxnPtr},
+    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
     flags::{TableFlags, WriteFlags},
     table::Table,
@@ -52,43 +52,43 @@ impl TransactionKind for RW {
 /// An MDBX transaction.
 ///
 /// All table operations require a transaction.
-pub struct Transaction<'env, K, E>
+pub struct Transaction<'db, K, E>
 where
     K: TransactionKind,
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     txn: Arc<Mutex<*mut ffi::MDBX_txn>>,
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
-    env: &'env Environment<E>,
+    db: &'db Database<E>,
     _marker: PhantomData<fn(K)>,
 }
 
-impl<'env, K, E> Transaction<'env, K, E>
+impl<'db, K, E> Transaction<'db, K, E>
 where
     K: TransactionKind,
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
-    pub(crate) fn new(env: &'env Environment<E>) -> Result<Self> {
+    pub(crate) fn new(db: &'db Database<E>) -> Result<Self> {
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_txn_begin_ex(
-                env.env(),
+                db.ptr(),
                 ptr::null_mut(),
                 K::OPEN_FLAGS,
                 &mut txn,
                 ptr::null_mut(),
             ))?;
-            Ok(Self::new_from_ptr(env, txn))
+            Ok(Self::new_from_ptr(db, txn))
         }
     }
 
-    pub(crate) fn new_from_ptr(env: &'env Environment<E>, txn: *mut ffi::MDBX_txn) -> Self {
+    pub(crate) fn new_from_ptr(db: &'db Database<E>, txn: *mut ffi::MDBX_txn) -> Self {
         Self {
             txn: Arc::new(Mutex::new(txn)),
             primed_dbis: Mutex::new(IndexSet::new()),
             committed: false,
-            env,
+            db,
             _marker: PhantomData,
         }
     }
@@ -105,9 +105,9 @@ where
         *self.txn.lock()
     }
 
-    /// Returns a raw pointer to the MDBX environment.
-    pub fn env(&self) -> &Environment<E> {
-        self.env
+    /// Returns a raw pointer to the MDBX database.
+    pub fn db(&self) -> &Database<E> {
+        self.db
     }
 
     /// Returns the transaction id.
@@ -156,15 +156,15 @@ where
         self.primed_dbis.lock().insert(table.dbi());
     }
 
-    /// Commits the transaction and returns table handles permanently open for the lifetime of `Environment`.
-    pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'env>>)> {
+    /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
+    pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'db>>)> {
         let txnlck = self.txn.lock();
         let txn = *txnlck;
         let result = if K::ONLY_CLEAN {
             mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
         } else {
             let (sender, rx) = sync_channel(0);
-            self.env
+            self.db
                 .txn_manager
                 .as_ref()
                 .unwrap()
@@ -193,10 +193,10 @@ where
     /// If `name` is [None], then the returned handle will be for the default table.
     ///
     /// If `name` is not [None], then the returned handle will be for a named table. In this
-    /// case the environment must be configured to allow named tables through
-    /// [EnvironmentBuilder::set_max_tables()](crate::EnvironmentBuilder::set_max_tables).
+    /// case the database must be configured to allow named tables through
+    /// [DatabaseBuilder::set_max_tables()](crate::DatabaseBuilder::set_max_tables).
     ///
-    /// The returned table handle may be shared among any transaction in the environment.
+    /// The returned table handle may be shared among any transaction in the database.
     ///
     /// The table name may not contain the null character.
     pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
@@ -239,9 +239,9 @@ pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(
     (f)(*lck)
 }
 
-impl<'env, E> Transaction<'env, RW, E>
+impl<'db, E> Transaction<'db, RW, E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     fn open_table_with_flags<'txn>(
         &'txn self,
@@ -258,8 +258,8 @@ where
     /// If `name` is [None], then the returned handle will be for the default table.
     ///
     /// If `name` is not [None], then the returned handle will be for a named table. In this
-    /// case the environment must be configured to allow named tables through
-    /// [EnvironmentBuilder::set_max_tables()](crate::EnvironmentBuilder::set_max_tables).
+    /// case the database must be configured to allow named tables through
+    /// [DatabaseBuilder::set_max_tables()](crate::DatabaseBuilder::set_max_tables).
     ///
     /// This function will fail with [Error::BadRslot](crate::error::Error::BadRslot) if called by a thread with an open
     /// transaction.
@@ -386,7 +386,7 @@ where
         Ok(())
     }
 
-    /// Drops the table from the environment.
+    /// Drops the table from the database.
     ///
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
@@ -399,27 +399,27 @@ where
     }
 }
 
-impl<'env, E> Transaction<'env, RO, E>
+impl<'db, E> Transaction<'db, RO, E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     /// Closes the table handle.
     ///
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn close_table(&self, table: Table<'_>) -> Result<()> {
-        mdbx_result(ffi::mdbx_dbi_close(self.env.env(), table.dbi()))?;
+        mdbx_result(ffi::mdbx_dbi_close(self.db.ptr(), table.dbi()))?;
 
         Ok(())
     }
 }
 
-impl<'env> Transaction<'env, RW, NoWriteMap> {
+impl<'db> Transaction<'db, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
     pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
         txn_execute(&self.txn, |txn| {
             let (tx, rx) = sync_channel(0);
-            self.env
+            self.db
                 .txn_manager
                 .as_ref()
                 .unwrap()
@@ -432,25 +432,25 @@ impl<'env> Transaction<'env, RW, NoWriteMap> {
 
             rx.recv()
                 .unwrap()
-                .map(|ptr| Transaction::new_from_ptr(self.env, ptr.0))
+                .map(|ptr| Transaction::new_from_ptr(self.db, ptr.0))
         })
     }
 }
 
-impl<'env, K, E> fmt::Debug for Transaction<'env, K, E>
+impl<'db, K, E> fmt::Debug for Transaction<'db, K, E>
 where
     K: TransactionKind,
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("RoTransaction").finish()
     }
 }
 
-impl<'env, K, E> Drop for Transaction<'env, K, E>
+impl<'db, K, E> Drop for Transaction<'db, K, E>
 where
     K: TransactionKind,
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     fn drop(&mut self) {
         txn_execute(&self.txn, |txn| {
@@ -461,7 +461,7 @@ where
                     }
                 } else {
                     let (sender, rx) = sync_channel(0);
-                    self.env
+                    self.db
                         .txn_manager
                         .as_ref()
                         .unwrap()
@@ -477,16 +477,16 @@ where
     }
 }
 
-unsafe impl<'env, K, E> Send for Transaction<'env, K, E>
+unsafe impl<'db, K, E> Send for Transaction<'db, K, E>
 where
     K: TransactionKind,
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
 }
 
-unsafe impl<'env, K, E> Sync for Transaction<'env, K, E>
+unsafe impl<'db, K, E> Sync for Transaction<'db, K, E>
 where
     K: TransactionKind,
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
 }

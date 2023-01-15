@@ -1,4 +1,4 @@
-use libmdbx::{Environment, NoWriteMap, WriteFlags};
+use libmdbx::{Database, NoWriteMap, WriteFlags};
 use tempfile::{tempdir, TempDir};
 
 pub fn get_key(n: u32) -> String {
@@ -9,12 +9,12 @@ pub fn get_data(n: u32) -> String {
     format!("data{}", n)
 }
 
-pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment<NoWriteMap>) {
+pub fn setup_bench_db(num_rows: u32) -> (TempDir, Database<NoWriteMap>) {
     let dir = tempdir().unwrap();
-    let env = Environment::new().open(dir.path()).unwrap();
+    let db = Database::new().open(dir.path()).unwrap();
 
     {
-        let txn = env.begin_rw_txn().unwrap();
+        let txn = db.begin_rw_txn().unwrap();
         let table = txn.open_table(None).unwrap();
         for i in 0..num_rows {
             txn.put(&table, get_key(i), get_data(i), WriteFlags::empty())
@@ -22,5 +22,5 @@ pub fn setup_bench_db(num_rows: u32) -> (TempDir, Environment<NoWriteMap>) {
         }
         txn.commit().unwrap();
     }
-    (dir, env)
+    (dir, db)
 }

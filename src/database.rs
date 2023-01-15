@@ -1,6 +1,6 @@
 use crate::{
     error::{mdbx_result, Error, Result},
-    flags::EnvironmentFlags,
+    flags::DatabaseFlags,
     table::Table,
     transaction::{RO, RW},
     Mode, Transaction, TransactionKind,
@@ -32,7 +32,7 @@ mod private {
     impl Sealed for WriteMap {}
 }
 
-pub trait EnvironmentKind: private::Sealed + Debug + 'static {
+pub trait DatabaseKind: private::Sealed + Debug + 'static {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
 }
 
@@ -41,10 +41,10 @@ pub struct NoWriteMap;
 #[derive(Debug)]
 pub struct WriteMap;
 
-impl EnvironmentKind for NoWriteMap {
+impl DatabaseKind for NoWriteMap {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_ENV_DEFAULTS;
 }
-impl EnvironmentKind for WriteMap {
+impl DatabaseKind for WriteMap {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_WRITEMAP;
 }
 
@@ -75,24 +75,24 @@ pub(crate) enum TxnManagerMessage {
 }
 
 /// An environment supports multiple tables, all residing in the same shared-memory map.
-pub struct Environment<E>
+pub struct Database<E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
-    env: *mut ffi::MDBX_env,
+    db: *mut ffi::MDBX_env,
     pub(crate) txn_manager: Option<SyncSender<TxnManagerMessage>>,
     _marker: PhantomData<E>,
 }
 
-impl<E> Environment<E>
+impl<E> Database<E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     /// Creates a new builder for specifying options for opening an MDBX environment.
     #[allow(clippy::new_ret_no_self)]
-    pub fn new() -> EnvironmentBuilder<E> {
-        EnvironmentBuilder {
-            flags: EnvironmentFlags::default(),
+    pub fn new() -> DatabaseBuilder<E> {
+        DatabaseBuilder {
+            flags: DatabaseFlags::default(),
             max_readers: None,
             max_tables: None,
             rp_augment_limit: None,
@@ -110,8 +110,8 @@ where
     ///
     /// The caller **must** ensure that the pointer is not dereferenced after the lifetime of the
     /// environment.
-    pub fn env(&self) -> *mut ffi::MDBX_env {
-        self.env
+    pub fn ptr(&self) -> *mut ffi::MDBX_env {
+        self.db
     }
 
     /// Create a read-only transaction for use with the environment.
@@ -145,7 +145,7 @@ where
 
     /// Flush the environment data buffers to disk.
     pub fn sync(&self, force: bool) -> Result<bool> {
-        mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.env(), force, false) })
+        mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.ptr(), force, false) })
     }
 
     /// Retrieves statistics about this environment.
@@ -153,7 +153,7 @@ where
         unsafe {
             let mut stat = Stat::new();
             mdbx_result(ffi::mdbx_env_stat_ex(
-                self.env(),
+                self.ptr(),
                 ptr::null(),
                 stat.mdb_stat(),
                 size_of::<Stat>(),
@@ -167,7 +167,7 @@ where
         unsafe {
             let mut info = Info(mem::zeroed());
             mdbx_result(ffi::mdbx_env_info_ex(
-                self.env(),
+                self.ptr(),
                 ptr::null(),
                 &mut info.0,
                 size_of::<Info>(),
@@ -178,17 +178,17 @@ where
 
     /// Retrieves the total number of pages on the freelist.
     ///
-    /// Along with [Environment::info()], this can be used to calculate the exact number
-    /// of used pages as well as free pages in this environment.
+    /// Along with [Database::info()], this can be used to calculate the exact number
+    /// of used pages as well as free pages in this database.
     ///
     /// ```
-    /// # use libmdbx::Environment;
+    /// # use libmdbx::Database;
     /// # use libmdbx::NoWriteMap;
     /// let dir = tempfile::tempdir().unwrap();
-    /// let env = Environment::<NoWriteMap>::new().open(dir.path()).unwrap();
-    /// let info = env.info().unwrap();
-    /// let stat = env.stat().unwrap();
-    /// let freelist = env.freelist().unwrap();
+    /// let db = Database::<NoWriteMap>::new().open(dir.path()).unwrap();
+    /// let info = db.info().unwrap();
+    /// let stat = db.stat().unwrap();
+    /// let freelist = db.freelist().unwrap();
     /// let last_pgno = info.last_pgno() + 1; // pgno is 0 based.
     /// let total_pgs = info.map_size() / stat.page_size() as usize;
     /// let pgs_in_use = last_pgno - freelist;
@@ -197,7 +197,7 @@ where
     ///
     /// Note:
     ///
-    /// * LMDB stores all the freelists in the designated table 0 in each environment,
+    /// * MDBX stores all the freelists in the designated table 0 in each database,
     ///   and the freelist count is stored at the beginning of the value as `libc::size_t`
     ///   in the native byte order.
     ///
@@ -333,25 +333,25 @@ impl Info {
     }
 }
 
-unsafe impl<E> Send for Environment<E> where E: EnvironmentKind {}
-unsafe impl<E> Sync for Environment<E> where E: EnvironmentKind {}
+unsafe impl<E> Send for Database<E> where E: DatabaseKind {}
+unsafe impl<E> Sync for Database<E> where E: DatabaseKind {}
 
-impl<E> fmt::Debug for Environment<E>
+impl<E> fmt::Debug for Database<E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         f.debug_struct("Environment").finish()
     }
 }
 
-impl<E> Drop for Environment<E>
+impl<E> Drop for Database<E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     fn drop(&mut self) {
         unsafe {
-            ffi::mdbx_env_close_ex(self.env, false);
+            ffi::mdbx_env_close_ex(self.db, false);
         }
     }
 }
@@ -387,11 +387,11 @@ impl<R> Default for Geometry<R> {
 
 /// Options for opening or creating an environment.
 #[derive(Debug, Clone)]
-pub struct EnvironmentBuilder<E>
+pub struct DatabaseBuilder<E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
-    flags: EnvironmentFlags,
+    flags: DatabaseFlags,
     max_readers: Option<c_uint>,
     max_tables: Option<u64>,
     rp_augment_limit: Option<u64>,
@@ -404,14 +404,14 @@ where
     _marker: PhantomData<E>,
 }
 
-impl<E> EnvironmentBuilder<E>
+impl<E> DatabaseBuilder<E>
 where
-    E: EnvironmentKind,
+    E: DatabaseKind,
 {
     /// Open an environment.
     ///
     /// Database files will be opened with 644 permissions.
-    pub fn open(&self, path: &Path) -> Result<Environment<E>> {
+    pub fn open(&self, path: &Path) -> Result<Database<E>> {
         self.open_with_permissions(path, 0o644)
     }
 
@@ -422,7 +422,7 @@ where
         &self,
         path: &Path,
         mode: ffi::mdbx_mode_t,
-    ) -> Result<Environment<E>> {
+    ) -> Result<Database<E>> {
         let mut env: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_env_create(&mut env))?;
@@ -494,15 +494,15 @@ where
             }
         }
 
-        let mut env = Environment {
-            env,
+        let mut db = Database {
+            db: env,
             txn_manager: None,
             _marker: PhantomData,
         };
 
         if let Mode::ReadWrite { .. } = self.flags.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
-            let e = EnvPtr(env.env);
+            let e = EnvPtr(db.db);
             std::thread::spawn(move || loop {
                 match rx.recv() {
                     Ok(msg) => match msg {
@@ -545,14 +545,14 @@ where
                 }
             });
 
-            env.txn_manager = Some(tx);
+            db.txn_manager = Some(tx);
         }
 
-        Ok(env)
+        Ok(db)
     }
 
     /// Sets the provided options in the environment.
-    pub fn set_flags(&mut self, flags: EnvironmentFlags) -> &mut Self {
+    pub fn set_flags(&mut self, flags: DatabaseFlags) -> &mut Self {
         self.flags = flags;
         self
     }

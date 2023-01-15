@@ -4,7 +4,7 @@ use crate::{
     mdbx_try_optional,
     table::Table,
     transaction::{txn_execute, TransactionKind, RW},
-    EnvironmentKind, TableObject, Transaction,
+    DatabaseKind, TableObject, Transaction,
 };
 use ffi::{
     MDBX_cursor_op, MDBX_FIRST, MDBX_FIRST_DUP, MDBX_GET_BOTH, MDBX_GET_BOTH_RANGE,
@@ -30,7 +30,7 @@ impl<'txn, K> Cursor<'txn, K>
 where
     K: TransactionKind,
 {
-    pub(crate) fn new<E: EnvironmentKind>(
+    pub(crate) fn new<E: DatabaseKind>(
         txn: &'txn Transaction<K, E>,
         table: &Table<'txn>,
     ) -> Result<Self> {

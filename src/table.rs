@@ -1,5 +1,5 @@
 use crate::{
-    environment::EnvironmentKind,
+    database::DatabaseKind,
     error::{mdbx_result, Result},
     transaction::{txn_execute, TransactionKind},
     Transaction,
@@ -7,9 +7,9 @@ use crate::{
 use libc::c_uint;
 use std::{ffi::CString, marker::PhantomData, ptr};
 
-/// A handle to an individual table in an environment.
+/// A handle to an individual table in a database.
 ///
-/// A table handle denotes the name and parameters of a table in an environment.
+/// A table handle denotes the name and parameters of a table in a database.
 #[derive(Debug)]
 pub struct Table<'txn> {
     dbi: ffi::MDBX_dbi,
@@ -17,8 +17,8 @@ pub struct Table<'txn> {
 }
 
 impl<'txn> Table<'txn> {
-    pub(crate) fn new<'env, K: TransactionKind, E: EnvironmentKind>(
-        txn: &'txn Transaction<'env, K, E>,
+    pub(crate) fn new<'db, K: TransactionKind, E: DatabaseKind>(
+        txn: &'txn Transaction<'db, K, E>,
         name: Option<&str>,
         flags: c_uint,
     ) -> Result<Self> {
@@ -52,7 +52,7 @@ impl<'txn> Table<'txn> {
     /// Returns the underlying MDBX table handle (dbi).
     ///
     /// The caller **must** ensure that the handle is not used after the lifetime of the
-    /// environment, or after the table has been closed.
+    /// database, or after the table has been closed.
     pub fn dbi(&self) -> ffi::MDBX_dbi {
         self.dbi
     }

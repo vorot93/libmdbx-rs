@@ -9,8 +9,8 @@ use utils::*;
 /// Benchmark of iterator sequential read performance.
 fn bench_get_seq_iter(c: &mut Criterion) {
     let n = 100;
-    let (_dir, env) = setup_bench_db(n);
-    let txn = env.begin_ro_txn().unwrap();
+    let (_dir, db) = setup_bench_db(n);
+    let txn = db.begin_ro_txn().unwrap();
     let table = txn.open_table(None).unwrap();
 
     c.bench_function("bench_get_seq_iter", |b| {
@@ -53,8 +53,8 @@ fn bench_get_seq_iter(c: &mut Criterion) {
 /// Benchmark of cursor sequential read performance.
 fn bench_get_seq_cursor(c: &mut Criterion) {
     let n = 100;
-    let (_dir, env) = setup_bench_db(n);
-    let txn = env.begin_ro_txn().unwrap();
+    let (_dir, db) = setup_bench_db(n);
+    let txn = db.begin_ro_txn().unwrap();
     let table = txn.open_table(None).unwrap();
 
     c.bench_function("bench_get_seq_cursor", |b| {
@@ -77,10 +77,10 @@ fn bench_get_seq_cursor(c: &mut Criterion) {
 /// Benchmark of raw MDBX sequential read performance (control).
 fn bench_get_seq_raw(c: &mut Criterion) {
     let n = 100;
-    let (_dir, env) = setup_bench_db(n);
+    let (_dir, db) = setup_bench_db(n);
 
-    let dbi = env.begin_ro_txn().unwrap().open_table(None).unwrap().dbi();
-    let _txn = env.begin_ro_txn().unwrap();
+    let dbi = db.begin_ro_txn().unwrap().open_table(None).unwrap().dbi();
+    let _txn = db.begin_ro_txn().unwrap();
     let txn = _txn.txn();
 
     let mut key = MDBX_val {
