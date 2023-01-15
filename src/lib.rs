@@ -46,19 +46,17 @@ mod test_utils {
                 size: Some(1_000_000..1_000_000),
                 ..Default::default()
             });
-            builder.open(dir.path()).expect("open mdbx env")
+            builder.open(dir.path()).unwrap()
         };
 
         for height in 0..1000 {
             let mut value = [0u8; 8];
             LittleEndian::write_u64(&mut value, height);
-            let tx = env.begin_rw_txn().expect("begin_rw_txn");
-            let index = tx
-                .create_table(None, TableFlags::DUP_SORT)
-                .expect("open index table");
+            let tx = env.begin_rw_txn().unwrap();
+            let index = tx.create_table(None, TableFlags::DUP_SORT).unwrap();
             tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
-                .expect("tx.put");
-            tx.commit().expect("tx.commit");
+                .unwrap();
+            tx.commit().unwrap();
         }
     }
 }

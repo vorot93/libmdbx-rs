@@ -16,19 +16,22 @@ fn test_put_get_del() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val3", WriteFlags::empty())
-        .unwrap();
+
+    let data = [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")];
+
+    for (k, v) in data {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
     txn.commit().unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    assert_eq!(txn.get(&table, b"key1").unwrap(), Some(*b"val1"));
-    assert_eq!(txn.get(&table, b"key2").unwrap(), Some(*b"val2"));
-    assert_eq!(txn.get(&table, b"key3").unwrap(), Some(*b"val3"));
+
+    for (k, v) in data {
+        assert_eq!(txn.get(&table, k).unwrap(), Some(*v));
+        assert_eq!(txn.get(&table, k).unwrap(), Some(*v));
+        assert_eq!(txn.get(&table, k).unwrap(), Some(*v));
+    }
     assert_eq!(txn.get::<()>(&table, b"key").unwrap(), None);
 
     txn.del(&table, b"key1", None).unwrap();
@@ -42,24 +45,19 @@ fn test_put_get_del_multi() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val3", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val3", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val3", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [
+        (b"key1", b"val1"),
+        (b"key1", b"val2"),
+        (b"key1", b"val3"),
+        (b"key2", b"val1"),
+        (b"key2", b"val2"),
+        (b"key2", b"val3"),
+        (b"key3", b"val1"),
+        (b"key3", b"val2"),
+        (b"key3", b"val3"),
+    ] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
     txn.commit().unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
@@ -74,8 +72,9 @@ fn test_put_get_del_multi() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    txn.del(&table, b"key1", Some(b"val2")).unwrap();
-    txn.del(&table, b"key2", None).unwrap();
+    for (k, v) in [(b"key1", Some(b"val2" as &[u8])), (b"key2", None)] {
+        txn.del(&table, k, v).unwrap();
+    }
     txn.commit().unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
@@ -338,12 +337,9 @@ fn test_stat() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::empty()).unwrap();
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val3", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
     txn.commit().unwrap();
 
     {
@@ -355,8 +351,9 @@ fn test_stat() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    txn.del(&table, b"key1", None).unwrap();
-    txn.del(&table, b"key2", None).unwrap();
+    for k in [b"key1", b"key2"] {
+        txn.del(&table, k, None).unwrap();
+    }
     txn.commit().unwrap();
 
     {
@@ -368,12 +365,9 @@ fn test_stat() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    txn.put(&table, b"key4", b"val4", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key5", b"val5", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key6", b"val6", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [(b"key4", b"val4"), (b"key5", b"val5"), (b"key6", b"val6")] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
     txn.commit().unwrap();
 
     {
@@ -391,24 +385,19 @@ fn test_stat_dupsort() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val3", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val3", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val3", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [
+        (b"key1", b"val1"),
+        (b"key1", b"val2"),
+        (b"key1", b"val3"),
+        (b"key2", b"val1"),
+        (b"key2", b"val2"),
+        (b"key2", b"val3"),
+        (b"key3", b"val1"),
+        (b"key3", b"val2"),
+        (b"key3", b"val3"),
+    ] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
     txn.commit().unwrap();
 
     {
@@ -419,8 +408,9 @@ fn test_stat_dupsort() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    txn.del(&table, b"key1", Some(b"val2")).unwrap();
-    txn.del(&table, b"key2", None).unwrap();
+    for (k, v) in [(b"key1", Some(b"val2" as &[u8])), (b"key2", None)] {
+        txn.del(&table, k, v).unwrap();
+    }
     txn.commit().unwrap();
 
     {
@@ -431,12 +421,9 @@ fn test_stat_dupsort() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    txn.put(&table, b"key4", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key4", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key4", b"val3", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [(b"key4", b"val1"), (b"key4", b"val2"), (b"key4", b"val3")] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
     txn.commit().unwrap();
 
     {

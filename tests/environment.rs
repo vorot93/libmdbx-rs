@@ -121,15 +121,15 @@ fn test_stat() {
     for i in 0..64 {
         let mut value = [0u8; 8];
         LittleEndian::write_u64(&mut value, i);
-        let tx = env.begin_rw_txn().expect("begin_rw_txn");
+        let tx = env.begin_rw_txn().unwrap();
         tx.put(
             &tx.open_table(None).unwrap(),
             value,
             value,
             WriteFlags::default(),
         )
-        .expect("tx.put");
-        tx.commit().expect("tx.commit");
+        .unwrap();
+        tx.commit().unwrap();
     }
 
     // Stats should now reflect inserted values.
@@ -172,20 +172,19 @@ fn test_freelist() {
     for i in 0..64 {
         let mut value = [0u8; 8];
         LittleEndian::write_u64(&mut value, i);
-        let tx = env.begin_rw_txn().expect("begin_rw_txn");
+        let tx = env.begin_rw_txn().unwrap();
         tx.put(
             &tx.open_table(None).unwrap(),
             value,
             value,
             WriteFlags::default(),
         )
-        .expect("tx.put");
-        tx.commit().expect("tx.commit");
+        .unwrap();
+        tx.commit().unwrap();
     }
-    let tx = env.begin_rw_txn().expect("begin_rw_txn");
-    tx.clear_table(&tx.open_table(None).unwrap())
-        .expect("clear");
-    tx.commit().expect("tx.commit");
+    let tx = env.begin_rw_txn().unwrap();
+    tx.clear_table(&tx.open_table(None).unwrap()).unwrap();
+    tx.commit().unwrap();
 
     // Freelist should not be empty after clear_table.
     freelist = env.freelist().unwrap();

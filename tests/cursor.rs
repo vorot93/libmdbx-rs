@@ -14,12 +14,9 @@ fn test_get() {
 
     assert_eq!(None, txn.cursor(&table).unwrap().first::<(), ()>().unwrap());
 
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key3", b"val3", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
 
     let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
@@ -42,18 +39,16 @@ fn test_get_dup() {
 
     let txn = env.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val3", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val3", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [
+        (b"key1", b"val1"),
+        (b"key1", b"val2"),
+        (b"key1", b"val3"),
+        (b"key2", b"val1"),
+        (b"key2", b"val2"),
+        (b"key2", b"val3"),
+    ] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
 
     let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
@@ -82,13 +77,15 @@ fn test_get_dup() {
         Some(*b"val1")
     );
 
-    assert_eq!(cursor.last().unwrap(), Some((*b"key2", *b"val3")));
-    cursor.del(WriteFlags::empty()).unwrap();
-    assert_eq!(cursor.last().unwrap(), Some((*b"key2", *b"val2")));
-    cursor.del(WriteFlags::empty()).unwrap();
-    assert_eq!(cursor.last().unwrap(), Some((*b"key2", *b"val1")));
-    cursor.del(WriteFlags::empty()).unwrap();
-    assert_eq!(cursor.last().unwrap(), Some((*b"key1", *b"val3")));
+    for kv in [
+        (*b"key2", *b"val3"),
+        (*b"key2", *b"val2"),
+        (*b"key2", *b"val1"),
+        (*b"key1", *b"val3"),
+    ] {
+        assert_eq!(cursor.last().unwrap(), Some(kv));
+        cursor.del(WriteFlags::empty()).unwrap();
+    }
 }
 
 #[test]
@@ -100,18 +97,16 @@ fn test_get_dupfixed() {
     let table = txn
         .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
         .unwrap();
-    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val2", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key1", b"val3", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val4", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val5", WriteFlags::empty())
-        .unwrap();
-    txn.put(&table, b"key2", b"val6", WriteFlags::empty())
-        .unwrap();
+    for (k, v) in [
+        (b"key1", b"val1"),
+        (b"key1", b"val2"),
+        (b"key1", b"val3"),
+        (b"key2", b"val1"),
+        (b"key2", b"val2"),
+        (b"key2", b"val3"),
+    ] {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
 
     let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
@@ -124,7 +119,7 @@ fn test_iter() {
     let dir = tempdir().unwrap();
     let env = Environment::new().open(dir.path()).unwrap();
 
-    let items: Vec<(_, _)> = vec![
+    let items = vec![
         (*b"key1", *b"val1"),
         (*b"key2", *b"val2"),
         (*b"key3", *b"val3"),
@@ -238,7 +233,7 @@ fn test_iter_dup() {
     txn.create_table(None, TableFlags::DUP_SORT).unwrap();
     txn.commit().unwrap();
 
-    let items: Vec<(_, _)> = [
+    let items = [
         (b"a", b"1"),
         (b"a", b"2"),
         (b"a", b"3"),
@@ -254,7 +249,7 @@ fn test_iter_dup() {
     ]
     .iter()
     .map(|&(&k, &v)| (k, v))
-    .collect();
+    .collect::<Vec<_>>();
 
     {
         let txn = env.begin_rw_txn().unwrap();
@@ -431,9 +426,9 @@ fn test_put_del() {
     let table = txn.open_table(None).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
 
-    cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
-    cursor.put(b"key2", b"val2", WriteFlags::empty()).unwrap();
-    cursor.put(b"key3", b"val3", WriteFlags::empty()).unwrap();
+    for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {
+        cursor.put(k, v, WriteFlags::empty()).unwrap();
+    }
 
     assert_eq!(
         cursor.get_current().unwrap().unwrap(),
