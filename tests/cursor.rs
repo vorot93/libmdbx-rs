@@ -10,15 +10,18 @@ fn test_get() {
     let env = Environment::new().open(dir.path()).unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
+    let table = txn.open_table(None).unwrap();
 
-    assert_eq!(None, txn.cursor(&db).unwrap().first::<(), ()>().unwrap());
+    assert_eq!(None, txn.cursor(&table).unwrap().first::<(), ()>().unwrap());
 
-    txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key3", b"val3", WriteFlags::empty()).unwrap();
+    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key3", b"val3", WriteFlags::empty())
+        .unwrap();
 
-    let mut cursor = txn.cursor(&db).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
     assert_eq!(cursor.get_current().unwrap(), Some((*b"key1", *b"val1")));
     assert_eq!(cursor.next().unwrap(), Some((*b"key2", *b"val2")));
@@ -38,15 +41,21 @@ fn test_get_dup() {
     let env = Environment::new().open(dir.path()).unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
-    txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val1", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val2", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val3", WriteFlags::empty()).unwrap();
+    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key1", b"val2", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key1", b"val3", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val1", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val2", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val3", WriteFlags::empty())
+        .unwrap();
 
-    let mut cursor = txn.cursor(&db).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
     assert_eq!(cursor.first_dup().unwrap(), Some(*b"val1"));
     assert_eq!(cursor.get_current().unwrap(), Some((*b"key1", *b"val1")));
@@ -88,17 +97,23 @@ fn test_get_dupfixed() {
     let env = Environment::new().open(dir.path()).unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    let db = txn
-        .create_db(None, DatabaseFlags::DUP_SORT | DatabaseFlags::DUP_FIXED)
+    let table = txn
+        .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
         .unwrap();
-    txn.put(&db, b"key1", b"val1", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key1", b"val2", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key1", b"val3", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val4", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val5", WriteFlags::empty()).unwrap();
-    txn.put(&db, b"key2", b"val6", WriteFlags::empty()).unwrap();
+    txn.put(&table, b"key1", b"val1", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key1", b"val2", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key1", b"val3", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val4", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val5", WriteFlags::empty())
+        .unwrap();
+    txn.put(&table, b"key2", b"val6", WriteFlags::empty())
+        .unwrap();
 
-    let mut cursor = txn.cursor(&db).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(cursor.first().unwrap(), Some((*b"key1", *b"val1")));
     assert_eq!(cursor.get_multiple().unwrap(), Some(*b"val1val2val3"));
     assert_eq!(cursor.next_multiple::<(), ()>().unwrap(), None);
@@ -118,16 +133,16 @@ fn test_iter() {
 
     {
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.open_db(None).unwrap();
+        let table = txn.open_table(None).unwrap();
         for (key, data) in &items {
-            txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+            txn.put(&table, key, data, WriteFlags::empty()).unwrap();
         }
         assert!(!txn.commit().unwrap());
     }
 
     let txn = env.begin_ro_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    let mut cursor = txn.cursor(&db).unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
 
     // Because Result implements FromIterator, we can collect the iterator
     // of items of type Result<_, E> into a Result<Vec<_, E>> by specifying
@@ -179,8 +194,8 @@ fn test_iter_empty_database() {
     let dir = tempdir().unwrap();
     let env = Environment::new().open(dir.path()).unwrap();
     let txn = env.begin_ro_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    let mut cursor = txn.cursor(&db).unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
 
     assert!(cursor.iter::<(), ()>().next().is_none());
     assert!(cursor.iter_start::<(), ()>().next().is_none());
@@ -193,12 +208,12 @@ fn test_iter_empty_dup_database() {
     let env = Environment::new().open(dir.path()).unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+    txn.create_table(None, TableFlags::DUP_SORT).unwrap();
     txn.commit().unwrap();
 
     let txn = env.begin_ro_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    let mut cursor = txn.cursor(&db).unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
 
     assert!(cursor.iter::<(), ()>().next().is_none());
     assert!(cursor.iter_start::<(), ()>().next().is_none());
@@ -220,7 +235,7 @@ fn test_iter_dup() {
     let env = Environment::new().open(dir.path()).unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+    txn.create_table(None, TableFlags::DUP_SORT).unwrap();
     txn.commit().unwrap();
 
     let items: Vec<(_, _)> = [
@@ -244,15 +259,15 @@ fn test_iter_dup() {
     {
         let txn = env.begin_rw_txn().unwrap();
         for (key, data) in items.clone() {
-            let db = txn.open_db(None).unwrap();
-            txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+            let table = txn.open_table(None).unwrap();
+            txn.put(&table, key, data, WriteFlags::empty()).unwrap();
         }
         txn.commit().unwrap();
     }
 
     let txn = env.begin_ro_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    let mut cursor = txn.cursor(&db).unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(
         items,
         cursor
@@ -351,9 +366,9 @@ fn test_iter_del_get() {
     let items = vec![(*b"a", *b"1"), (*b"b", *b"2")];
     {
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.create_db(None, DatabaseFlags::DUP_SORT).unwrap();
+        let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
         assert_eq!(
-            txn.cursor(&db)
+            txn.cursor(&table)
                 .unwrap()
                 .iter_dup_of::<(), ()>(b"a")
                 .collect::<Result<Vec<_>>>()
@@ -366,16 +381,16 @@ fn test_iter_del_get() {
 
     {
         let txn = env.begin_rw_txn().unwrap();
-        let db = txn.open_db(None).unwrap();
+        let table = txn.open_table(None).unwrap();
         for (key, data) in &items {
-            txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+            txn.put(&table, key, data, WriteFlags::empty()).unwrap();
         }
         txn.commit().unwrap();
     }
 
     let txn = env.begin_rw_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    let mut cursor = txn.cursor(&db).unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(
         items,
         cursor
@@ -413,8 +428,8 @@ fn test_put_del() {
     let env = Environment::new().open(dir.path()).unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    let mut cursor = txn.cursor(&db).unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
 
     cursor.put(b"key1", b"val1", WriteFlags::empty()).unwrap();
     cursor.put(b"key2", b"val2", WriteFlags::empty()).unwrap();

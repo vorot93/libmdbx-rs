@@ -7,20 +7,16 @@ use crate::{
 use libc::c_uint;
 use std::{ffi::CString, marker::PhantomData, ptr};
 
-/// A handle to an individual database in an environment.
+/// A handle to an individual table in an environment.
 ///
-/// A database handle denotes the name and parameters of a database in an environment.
+/// A table handle denotes the name and parameters of a table in an environment.
 #[derive(Debug)]
-pub struct Database<'txn> {
+pub struct Table<'txn> {
     dbi: ffi::MDBX_dbi,
     _marker: PhantomData<&'txn ()>,
 }
 
-impl<'txn> Database<'txn> {
-    /// Opens a new database handle in the given transaction.
-    ///
-    /// Prefer using `Environment::open_db`, `Environment::create_db`, `TransactionExt::open_db`,
-    /// or `RwTransaction::create_db`.
+impl<'txn> Table<'txn> {
     pub(crate) fn new<'env, K: TransactionKind, E: EnvironmentKind>(
         txn: &'txn Transaction<'env, K, E>,
         name: Option<&str>,
@@ -46,21 +42,21 @@ impl<'txn> Database<'txn> {
         }
     }
 
-    pub(crate) fn freelist_db() -> Self {
-        Database {
+    pub(crate) fn freelist_table() -> Self {
+        Table {
             dbi: 0,
             _marker: PhantomData,
         }
     }
 
-    /// Returns the underlying MDBX database handle.
+    /// Returns the underlying MDBX table handle (dbi).
     ///
     /// The caller **must** ensure that the handle is not used after the lifetime of the
-    /// environment, or after the database has been closed.
+    /// environment, or after the table has been closed.
     pub fn dbi(&self) -> ffi::MDBX_dbi {
         self.dbi
     }
 }
 
-unsafe impl<'txn> Send for Database<'txn> {}
-unsafe impl<'txn> Sync for Database<'txn> {}
+unsafe impl<'txn> Send for Table<'txn> {}
+unsafe impl<'txn> Sync for Table<'txn> {}

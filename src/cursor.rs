@@ -1,8 +1,8 @@
 use crate::{
-    database::Database,
     error::{mdbx_result, Error, Result},
     flags::*,
     mdbx_try_optional,
+    table::Table,
     transaction::{txn_execute, TransactionKind, RW},
     EnvironmentKind, TableObject, Transaction,
 };
@@ -16,7 +16,7 @@ use libc::{c_uint, c_void};
 use parking_lot::Mutex;
 use std::{borrow::Cow, fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
 
-/// A cursor for navigating the items within a database.
+/// A cursor for navigating the items within a table.
 pub struct Cursor<'txn, K>
 where
     K: TransactionKind,
@@ -32,14 +32,14 @@ where
 {
     pub(crate) fn new<E: EnvironmentKind>(
         txn: &'txn Transaction<K, E>,
-        db: &Database<'txn>,
+        table: &Table<'txn>,
     ) -> Result<Self> {
         let mut cursor: *mut ffi::MDBX_cursor = ptr::null_mut();
 
         let txn = txn.txn_mutex();
         unsafe {
             mdbx_result(txn_execute(&txn, |txn| {
-                ffi::mdbx_cursor_open(txn, db.dbi(), &mut cursor)
+                ffi::mdbx_cursor_open(txn, table.dbi(), &mut cursor)
             }))?;
         }
         Ok(Self {
@@ -152,7 +152,7 @@ where
         self.get_full(None, None, MDBX_FIRST)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at first data item of current key.
+    /// [TableFlags::DUP_SORT]-only: Position at first data item of current key.
     pub fn first_dup<Value>(&mut self) -> Result<Option<Value>>
     where
         Value: TableObject<'txn>,
@@ -160,7 +160,7 @@ where
         self.get_value(None, None, MDBX_FIRST_DUP)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at key/data pair.
+    /// [TableFlags::DUP_SORT]-only: Position at key/data pair.
     pub fn get_both<Value>(&mut self, k: &[u8], v: &[u8]) -> Result<Option<Value>>
     where
         Value: TableObject<'txn>,
@@ -168,7 +168,7 @@ where
         self.get_value(Some(k), Some(v), MDBX_GET_BOTH)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at given key and at first data greater than or equal to specified data.
+    /// [TableFlags::DUP_SORT]-only: Position at given key and at first data greater than or equal to specified data.
     pub fn get_both_range<Value>(&mut self, k: &[u8], v: &[u8]) -> Result<Option<Value>>
     where
         Value: TableObject<'txn>,
@@ -221,7 +221,7 @@ where
         self.get_full(None, None, MDBX_NEXT)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at next data item of current key.
+    /// [TableFlags::DUP_SORT]-only: Position at next data item of current key.
     pub fn next_dup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
@@ -230,7 +230,7 @@ where
         self.get_full(None, None, MDBX_NEXT_DUP)
     }
 
-    /// [DatabaseFlags::DUP_FIXED]-only: Return up to a page of duplicate data items from next cursor position. Move cursor to prepare for MDBX_NEXT_MULTIPLE.
+    /// [TableFlags::DUP_FIXED]-only: Return up to a page of duplicate data items from next cursor position. Move cursor to prepare for MDBX_NEXT_MULTIPLE.
     pub fn next_multiple<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
@@ -257,7 +257,7 @@ where
         self.get_full(None, None, MDBX_PREV)
     }
 
-    /// [DatabaseFlags::DUP_SORT]-only: Position at previous data item of current key.
+    /// [TableFlags::DUP_SORT]-only: Position at previous data item of current key.
     pub fn prev_dup<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
@@ -301,7 +301,7 @@ where
         self.get_full(Some(key), None, MDBX_SET_RANGE)
     }
 
-    /// [DatabaseFlags::DUP_FIXED]-only: Position at previous page and return up to a page of duplicate data items.
+    /// [TableFlags::DUP_FIXED]-only: Position at previous page and return up to a page of duplicate data items.
     pub fn prev_multiple<Key, Value>(&mut self) -> Result<Option<(Key, Value)>>
     where
         Key: TableObject<'txn>,
@@ -326,11 +326,11 @@ where
         Ok(Some((found, k.unwrap(), v)))
     }
 
-    /// Iterate over database items. The iterator will begin with item next
-    /// after the cursor, and continue until the end of the database. For new
-    /// cursors, the iterator will begin with the first item in the database.
+    /// Iterate over table items. The iterator will begin with item next
+    /// after the cursor, and continue until the end of the table. For new
+    /// cursors, the iterator will begin with the first item in the table.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn iter<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
@@ -342,9 +342,9 @@ where
         Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT)
     }
 
-    /// Iterate over database items starting from the beginning of the database.
+    /// Iterate over table items starting from the beginning of the table.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn iter_start<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
@@ -356,9 +356,9 @@ where
         Iter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
     }
 
-    /// Iterate over database items starting from the beginning of the database.
+    /// Iterate over table items starting from the beginning of the table.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn into_iter_start<Key, Value>(self) -> IntoIter<'txn, K, Key, Value>
@@ -369,9 +369,9 @@ where
         IntoIter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT)
     }
 
-    /// Iterate over database items starting from the given key.
+    /// Iterate over table items starting from the given key.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn iter_from<Key, Value>(&mut self, key: &[u8]) -> Iter<'txn, '_, K, Key, Value>
@@ -386,9 +386,9 @@ where
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
     }
 
-    /// Iterate over database items starting from the given key.
+    /// Iterate over table items starting from the given key.
     ///
-    /// For databases with duplicate data items ([DatabaseFlags::DUP_SORT]), the
+    /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
     pub fn into_iter_from<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
@@ -403,8 +403,8 @@ where
         IntoIter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT)
     }
 
-    /// Iterate over duplicate database items. The iterator will begin with the
-    /// item next after the cursor, and continue until the end of the database.
+    /// Iterate over duplicate table items. The iterator will begin with the
+    /// item next after the cursor, and continue until the end of the table.
     /// Each item will be returned as an iterator of its duplicates.
     pub fn iter_dup<Key, Value>(&mut self) -> IterDup<'txn, '_, K, Key, Value>
     where
@@ -414,8 +414,8 @@ where
         IterDup::new(self, ffi::MDBX_NEXT)
     }
 
-    /// Iterate over duplicate database items starting from the beginning of the
-    /// database. Each item will be returned as an iterator of its duplicates.
+    /// Iterate over duplicate table items starting from the beginning of the
+    /// table. Each item will be returned as an iterator of its duplicates.
     pub fn iter_dup_start<Key, Value>(&mut self) -> IterDup<'txn, '_, K, Key, Value>
     where
         Key: TableObject<'txn>,
@@ -424,7 +424,7 @@ where
         IterDup::new(self, ffi::MDBX_FIRST)
     }
 
-    /// Iterate over duplicate items in the database starting from the given
+    /// Iterate over duplicate items in the table starting from the given
     /// key. Each item will be returned as an iterator of its duplicates.
     pub fn iter_dup_from<Key, Value>(&mut self, key: &[u8]) -> IterDup<'txn, '_, K, Key, Value>
     where
@@ -438,7 +438,7 @@ where
         IterDup::new(self, ffi::MDBX_GET_CURRENT)
     }
 
-    /// Iterate over the duplicates of the item in the database with the given key.
+    /// Iterate over the duplicates of the item in the table with the given key.
     pub fn iter_dup_of<Key, Value>(&mut self, key: &[u8]) -> Iter<'txn, '_, K, Key, Value>
     where
         Key: TableObject<'txn>,
@@ -456,7 +456,7 @@ where
         Iter::new(self, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
     }
 
-    /// Iterate over the duplicates of the item in the database with the given key.
+    /// Iterate over the duplicates of the item in the table with the given key.
     pub fn into_iter_dup_of<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
     where
         Key: TableObject<'txn>,
@@ -476,7 +476,7 @@ where
 }
 
 impl<'txn> Cursor<'txn, RW> {
-    /// Puts a key/data pair into the database. The cursor will be positioned at
+    /// Puts a key/data pair into the table. The cursor will be positioned at
     /// the new data item, or on failure usually near it.
     pub fn put(&mut self, key: &[u8], data: &[u8], flags: WriteFlags) -> Result<()> {
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
@@ -501,7 +501,7 @@ impl<'txn> Cursor<'txn, RW> {
     /// ### Flags
     ///
     /// [WriteFlags::NO_DUP_DATA] may be used to delete all data items for the
-    /// current key, if the database was opened with [DatabaseFlags::DUP_SORT].
+    /// current key, if the table was opened with [TableFlags::DUP_SORT].
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
@@ -570,7 +570,7 @@ where
     }
 }
 
-/// An iterator over the key/value pairs in an MDBX database.
+/// An iterator over the key/value pairs in an MDBX table.
 #[derive(Debug)]
 pub enum IntoIter<'txn, K, Key, Value>
 where
@@ -660,7 +660,7 @@ where
                                 Some(Ok((key, data)))
                             }
                             // MDBX_ENODATA can occur when the cursor was previously seeked to a non-existent value,
-                            // e.g. iter_from with a key greater than all values in the database.
+                            // e.g. iter_from with a key greater than all values in the table.
                             ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
@@ -672,7 +672,7 @@ where
     }
 }
 
-/// An iterator over the key/value pairs in an MDBX database.
+/// An iterator over the key/value pairs in an MDBX table.
 #[derive(Debug)]
 pub enum Iter<'txn, 'cur, K, Key, Value>
 where
@@ -766,7 +766,7 @@ where
                                 Some(Ok((key, data)))
                             }
                             // MDBX_NODATA can occur when the cursor was previously seeked to a non-existent value,
-                            // e.g. iter_from with a key greater than all values in the database.
+                            // e.g. iter_from with a key greater than all values in the table.
                             ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
                             error => Some(Err(Error::from_err_code(error))),
                         }
@@ -778,7 +778,7 @@ where
     }
 }
 
-/// An iterator over the keys and duplicate values in an MDBX database.
+/// An iterator over the keys and duplicate values in an MDBX table.
 ///
 /// The yielded items of the iterator are themselves iterators over the duplicate values for a
 /// specific key.

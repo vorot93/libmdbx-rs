@@ -1,7 +1,7 @@
 use crate::{
-    database::Database,
     error::{mdbx_result, Error, Result},
     flags::EnvironmentFlags,
+    table::Table,
     transaction::{RO, RW},
     Mode, Transaction, TransactionKind,
 };
@@ -74,7 +74,7 @@ pub(crate) enum TxnManagerMessage {
     },
 }
 
-/// An environment supports multiple databases, all residing in the same shared-memory map.
+/// An environment supports multiple tables, all residing in the same shared-memory map.
 pub struct Environment<E>
 where
     E: EnvironmentKind,
@@ -94,7 +94,7 @@ where
         EnvironmentBuilder {
             flags: EnvironmentFlags::default(),
             max_readers: None,
-            max_dbs: None,
+            max_tables: None,
             rp_augment_limit: None,
             loose_limit: None,
             dp_reserve_limit: None,
@@ -197,16 +197,16 @@ where
     ///
     /// Note:
     ///
-    /// * LMDB stores all the freelists in the designated database 0 in each environment,
+    /// * LMDB stores all the freelists in the designated table 0 in each environment,
     ///   and the freelist count is stored at the beginning of the value as `libc::size_t`
     ///   in the native byte order.
     ///
-    /// * It will create a read transaction to traverse the freelist database.
+    /// * It will create a read transaction to traverse the freelist table.
     pub fn freelist(&self) -> Result<usize> {
         let mut freelist: usize = 0;
         let txn = self.begin_ro_txn()?;
-        let db = Database::freelist_db();
-        let cursor = txn.cursor(&db)?;
+        let table = Table::freelist_table();
+        let cursor = txn.cursor(&table)?;
 
         for result in cursor {
             let (_key, value) = result?;
@@ -228,7 +228,7 @@ where
 
 /// Environment statistics.
 ///
-/// Contains information about the size and layout of an MDBX environment or database.
+/// Contains information about the size and layout of an MDBX environment or table.
 #[repr(transparent)]
 pub struct Stat(ffi::MDBX_stat);
 
@@ -245,7 +245,7 @@ impl Stat {
 }
 
 impl Stat {
-    /// Size of a database page. This is the same for all databases in the environment.
+    /// Size of a table page. This is the same for all tables in the environment.
     #[inline]
     pub fn page_size(&self) -> u32 {
         self.0.ms_psize
@@ -393,7 +393,7 @@ where
 {
     flags: EnvironmentFlags,
     max_readers: Option<c_uint>,
-    max_dbs: Option<u64>,
+    max_tables: Option<u64>,
     rp_augment_limit: Option<u64>,
     loose_limit: Option<u64>,
     dp_reserve_limit: Option<u64>,
@@ -456,7 +456,7 @@ where
                     ))?;
                 }
                 for (opt, v) in [
-                    (ffi::MDBX_opt_max_db, self.max_dbs),
+                    (ffi::MDBX_opt_max_db, self.max_tables),
                     (ffi::MDBX_opt_rp_augment_limit, self.rp_augment_limit),
                     (ffi::MDBX_opt_loose_limit, self.loose_limit),
                     (ffi::MDBX_opt_dp_reserve_limit, self.dp_reserve_limit),
@@ -567,17 +567,17 @@ where
         self
     }
 
-    /// Sets the maximum number of named databases for the environment.
+    /// Sets the maximum number of named tables for the environment.
     ///
-    /// This function is only needed if multiple databases will be used in the
+    /// This function is only needed if multiple tables will be used in the
     /// environment. Simpler applications that use the environment as a single
-    /// unnamed database can ignore this option.
+    /// unnamed table can ignore this option.
     ///
     /// Currently a moderate number of slots are cheap but a huge number gets
     /// expensive: 7-120 words per transaction, and every [Transaction::open_db()]
     /// does a linear search of the opened slots.
-    pub fn set_max_dbs(&mut self, v: usize) -> &mut Self {
-        self.max_dbs = Some(v as u64);
+    pub fn set_max_tables(&mut self, v: usize) -> &mut Self {
+        self.max_tables = Some(v as u64);
         self
     }
 

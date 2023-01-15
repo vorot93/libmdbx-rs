@@ -162,9 +162,9 @@ impl EnvironmentFlags {
 }
 
 bitflags! {
-    #[doc="Database options."]
+    #[doc="Table options."]
     #[derive(Default)]
-    pub struct DatabaseFlags: c_uint {
+    pub struct TableFlags: c_uint {
         const REVERSE_KEY = MDBX_REVERSEKEY;
         const DUP_SORT = MDBX_DUPSORT;
         const INTEGER_KEY = MDBX_INTEGERKEY;

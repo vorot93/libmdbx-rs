@@ -13,7 +13,7 @@ fn bench_get_rand(c: &mut Criterion) {
     let n = 100u32;
     let (_dir, env) = setup_bench_db(n);
     let txn = env.begin_ro_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
+    let table = txn.open_table(None).unwrap();
 
     let mut keys: Vec<String> = (0..n).map(get_key).collect();
     keys.shuffle(&mut XorShiftRng::from_seed(Default::default()));
@@ -23,7 +23,7 @@ fn bench_get_rand(c: &mut Criterion) {
             let mut i = 0usize;
             for key in &keys {
                 i += *txn
-                    .get::<ObjectLength>(&db, key.as_bytes())
+                    .get::<ObjectLength>(&table, key.as_bytes())
                     .unwrap()
                     .unwrap();
             }
@@ -36,12 +36,12 @@ fn bench_get_rand_raw(c: &mut Criterion) {
     let n = 100u32;
     let (_dir, env) = setup_bench_db(n);
     let _txn = env.begin_ro_txn().unwrap();
-    let db = _txn.open_db(None).unwrap();
+    let table = _txn.open_table(None).unwrap();
 
     let mut keys: Vec<String> = (0..n).map(get_key).collect();
     keys.shuffle(&mut XorShiftRng::from_seed(Default::default()));
 
-    let dbi = db.dbi();
+    let dbi = table.dbi();
     let txn = _txn.txn();
 
     let mut key_val: MDBX_val = MDBX_val {
@@ -74,9 +74,9 @@ fn bench_put_rand(c: &mut Criterion) {
     let (_dir, env) = setup_bench_db(0);
 
     let txn = env.begin_ro_txn().unwrap();
-    let db = txn.open_db(None).unwrap();
-    txn.prime_for_permaopen(db);
-    let db = txn.commit_and_rebind_open_dbs().unwrap().1.remove(0);
+    let table = txn.open_table(None).unwrap();
+    txn.prime_for_permaopen(table);
+    let table = txn.commit_and_rebind_open_dbs().unwrap().1.remove(0);
 
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
@@ -85,7 +85,7 @@ fn bench_put_rand(c: &mut Criterion) {
         b.iter(|| {
             let txn = env.begin_rw_txn().unwrap();
             for &(ref key, ref data) in items.iter() {
-                txn.put(&db, key, data, WriteFlags::empty()).unwrap();
+                txn.put(&table, key, data, WriteFlags::empty()).unwrap();
             }
         })
     });
@@ -98,7 +98,7 @@ fn bench_put_rand_raw(c: &mut Criterion) {
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
 
-    let dbi = _env.begin_ro_txn().unwrap().open_db(None).unwrap().dbi();
+    let dbi = _env.begin_ro_txn().unwrap().open_table(None).unwrap().dbi();
     let env = _env.env();
 
     let mut key_val: MDBX_val = MDBX_val {

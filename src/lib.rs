@@ -4,22 +4,22 @@
 pub use crate::{
     codec::*,
     cursor::{Cursor, Iter, IterDup},
-    database::Database,
     environment::{
         Environment, EnvironmentBuilder, EnvironmentKind, Geometry, Info, NoWriteMap, PageSize,
         Stat, WriteMap,
     },
     error::{Error, Result},
     flags::*,
+    table::Table,
     transaction::{Transaction, TransactionKind, RO, RW},
 };
 
 mod codec;
 mod cursor;
-mod database;
 mod environment;
 mod error;
 mod flags;
+mod table;
 mod transaction;
 
 #[cfg(test)]
@@ -41,7 +41,7 @@ mod test_utils {
 
         let env = {
             let mut builder = Environment::new();
-            builder.set_max_dbs(2);
+            builder.set_max_tables(2);
             builder.set_geometry(Geometry {
                 size: Some(1_000_000..1_000_000),
                 ..Default::default()
@@ -54,8 +54,8 @@ mod test_utils {
             LittleEndian::write_u64(&mut value, height);
             let tx = env.begin_rw_txn().expect("begin_rw_txn");
             let index = tx
-                .create_db(None, DatabaseFlags::DUP_SORT)
-                .expect("open index db");
+                .create_table(None, TableFlags::DUP_SORT)
+                .expect("open index table");
             tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
                 .expect("tx.put");
             tx.commit().expect("tx.commit");

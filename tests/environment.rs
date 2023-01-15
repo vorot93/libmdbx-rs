@@ -49,36 +49,43 @@ fn test_begin_txn() {
 }
 
 #[test]
-fn test_open_db() {
+fn test_open_table() {
     let dir = tempdir().unwrap();
-    let env = Environment::new().set_max_dbs(1).open(dir.path()).unwrap();
+    let env = Environment::new()
+        .set_max_tables(1)
+        .open(dir.path())
+        .unwrap();
 
     let txn = env.begin_ro_txn().unwrap();
-    assert!(txn.open_db(None).is_ok());
-    assert!(txn.open_db(Some("testdb")).is_err());
+    assert!(txn.open_table(None).is_ok());
+    assert!(txn.open_table(Some("test")).is_err());
 }
 
 #[test]
-fn test_create_db() {
+fn test_create_table() {
     let dir = tempdir().unwrap();
-    let env = Environment::new().set_max_dbs(11).open(dir.path()).unwrap();
+    let env = Environment::new()
+        .set_max_tables(11)
+        .open(dir.path())
+        .unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    assert!(txn.open_db(Some("testdb")).is_err());
-    assert!(txn
-        .create_db(Some("testdb"), DatabaseFlags::empty())
-        .is_ok());
-    assert!(txn.open_db(Some("testdb")).is_ok())
+    assert!(txn.open_table(Some("test")).is_err());
+    assert!(txn.create_table(Some("test"), TableFlags::empty()).is_ok());
+    assert!(txn.open_table(Some("test")).is_ok())
 }
 
 #[test]
-fn test_close_database() {
+fn test_close_table() {
     let dir = tempdir().unwrap();
-    let env = Environment::new().set_max_dbs(10).open(dir.path()).unwrap();
+    let env = Environment::new()
+        .set_max_tables(10)
+        .open(dir.path())
+        .unwrap();
 
     let txn = env.begin_rw_txn().unwrap();
-    txn.create_db(Some("db"), DatabaseFlags::empty()).unwrap();
-    txn.open_db(Some("db")).unwrap();
+    txn.create_table(Some("test"), TableFlags::empty()).unwrap();
+    txn.open_table(Some("test")).unwrap();
 }
 
 #[test]
@@ -116,7 +123,7 @@ fn test_stat() {
         LittleEndian::write_u64(&mut value, i);
         let tx = env.begin_rw_txn().expect("begin_rw_txn");
         tx.put(
-            &tx.open_db(None).unwrap(),
+            &tx.open_table(None).unwrap(),
             value,
             value,
             WriteFlags::default(),
@@ -167,7 +174,7 @@ fn test_freelist() {
         LittleEndian::write_u64(&mut value, i);
         let tx = env.begin_rw_txn().expect("begin_rw_txn");
         tx.put(
-            &tx.open_db(None).unwrap(),
+            &tx.open_table(None).unwrap(),
             value,
             value,
             WriteFlags::default(),
@@ -176,10 +183,11 @@ fn test_freelist() {
         tx.commit().expect("tx.commit");
     }
     let tx = env.begin_rw_txn().expect("begin_rw_txn");
-    tx.clear_db(&tx.open_db(None).unwrap()).expect("clear");
+    tx.clear_table(&tx.open_table(None).unwrap())
+        .expect("clear");
     tx.commit().expect("tx.commit");
 
-    // Freelist should not be empty after clear_db.
+    // Freelist should not be empty after clear_table.
     freelist = env.freelist().unwrap();
     assert!(freelist > 0);
 }
