@@ -247,38 +247,45 @@ impl Stat {
 impl Stat {
     /// Size of a table page. This is the same for all tables in the database.
     #[inline]
-    pub fn page_size(&self) -> u32 {
+    pub const fn page_size(&self) -> u32 {
         self.0.ms_psize
     }
 
     /// Depth (height) of the B-tree.
     #[inline]
-    pub fn depth(&self) -> u32 {
+    pub const fn depth(&self) -> u32 {
         self.0.ms_depth
     }
 
     /// Number of internal (non-leaf) pages.
     #[inline]
-    pub fn branch_pages(&self) -> usize {
+    pub const fn branch_pages(&self) -> usize {
         self.0.ms_branch_pages as usize
     }
 
     /// Number of leaf pages.
     #[inline]
-    pub fn leaf_pages(&self) -> usize {
+    pub const fn leaf_pages(&self) -> usize {
         self.0.ms_leaf_pages as usize
     }
 
     /// Number of overflow pages.
     #[inline]
-    pub fn overflow_pages(&self) -> usize {
+    pub const fn overflow_pages(&self) -> usize {
         self.0.ms_overflow_pages as usize
     }
 
     /// Number of data items.
     #[inline]
-    pub fn entries(&self) -> usize {
+    pub const fn entries(&self) -> usize {
         self.0.ms_entries as usize
+    }
+
+    /// Total size in bytes.
+    #[inline]
+    pub const fn total_size(&self) -> u64 {
+        (self.leaf_pages() + self.branch_pages() + self.overflow_pages()) as u64
+            * self.page_size() as u64
     }
 }
 
