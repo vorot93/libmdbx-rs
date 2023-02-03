@@ -74,7 +74,7 @@ pub(crate) enum TxnManagerMessage {
     },
 }
 
-/// An environment supports multiple tables, all residing in the same shared-memory map.
+/// Supports multiple tables, all residing in the same shared-memory map.
 pub struct Database<E>
 where
     E: DatabaseKind,
@@ -88,7 +88,7 @@ impl<E> Database<E>
 where
     E: DatabaseKind,
 {
-    /// Creates a new builder for specifying options for opening an MDBX environment.
+    /// Creates a new builder for specifying options for opening an MDBX database.
     #[allow(clippy::new_ret_no_self)]
     pub fn new() -> DatabaseBuilder<E> {
         DatabaseBuilder {
@@ -106,21 +106,21 @@ where
         }
     }
 
-    /// Returns a raw pointer to the underlying MDBX environment.
+    /// Returns a raw pointer to the underlying MDBX database.
     ///
     /// The caller **must** ensure that the pointer is not dereferenced after the lifetime of the
-    /// environment.
+    /// database.
     pub fn ptr(&self) -> *mut ffi::MDBX_env {
         self.db
     }
 
-    /// Create a read-only transaction for use with the environment.
+    /// Create a read-only transaction for use with the database.
     pub fn begin_ro_txn(&self) -> Result<Transaction<'_, RO, E>> {
         Transaction::new(self)
     }
 
-    /// Create a read-write transaction for use with the environment. This method will block while
-    /// there are any other read-write transactions open on the environment.
+    /// Create a read-write transaction for use with the database. This method will block while
+    /// there are any other read-write transactions open on the database.
     pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW, E>> {
         let sender = self.txn_manager.as_ref().ok_or(Error::Access)?;
         let txn = loop {
@@ -143,12 +143,12 @@ where
         Ok(Transaction::new_from_ptr(self, txn.0))
     }
 
-    /// Flush the environment data buffers to disk.
+    /// Flush the database data buffers to disk.
     pub fn sync(&self, force: bool) -> Result<bool> {
         mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.ptr(), force, false) })
     }
 
-    /// Retrieves statistics about this environment.
+    /// Retrieves statistics about this database.
     pub fn stat(&self) -> Result<Stat> {
         unsafe {
             let mut stat = Stat::new();
@@ -162,7 +162,7 @@ where
         }
     }
 
-    /// Retrieves info about this environment.
+    /// Retrieves info about this database.
     pub fn info(&self) -> Result<Info> {
         unsafe {
             let mut info = Info(mem::zeroed());
@@ -226,9 +226,9 @@ where
     }
 }
 
-/// Environment statistics.
+/// Database statistics.
 ///
-/// Contains information about the size and layout of an MDBX environment or table.
+/// Contains information about the size and layout of an MDBX database or table.
 #[repr(transparent)]
 pub struct Stat(ffi::MDBX_stat);
 
@@ -245,7 +245,7 @@ impl Stat {
 }
 
 impl Stat {
-    /// Size of a table page. This is the same for all tables in the environment.
+    /// Size of a table page. This is the same for all tables in the database.
     #[inline]
     pub fn page_size(&self) -> u32 {
         self.0.ms_psize
@@ -291,9 +291,9 @@ impl GeometryInfo {
     }
 }
 
-/// Environment information.
+/// Database information.
 ///
-/// Contains environment information about the map size, readers, last txn id etc.
+/// Contains database information about the map size, readers, last txn id etc.
 #[repr(transparent)]
 pub struct Info(ffi::MDBX_envinfo);
 
@@ -320,13 +320,13 @@ impl Info {
         self.0.mi_recent_txnid as usize
     }
 
-    /// Max reader slots in the environment
+    /// Max reader slots in the database
     #[inline]
     pub fn max_readers(&self) -> usize {
         self.0.mi_maxreaders as usize
     }
 
-    /// Max reader slots used in the environment
+    /// Max reader slots used in the database
     #[inline]
     pub fn num_readers(&self) -> usize {
         self.0.mi_numreaders as usize
@@ -341,7 +341,7 @@ where
     E: DatabaseKind,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        f.debug_struct("Environment").finish()
+        f.debug_struct("Database").finish()
     }
 }
 
@@ -357,7 +357,7 @@ where
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-//// Environment Builder
+//// Database Builder
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -385,7 +385,7 @@ impl<R> Default for Geometry<R> {
     }
 }
 
-/// Options for opening or creating an environment.
+/// Options for opening or creating an database.
 #[derive(Debug, Clone)]
 pub struct DatabaseBuilder<E>
 where
@@ -408,14 +408,14 @@ impl<E> DatabaseBuilder<E>
 where
     E: DatabaseKind,
 {
-    /// Open an environment.
+    /// Open a database.
     ///
     /// Database files will be opened with 644 permissions.
     pub fn open(&self, path: &Path) -> Result<Database<E>> {
         self.open_with_permissions(path, 0o644)
     }
 
-    /// Open an environment with the provided UNIX permissions.
+    /// Open a database with the provided UNIX permissions.
     ///
     /// The path may not contain the null character.
     pub fn open_with_permissions(
@@ -551,30 +551,30 @@ where
         Ok(db)
     }
 
-    /// Sets the provided options in the environment.
+    /// Sets the provided options in the database.
     pub fn set_flags(&mut self, flags: DatabaseFlags) -> &mut Self {
         self.flags = flags;
         self
     }
 
-    /// Sets the maximum number of threads or reader slots for the environment.
+    /// Sets the maximum number of threads or reader slots for the database.
     ///
     /// This defines the number of slots in the lock table that is used to track readers in the
-    /// the environment. The default is 126. Starting a read-only transaction normally ties a lock
-    /// table slot to the [Transaction] object until it or the [Environment] object is destroyed.
+    /// the database. The default is 126. Starting a read-only transaction normally ties a lock
+    /// table slot to the [Transaction] object until it or the [Database] object is destroyed.
     pub fn set_max_readers(&mut self, max_readers: c_uint) -> &mut Self {
         self.max_readers = Some(max_readers);
         self
     }
 
-    /// Sets the maximum number of named tables for the environment.
+    /// Sets the maximum number of named tables for the database.
     ///
     /// This function is only needed if multiple tables will be used in the
-    /// environment. Simpler applications that use the environment as a single
+    /// database. Simpler applications that use the database as a single
     /// unnamed table can ignore this option.
     ///
     /// Currently a moderate number of slots are cheap but a huge number gets
-    /// expensive: 7-120 words per transaction, and every [Transaction::open_db()]
+    /// expensive: 7-120 words per transaction, and every [Transaction::open_table()]
     /// does a linear search of the opened slots.
     pub fn set_max_tables(&mut self, v: usize) -> &mut Self {
         self.max_tables = Some(v as u64);
@@ -611,7 +611,7 @@ where
         self
     }
 
-    /// Set all size-related parameters of environment, including page size and the min/max size of the memory map.
+    /// Set all size-related parameters of database, including page size and the min/max size of the memory map.
     pub fn set_geometry<R: RangeBounds<usize>>(&mut self, geometry: Geometry<R>) -> &mut Self {
         let convert_bound = |bound: Bound<&usize>| match bound {
             Bound::Included(v) | Bound::Excluded(v) => Some(*v),
