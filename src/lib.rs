@@ -22,6 +22,26 @@ mod flags;
 mod table;
 mod transaction;
 
+/// Fully typed ORM for use with libmdbx.
+#[cfg(feature = "orm")]
+pub mod orm;
+
+#[cfg(feature = "orm")]
+mod orm_uses {
+    #[doc(hidden)]
+    pub use arrayref;
+
+    #[doc(hidden)]
+    pub use impls;
+
+    #[cfg(feature = "cbor")]
+    #[doc(hidden)]
+    pub use ciborium;
+}
+
+#[cfg(feature = "orm")]
+pub use orm_uses::*;
+
 #[cfg(test)]
 mod test_utils {
     use super::*;
