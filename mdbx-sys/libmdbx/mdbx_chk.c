@@ -1,7 +1,7 @@
 /* mdbx_chk.c - memory-mapped database check tool */
 
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -22,7 +22,7 @@
 
 #define xMDBX_TOOLS /* Avoid using internal eASSERT() */
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 94856b76f9a50f2597880f73c2b68302ac986f96c44020eedd2b26d544e8b9c8_v0_12_3_0_gf1fdb889
+#define MDBX_BUILD_SOURCERY ae57c9d1ed15e4f88284eac3f03e6f9b472a3154de838d314d024cb80055bcd0_v0_12_3_16_gfb827959
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -58,7 +58,7 @@
 
 /** Disables using GNU/Linux libc extensions.
  * \ingroup build_option
- * \note This option couldn't be moved to the options.h since dependant
+ * \note This option couldn't be moved to the options.h since dependent
  * control macros/defined should be prepared before include the options.h */
 #ifndef MDBX_DISABLE_GNU_SOURCE
 #define MDBX_DISABLE_GNU_SOURCE 0
@@ -157,7 +157,7 @@
 
 #include "mdbx.h"
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -997,7 +997,7 @@ extern "C" {
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -1568,9 +1568,8 @@ MDBX_INTERNAL_FUNC int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 
 #define MMAP_OPTION_TRUNCATE 1
 #define MMAP_OPTION_SEMAPHORE 2
-MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map,
-                                 const size_t must, const size_t limit,
-                                 const unsigned options);
+MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map, size_t size,
+                                 const size_t limit, const unsigned options);
 MDBX_INTERNAL_FUNC int osal_munmap(osal_mmap_t *map);
 #define MDBX_MRESIZE_MAY_MOVE 0x00000100
 #define MDBX_MRESIZE_MAY_UNMAP 0x00000200
@@ -1695,7 +1694,7 @@ MDBX_INTERNAL_FUNC int osal_lck_destroy(MDBX_env *env,
 MDBX_INTERNAL_FUNC int osal_lck_seize(MDBX_env *env);
 
 /// \brief Downgrades the level of initially acquired lock to
-///   operational level specified by argument. The reson for such downgrade:
+///   operational level specified by argument. The reason for such downgrade:
 ///    - unblocking of other processes that are waiting for access, i.e.
 ///      if (env->me_flags & MDBX_EXCLUSIVE) != 0, then other processes
 ///      should be made aware that access is unavailable rather than
@@ -2137,7 +2136,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls sort order of internal page number lists.
  * This mostly experimental/advanced option with not for regular MDBX users.
- * \warning The database format depend on this option and libmdbx builded with
+ * \warning The database format depend on this option and libmdbx built with
  * different option value are incompatible. */
 #ifndef MDBX_PNL_ASCENDING
 #define MDBX_PNL_ASCENDING 0
@@ -3188,7 +3187,7 @@ typedef struct MDBX_lockinfo {
 
   /* Paired counter of processes that have mlock()ed part of mmapped DB.
    * The (mti_mlcnt[0] - mti_mlcnt[1]) > 0 means at least one process
-   * lock at leat one page, so therefore madvise() could return EINVAL. */
+   * lock at least one page, so therefore madvise() could return EINVAL. */
   MDBX_atomic_uint32_t mti_mlcnt[2];
 
   MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
@@ -4266,6 +4265,10 @@ static const char *sdb_name(const MDBX_val *val) {
     return "<nullptr>";
   if (len > 65536) {
     static char buf[64];
+    /* NOTE: There is MSYS2 MinGW bug if you here got
+     * the "unknown conversion type character ‘z’ in format [-Werror=format=]"
+     * https://stackoverflow.com/questions/74504432/whats-the-proper-way-to-tell-mingw-based-gcc-to-use-ansi-stdio-output-on-windo
+     */
     snprintf(buf, sizeof(buf), "<too-long-%zu>", len);
     return buf;
   }
@@ -5606,7 +5609,7 @@ int main(int argc, char *argv[]) {
       alloc_pages = backed_pages;
     }
   } else {
-    /* LY: DB may be shrinked by writer down to the allocated pages. */
+    /* LY: DB may be shrunk by writer down to the allocated pages. */
     if (alloc_pages > backed_pages) {
       print(" ! alloc-pages %" PRIu64 " > backed-pages %" PRIu64 "\n",
             alloc_pages, backed_pages);

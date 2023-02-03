@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 94856b76f9a50f2597880f73c2b68302ac986f96c44020eedd2b26d544e8b9c8_v0_12_3_0_gf1fdb889
+#define MDBX_BUILD_SOURCERY ae57c9d1ed15e4f88284eac3f03e6f9b472a3154de838d314d024cb80055bcd0_v0_12_3_16_gfb827959
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -36,7 +36,7 @@
 
 /** Disables using GNU/Linux libc extensions.
  * \ingroup build_option
- * \note This option couldn't be moved to the options.h since dependant
+ * \note This option couldn't be moved to the options.h since dependent
  * control macros/defined should be prepared before include the options.h */
 #ifndef MDBX_DISABLE_GNU_SOURCE
 #define MDBX_DISABLE_GNU_SOURCE 0
@@ -135,7 +135,7 @@
 
 #include "mdbx.h"
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -975,7 +975,7 @@ extern "C" {
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -1546,9 +1546,8 @@ MDBX_INTERNAL_FUNC int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 
 #define MMAP_OPTION_TRUNCATE 1
 #define MMAP_OPTION_SEMAPHORE 2
-MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map,
-                                 const size_t must, const size_t limit,
-                                 const unsigned options);
+MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map, size_t size,
+                                 const size_t limit, const unsigned options);
 MDBX_INTERNAL_FUNC int osal_munmap(osal_mmap_t *map);
 #define MDBX_MRESIZE_MAY_MOVE 0x00000100
 #define MDBX_MRESIZE_MAY_UNMAP 0x00000200
@@ -1673,7 +1672,7 @@ MDBX_INTERNAL_FUNC int osal_lck_destroy(MDBX_env *env,
 MDBX_INTERNAL_FUNC int osal_lck_seize(MDBX_env *env);
 
 /// \brief Downgrades the level of initially acquired lock to
-///   operational level specified by argument. The reson for such downgrade:
+///   operational level specified by argument. The reason for such downgrade:
 ///    - unblocking of other processes that are waiting for access, i.e.
 ///      if (env->me_flags & MDBX_EXCLUSIVE) != 0, then other processes
 ///      should be made aware that access is unavailable rather than
@@ -2115,7 +2114,7 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** Controls sort order of internal page number lists.
  * This mostly experimental/advanced option with not for regular MDBX users.
- * \warning The database format depend on this option and libmdbx builded with
+ * \warning The database format depend on this option and libmdbx built with
  * different option value are incompatible. */
 #ifndef MDBX_PNL_ASCENDING
 #define MDBX_PNL_ASCENDING 0
@@ -3166,7 +3165,7 @@ typedef struct MDBX_lockinfo {
 
   /* Paired counter of processes that have mlock()ed part of mmapped DB.
    * The (mti_mlcnt[0] - mti_mlcnt[1]) > 0 means at least one process
-   * lock at leat one page, so therefore madvise() could return EINVAL. */
+   * lock at least one page, so therefore madvise() could return EINVAL. */
   MDBX_atomic_uint32_t mti_mlcnt[2];
 
   MDBX_ALIGNAS(MDBX_CACHELINE_SIZE) /* cacheline ----------------------------*/
@@ -4028,7 +4027,7 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
     ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
   } while (0)
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>.
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>.
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -4423,7 +4422,7 @@ node_largedata_pgno(const MDBX_node *const __restrict node) {
  *
  * BRANCH_NODE_MAX
  *   Branch-page must contain at least two nodes, within each a key and a child
- *   page number. But page can't be splitted if it contains less that 4 keys,
+ *   page number. But page can't be split if it contains less that 4 keys,
  *   i.e. a page should not overflow before adding the fourth key. Therefore,
  *   at least 3 branch-node should fit in the single branch-page. Further, the
  *   first node of a branch-page doesn't contain a key, i.e. the first node
@@ -4437,8 +4436,8 @@ node_largedata_pgno(const MDBX_node *const __restrict node) {
  *   Leaf-node must fit into single leaf-page, where a value could be placed on
  *   a large/overflow page. However, may require to insert a nearly page-sized
  *   node between two large nodes are already fill-up a page. In this case the
- *   page must be splitted to two if some pair of nodes fits on one page, or
- *   otherwise the page should be splitted to the THREE with a single node
+ *   page must be split to two if some pair of nodes fits on one page, or
+ *   otherwise the page should be split to the THREE with a single node
  *   per each of ones. Such 1-into-3 page splitting is costly and complex since
  *   requires TWO insertion into the parent page, that could lead to split it
  *   and so on up to the root. Therefore double-splitting is avoided here and
@@ -5060,7 +5059,7 @@ static __always_inline bool safe64_reset_compare(MDBX_atomic_uint64_t *p,
    *     the asynchronously cancellation of read transaction. Therefore,
    *     there may be a collision between the cleanup performed here and
    *     asynchronous termination and restarting of the read transaction
-   *     in another proces/thread. In general we MUST NOT reset the `mr_txnid`
+   *     in another process/thread. In general we MUST NOT reset the `mr_txnid`
    *     if a new transaction was started (i.e. if `mr_txnid` was changed). */
 #if MDBX_64BIT_CAS
   bool rc = atomic_cas64(p, compare, UINT64_MAX);
@@ -10035,21 +10034,44 @@ static void adjust_defaults(MDBX_env *env) {
       bytes2pgno(env, bytes_align2os_bytes(env, threshold));
 }
 
-__cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
-                             const pgno_t size_pgno, const pgno_t limit_pgno,
-                             const bool implicit) {
-  const size_t limit_bytes = pgno_align2os_bytes(env, limit_pgno);
-  const size_t size_bytes = pgno_align2os_bytes(env, size_pgno);
+enum resize_mode { implicit_grow, impilict_shrink, explicit_resize };
+
+__cold static int dxb_resize(MDBX_env *const env, const pgno_t used_pgno,
+                             const pgno_t size_pgno, pgno_t limit_pgno,
+                             const enum resize_mode mode) {
+  /* Acquire guard to avoid collision between read and write txns
+   * around me_dbgeo and me_dxb_mmap */
+#if defined(_WIN32) || defined(_WIN64)
+  osal_srwlock_AcquireExclusive(&env->me_remap_guard);
+  int rc = MDBX_SUCCESS;
+  mdbx_handle_array_t *suspended = NULL;
+  mdbx_handle_array_t array_onstack;
+#else
+  int rc = osal_fastmutex_acquire(&env->me_remap_guard);
+  if (unlikely(rc != MDBX_SUCCESS))
+    return rc;
+#endif
+
   const size_t prev_size = env->me_dxb_mmap.current;
   const size_t prev_limit = env->me_dxb_mmap.limit;
+  const pgno_t prev_limit_pgno = bytes2pgno(env, prev_limit);
+  eASSERT(env, limit_pgno >= size_pgno);
+  eASSERT(env, size_pgno >= used_pgno);
+  if (mode < explicit_resize && size_pgno <= prev_limit_pgno) {
+    /* The actual mapsize may be less since the geo.upper may be changed
+     * by other process. Avoids remapping until it necessary. */
+    limit_pgno = prev_limit_pgno;
+  }
+  const size_t limit_bytes = pgno_align2os_bytes(env, limit_pgno);
+  const size_t size_bytes = pgno_align2os_bytes(env, size_pgno);
 #if MDBX_ENABLE_MADVISE || defined(MDBX_USE_VALGRIND)
   const void *const prev_map = env->me_dxb_mmap.base;
 #endif /* MDBX_ENABLE_MADVISE || MDBX_USE_VALGRIND */
 
-  VERBOSE("resize datafile/mapping: "
+  VERBOSE("resize/%d datafile/mapping: "
           "present %" PRIuPTR " -> %" PRIuPTR ", "
           "limit %" PRIuPTR " -> %" PRIuPTR,
-          prev_size, size_bytes, prev_limit, limit_bytes);
+          mode, prev_size, size_bytes, prev_limit, limit_bytes);
 
   eASSERT(env, limit_bytes >= size_bytes);
   eASSERT(env, bytes2pgno(env, size_bytes) >= size_pgno);
@@ -10057,20 +10079,18 @@ __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
 
   unsigned mresize_flags =
       env->me_flags & (MDBX_RDONLY | MDBX_WRITEMAP | MDBX_UTTERLY_NOSYNC);
-#if defined(_WIN32) || defined(_WIN64)
-  /* Acquire guard in exclusive mode for:
-   *   - to avoid collision between read and write txns around env->me_dbgeo;
-   *   - to avoid attachment of new reading threads (see osal_rdt_lock); */
-  osal_srwlock_AcquireExclusive(&env->me_remap_guard);
-  mdbx_handle_array_t *suspended = NULL;
-  mdbx_handle_array_t array_onstack;
-  int rc = MDBX_SUCCESS;
+  if (mode >= impilict_shrink)
+    mresize_flags |= MDBX_SHRINK_ALLOWED;
+
   if (limit_bytes == env->me_dxb_mmap.limit &&
       size_bytes == env->me_dxb_mmap.current &&
       size_bytes == env->me_dxb_mmap.filesize)
     goto bailout;
 
-  if ((env->me_flags & MDBX_NOTLS) == 0) {
+#if defined(_WIN32) || defined(_WIN64)
+  if ((env->me_flags & MDBX_NOTLS) == 0 &&
+      ((size_bytes < env->me_dxb_mmap.current && mode > implicit_grow) ||
+       limit_bytes != env->me_dxb_mmap.limit)) {
     /* 1) Windows allows only extending a read-write section, but not a
      *    corresponding mapped view. Therefore in other cases we must suspend
      *    the local threads for safe remap.
@@ -10088,65 +10108,61 @@ __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
       ERROR("failed suspend-for-remap: errcode %d", rc);
       goto bailout;
     }
-    mresize_flags |= implicit ? MDBX_MRESIZE_MAY_UNMAP
-                              : MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE;
+    mresize_flags |= (mode < explicit_resize)
+                         ? MDBX_MRESIZE_MAY_UNMAP
+                         : MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE;
   }
 #else  /* Windows */
-  /* Acquire guard to avoid collision between read and write txns
-   * around env->me_dbgeo */
-  int rc = osal_fastmutex_acquire(&env->me_remap_guard);
-  if (unlikely(rc != MDBX_SUCCESS))
-    return rc;
-  if (limit_bytes == env->me_dxb_mmap.limit &&
-      size_bytes == env->me_dxb_mmap.current)
-    goto bailout;
-
   MDBX_lockinfo *const lck = env->me_lck_mmap.lck;
-  if (limit_bytes != env->me_dxb_mmap.limit && !(env->me_flags & MDBX_NOTLS) &&
-      lck && !implicit) {
-    int err = osal_rdt_lock(env) /* lock readers table until remap done */;
-    if (unlikely(MDBX_IS_ERROR(err))) {
-      rc = err;
-      goto bailout;
-    }
-
-    /* looking for readers from this process */
-    const size_t snap_nreaders =
-        atomic_load32(&lck->mti_numreaders, mo_AcquireRelease);
-    eASSERT(env, !implicit);
+  if (mode == explicit_resize && limit_bytes != env->me_dxb_mmap.limit &&
+      !(env->me_flags & MDBX_NOTLS)) {
     mresize_flags |= MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE;
-    for (size_t i = 0; i < snap_nreaders; ++i) {
-      if (lck->mti_readers[i].mr_pid.weak == env->me_pid &&
-          lck->mti_readers[i].mr_tid.weak != osal_thread_self()) {
-        /* the base address of the mapping can't be changed since
-         * the other reader thread from this process exists. */
-        osal_rdt_unlock(env);
-        mresize_flags &= ~(MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE);
-        break;
+    if (lck) {
+      int err = osal_rdt_lock(env) /* lock readers table until remap done */;
+      if (unlikely(MDBX_IS_ERROR(err))) {
+        rc = err;
+        goto bailout;
+      }
+
+      /* looking for readers from this process */
+      const size_t snap_nreaders =
+          atomic_load32(&lck->mti_numreaders, mo_AcquireRelease);
+      eASSERT(env, mode == explicit_resize);
+      for (size_t i = 0; i < snap_nreaders; ++i) {
+        if (lck->mti_readers[i].mr_pid.weak == env->me_pid &&
+            lck->mti_readers[i].mr_tid.weak != osal_thread_self()) {
+          /* the base address of the mapping can't be changed since
+           * the other reader thread from this process exists. */
+          osal_rdt_unlock(env);
+          mresize_flags &= ~(MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE);
+          break;
+        }
       }
     }
   }
 #endif /* ! Windows */
 
-  if ((env->me_flags & MDBX_WRITEMAP) && env->me_lck->mti_unsynced_pages.weak) {
-#if MDBX_ENABLE_PGOP_STAT
-    env->me_lck->mti_pgop_stat.msync.weak += 1;
-#endif /* MDBX_ENABLE_PGOP_STAT */
-    rc = osal_msync(&env->me_dxb_mmap, 0, pgno_align2os_bytes(env, used_pgno),
-                    MDBX_SYNC_NONE);
-    if (unlikely(rc != MDBX_SUCCESS))
-      goto bailout;
-  }
-
   const pgno_t aligned_munlock_pgno =
       (mresize_flags & (MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE))
           ? 0
           : bytes2pgno(env, size_bytes);
+  if (mresize_flags & (MDBX_MRESIZE_MAY_UNMAP | MDBX_MRESIZE_MAY_MOVE)) {
+    mincore_clean_cache(env);
+    if ((env->me_flags & MDBX_WRITEMAP) &&
+        env->me_lck->mti_unsynced_pages.weak) {
+#if MDBX_ENABLE_PGOP_STAT
+      env->me_lck->mti_pgop_stat.msync.weak += 1;
+#endif /* MDBX_ENABLE_PGOP_STAT */
+      rc = osal_msync(&env->me_dxb_mmap, 0, pgno_align2os_bytes(env, used_pgno),
+                      MDBX_SYNC_NONE);
+      if (unlikely(rc != MDBX_SUCCESS))
+        goto bailout;
+    }
+  }
   munlock_after(env, aligned_munlock_pgno, size_bytes);
-  mincore_clean_cache(env);
 
 #if MDBX_ENABLE_MADVISE
-  if (size_bytes < prev_size) {
+  if (size_bytes < prev_size && mode > implicit_grow) {
     NOTICE("resize-MADV_%s %u..%u",
            (env->me_flags & MDBX_WRITEMAP) ? "REMOVE" : "DONTNEED", size_pgno,
            bytes2pgno(env, prev_size));
@@ -10205,7 +10221,10 @@ __cold static int map_resize(MDBX_env *env, const pgno_t used_pgno,
   if (rc == MDBX_SUCCESS) {
     eASSERT(env, limit_bytes == env->me_dxb_mmap.limit);
     eASSERT(env, size_bytes <= env->me_dxb_mmap.filesize);
-    eASSERT(env, size_bytes == env->me_dxb_mmap.current);
+    if (mode == explicit_resize)
+      eASSERT(env, size_bytes == env->me_dxb_mmap.current);
+    else
+      eASSERT(env, size_bytes <= env->me_dxb_mmap.current);
     env->me_lck->mti_discarded_tail.weak = size_pgno;
     const bool readahead =
         !(env->me_flags & MDBX_NORDAHEAD) &&
@@ -10224,7 +10243,10 @@ bailout:
   if (rc == MDBX_SUCCESS) {
     eASSERT(env, limit_bytes == env->me_dxb_mmap.limit);
     eASSERT(env, size_bytes <= env->me_dxb_mmap.filesize);
-    eASSERT(env, size_bytes == env->me_dxb_mmap.current);
+    if (mode == explicit_resize)
+      eASSERT(env, size_bytes == env->me_dxb_mmap.current);
+    else
+      eASSERT(env, size_bytes <= env->me_dxb_mmap.current);
     /* update env-geo to avoid influences */
     env->me_dbgeo.now = env->me_dxb_mmap.current;
     env->me_dbgeo.upper = env->me_dxb_mmap.limit;
@@ -10277,21 +10299,6 @@ bailout:
     return MDBX_PANIC;
   }
   return rc;
-}
-
-__cold static int map_resize_implicit(MDBX_env *env, const pgno_t used_pgno,
-                                      const pgno_t size_pgno,
-                                      const pgno_t limit_pgno) {
-  const pgno_t mapped_pgno = bytes2pgno(env, env->me_dxb_mmap.limit);
-  eASSERT(env, mapped_pgno >= used_pgno);
-  return map_resize(
-      env, used_pgno, size_pgno,
-      (size_pgno > mapped_pgno)
-          ? limit_pgno
-          : /* The actual mapsize may be less since the geo.upper may be changed
-               by other process. So, avoids remapping until it necessary. */
-          mapped_pgno,
-      true);
 }
 
 static int meta_unsteady(int err, MDBX_env *env, const txnid_t early_than,
@@ -11673,8 +11680,8 @@ no_gc:
 
   VERBOSE("try growth datafile to %zu pages (+%zu)", aligned,
           aligned - txn->mt_end_pgno);
-  ret.err = map_resize_implicit(env, txn->mt_next_pgno, (pgno_t)aligned,
-                                txn->mt_geo.upper);
+  ret.err = dxb_resize(env, txn->mt_next_pgno, (pgno_t)aligned,
+                       txn->mt_geo.upper, implicit_grow);
   if (ret.err != MDBX_SUCCESS) {
     ERROR("unable growth datafile to %zu pages (+%zu), errcode %d", aligned,
           aligned - txn->mt_end_pgno, ret.err);
@@ -12119,8 +12126,8 @@ retry:;
   if (!inside_txn && locked && (env->me_flags & MDBX_WRITEMAP) &&
       unlikely(head.ptr_c->mm_geo.next >
                bytes2pgno(env, env->me_dxb_mmap.current))) {
-    rc = map_resize_implicit(env, head.ptr_c->mm_geo.next,
-                             head.ptr_c->mm_geo.now, head.ptr_c->mm_geo.upper);
+    rc = dxb_resize(env, head.ptr_c->mm_geo.next, head.ptr_c->mm_geo.now,
+                    head.ptr_c->mm_geo.upper, implicit_grow);
     if (unlikely(rc != MDBX_SUCCESS))
       goto bailout;
   }
@@ -12998,6 +13005,8 @@ static int txn_renew(MDBX_txn *txn, const unsigned flags) {
   txn->mt_dbistate[MAIN_DBI] = DBI_VALID | DBI_USRVALID;
   rc =
       setup_dbx(&txn->mt_dbxs[MAIN_DBI], &txn->mt_dbs[MAIN_DBI], env->me_psize);
+  if (unlikely(rc != MDBX_SUCCESS))
+    goto bailout;
   txn->mt_dbistate[FREE_DBI] = DBI_VALID;
   txn->mt_front =
       txn->mt_txnid + ((flags & (MDBX_WRITEMAP | MDBX_RDONLY)) == 0);
@@ -13006,34 +13015,80 @@ static int txn_renew(MDBX_txn *txn, const unsigned flags) {
     WARNING("%s", "environment had fatal error, must shutdown!");
     rc = MDBX_PANIC;
   } else {
-    const size_t size =
-        pgno2bytes(env, (txn->mt_flags & MDBX_TXN_RDONLY) ? txn->mt_next_pgno
-                                                          : txn->mt_end_pgno);
-    if (unlikely(size > env->me_dxb_mmap.limit)) {
+    const size_t size_bytes = pgno2bytes(env, txn->mt_end_pgno);
+    const size_t used_bytes = pgno2bytes(env, txn->mt_next_pgno);
+    const size_t required_bytes =
+        (txn->mt_flags & MDBX_TXN_RDONLY) ? used_bytes : size_bytes;
+    if (unlikely(required_bytes > env->me_dxb_mmap.current)) {
+      /* Размер БД (для пишущих транзакций) или используемых данных (для
+       * читающих транзакций) больше предыдущего/текущего размера внутри
+       * процесса, увеличиваем. Сюда также попадает случай увеличения верхней
+       * границы размера БД и отображения. В читающих транзакциях нельзя
+       * изменять размер файла, который может быть больше необходимого этой
+       * транзакции. */
       if (txn->mt_geo.upper > MAX_PAGENO + 1 ||
           bytes2pgno(env, pgno2bytes(env, txn->mt_geo.upper)) !=
               txn->mt_geo.upper) {
         rc = MDBX_UNABLE_EXTEND_MAPSIZE;
         goto bailout;
       }
-      rc = map_resize(env, txn->mt_next_pgno, txn->mt_end_pgno,
-                      txn->mt_geo.upper,
-                      (txn->mt_flags & MDBX_TXN_RDONLY) ? true : false);
-      if (rc != MDBX_SUCCESS)
+      rc = dxb_resize(env, txn->mt_next_pgno, txn->mt_end_pgno,
+                      txn->mt_geo.upper, implicit_grow);
+      if (unlikely(rc != MDBX_SUCCESS))
         goto bailout;
-    } else {
-      env->me_dxb_mmap.current = size;
-      env->me_dxb_mmap.filesize =
-          (env->me_dxb_mmap.filesize < size) ? size : env->me_dxb_mmap.filesize;
+    } else if (unlikely(size_bytes < env->me_dxb_mmap.current)) {
+      /* Размер БД меньше предыдущего/текущего размера внутри процесса, можно
+       * уменьшить, но всё сложнее:
+       *  - размер файла согласован со всеми читаемыми снимками на момент
+       *    коммита последней транзакции;
+       *  - в читающей транзакции размер файла может быть больше и него нельзя
+       *    изменять, в том числе менять madvise (меньша размера файла нельзя,
+       *    а за размером нет смысла).
+       *  - в пишущей транзакции уменьшать размер файла можно только после
+       *    проверки размера читаемых снимков, но в этом нет смысла, так как
+       *    это будет сделано при фиксации транзакции.
+       *
+       *  В сухом остатке, можно только установить dxb_mmap.current равным
+       *  размеру файла, а это проще сделать без вызова dxb_resize() и усложения
+       *  внутренней логики.
+       *
+       *  В этой тактике есть недостаток: если пишущите транзакции не регулярны,
+       *  и при завершении такой транзакции файл БД остаётся не-уменьшеным из-за
+       *  читающих транзакций использующих предыдущие снимки. */
+#if defined(_WIN32) || defined(_WIN64)
+      osal_srwlock_AcquireShared(&env->me_remap_guard);
+#else
+      rc = osal_fastmutex_acquire(&env->me_remap_guard);
+#endif
+      if (likely(rc == MDBX_SUCCESS)) {
+        rc = osal_filesize(env->me_dxb_mmap.fd, &env->me_dxb_mmap.filesize);
+        if (likely(rc == MDBX_SUCCESS)) {
+          eASSERT(env, env->me_dxb_mmap.filesize >= required_bytes);
+          if (env->me_dxb_mmap.current > env->me_dxb_mmap.filesize)
+            env->me_dxb_mmap.current = (size_t)env->me_dxb_mmap.filesize;
+        }
+#if defined(_WIN32) || defined(_WIN64)
+        osal_srwlock_ReleaseShared(&env->me_remap_guard);
+#else
+        int err = osal_fastmutex_release(&env->me_remap_guard);
+        if (unlikely(err) && likely(rc == MDBX_SUCCESS))
+          rc = err;
+#endif
+      }
+      if (unlikely(rc != MDBX_SUCCESS))
+        goto bailout;
     }
+    eASSERT(env,
+            pgno2bytes(env, txn->mt_next_pgno) <= env->me_dxb_mmap.current);
+    eASSERT(env, env->me_dxb_mmap.limit >= env->me_dxb_mmap.current);
     if (txn->mt_flags & MDBX_TXN_RDONLY) {
 #if defined(_WIN32) || defined(_WIN64)
-      if (((size > env->me_dbgeo.lower && env->me_dbgeo.shrink) ||
+      if (((used_bytes > env->me_dbgeo.lower && env->me_dbgeo.shrink) ||
            (mdbx_RunningUnderWine() &&
             /* under Wine acquisition of remap_guard is always required,
              * since Wine don't support section extending,
              * i.e. in both cases unmap+map are required. */
-            size < env->me_dbgeo.upper && env->me_dbgeo.grow)) &&
+            used_bytes < env->me_dbgeo.upper && env->me_dbgeo.grow)) &&
           /* avoid recursive use SRW */ (txn->mt_flags & MDBX_NOTLS) == 0) {
         txn->mt_flags |= MDBX_SHRINK_ALLOWED;
         osal_srwlock_AcquireShared(&env->me_remap_guard);
@@ -13823,8 +13878,8 @@ static int txn_end(MDBX_txn *txn, const unsigned mode) {
       if (parent->mt_geo.upper != txn->mt_geo.upper ||
           parent->mt_geo.now != txn->mt_geo.now) {
         /* undo resize performed by child txn */
-        rc = map_resize_implicit(env, parent->mt_next_pgno, parent->mt_geo.now,
-                                 parent->mt_geo.upper);
+        rc = dxb_resize(env, parent->mt_next_pgno, parent->mt_geo.now,
+                        parent->mt_geo.upper, impilict_shrink);
         if (rc == MDBX_EPERM) {
           /* unable undo resize (it is regular for Windows),
            * therefore promote size changes from child to the parent txn */
@@ -16883,8 +16938,8 @@ static int sync_locked(MDBX_env *env, unsigned flags, MDBX_meta *const pending,
   if (unlikely(shrink)) {
     VERBOSE("shrink to %" PRIaPGNO " pages (-%" PRIaPGNO ")",
             pending->mm_geo.now, shrink);
-    rc = map_resize_implicit(env, pending->mm_geo.next, pending->mm_geo.now,
-                             pending->mm_geo.upper);
+    rc = dxb_resize(env, pending->mm_geo.next, pending->mm_geo.now,
+                    pending->mm_geo.upper, impilict_shrink);
     if (rc != MDBX_SUCCESS && rc != MDBX_EPERM)
       goto fail;
     eASSERT(env, coherency_check_meta(env, target, true));
@@ -17477,8 +17532,8 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
 
       if (new_geo.now != current_geo->now ||
           new_geo.upper != current_geo->upper) {
-        rc = map_resize(env, current_geo->next, new_geo.now, new_geo.upper,
-                        false);
+        rc = dxb_resize(env, current_geo->next, new_geo.now, new_geo.upper,
+                        explicit_resize);
         if (unlikely(rc != MDBX_SUCCESS))
           goto bailout;
       }
@@ -18916,7 +18971,8 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
 #if defined(_WIN32) || defined(_WIN64)
   eASSERT(env, env->me_overlapped_fd == 0);
   bool ior_direct = false;
-  if (!(flags & (MDBX_RDONLY | MDBX_SAFE_NOSYNC | MDBX_NOMETASYNC))) {
+  if (!(flags &
+        (MDBX_RDONLY | MDBX_SAFE_NOSYNC | MDBX_NOMETASYNC | MDBX_EXCLUSIVE))) {
     if (MDBX_AVOID_MSYNC && (flags & MDBX_WRITEMAP)) {
       /* Запрошен режим MDBX_SAFE_NOSYNC | MDBX_WRITEMAP при активной опции
        * MDBX_AVOID_MSYNC.
@@ -18988,7 +19044,11 @@ __cold int mdbx_env_openW(MDBX_env *env, const wchar_t *pathname,
   osal_fseek(env->me_lfd, safe_parking_lot_offset);
 
   eASSERT(env, env->me_dsync_fd == INVALID_HANDLE_VALUE);
-  if (!(flags & (MDBX_RDONLY | MDBX_SAFE_NOSYNC | MDBX_DEPRECATED_MAPASYNC))) {
+  if (!(flags & (MDBX_RDONLY | MDBX_SAFE_NOSYNC | MDBX_DEPRECATED_MAPASYNC
+#if defined(_WIN32) || defined(_WIN64)
+                 | MDBX_EXCLUSIVE
+#endif /* !Windows */
+                 ))) {
     rc = osal_openfile(MDBX_OPEN_DXB_DSYNC, env, env_pathname.dxb,
                        &env->me_dsync_fd, 0);
     if (MDBX_IS_ERROR(rc))
@@ -19523,12 +19583,12 @@ __hot static __always_inline int page_get_checker_lite(const uint16_t ILL,
       assert((ILL & (P_BRANCH | P_LEAF | P_LEAF2)) == 0);
       assert(page->mp_flags & (P_BRANCH | P_LEAF | P_LEAF2));
       return bad_page(page, "unexpected %s instead of %s (%u)\n",
-                      "large/overlow", "branch/leaf/leaf2", page->mp_flags);
+                      "large/overflow", "branch/leaf/leaf2", page->mp_flags);
     } else if (ILL & (P_BRANCH | P_LEAF | P_LEAF2)) {
       assert((ILL & P_BRANCH) && (ILL & P_LEAF) && (ILL & P_LEAF2));
       assert(page->mp_flags & (P_BRANCH | P_LEAF | P_LEAF2));
       return bad_page(page, "unexpected %s instead of %s (%u)\n",
-                      "branch/leaf/leaf2", "large/overlow", page->mp_flags);
+                      "branch/leaf/leaf2", "large/overflow", page->mp_flags);
     } else {
       assert(false);
     }
@@ -21196,15 +21256,15 @@ static __hot int cursor_put_nochecklen(MDBX_cursor *mc, const MDBX_val *key,
     if ((flags & MDBX_APPEND) && mc->mc_db->md_entries > 0) {
       rc = cursor_last(mc, &dkey, &olddata);
       if (likely(rc == MDBX_SUCCESS)) {
-        rc = mc->mc_dbx->md_cmp(key, &dkey);
-        if (likely(rc > 0)) {
+        const int cmp = mc->mc_dbx->md_cmp(key, &dkey);
+        if (likely(cmp > 0)) {
           mc->mc_ki[mc->mc_top]++; /* step forward for appending */
           rc = MDBX_NOTFOUND;
+        } else if (unlikely(cmp != 0)) {
+          /* new-key < last-key */
+          return MDBX_EKEYMISMATCH;
         } else {
-          if (unlikely(rc != MDBX_SUCCESS))
-            /* new-key < last-key
-             * or new-key == last-key without MDBX_APPENDDUP */
-            return MDBX_EKEYMISMATCH;
+          rc = MDBX_SUCCESS;
           exact = true;
         }
       }
@@ -21238,7 +21298,7 @@ static __hot int cursor_put_nochecklen(MDBX_cursor *mc, const MDBX_val *key,
           if (unlikely(err != MDBX_SUCCESS))
             return err;
           flags -= MDBX_ALLDUPS;
-          rc = MDBX_NOTFOUND;
+          rc = mc->mc_snum ? MDBX_NOTFOUND : MDBX_NO_ROOT;
           exact = false;
         } else if (!(flags & (MDBX_RESERVE | MDBX_MULTIPLE))) {
           /* checking for early exit without dirtying pages */
@@ -25377,7 +25437,7 @@ __cold static void compacting_fixup_meta(MDBX_env *env, MDBX_meta *meta) {
   unaligned_poke_u64(4, meta->mm_sign, meta_sign(meta));
 }
 
-/* Make resizeable */
+/* Make resizable */
 __cold static void meta_make_sizeable(MDBX_meta *meta) {
   meta->mm_geo.lower = MIN_PAGENO;
   if (meta->mm_geo.grow_pv == 0) {
@@ -25624,7 +25684,7 @@ __cold static int env_copy_asis(MDBX_env *env, MDBX_txn *read_txn,
         break;
       rc = errno;
       if (rc == EXDEV || rc == /* workaround for ecryptfs bug(s),
-                                  maybe usefull for others fs */
+                                  maybe useful for others FS */
                              EINVAL)
         not_the_same_filesystem = true;
       else if (ignore_enosys(rc) == MDBX_RESULT_TRUE)
@@ -29554,7 +29614,7 @@ LIBMDBX_API __attribute__((__weak__)) const char *__asan_default_options() {
 /* https://en.wikipedia.org/wiki/Operating_system_abstraction_layer */
 
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -30712,7 +30772,7 @@ MDBX_INTERNAL_FUNC void osal_ioring_destroy(osal_ioring_t *ior) {
 #else
   osal_free(ior->pool);
 #endif
-  memset(ior, -1, sizeof(osal_ioring_t));
+  memset(ior, 0, sizeof(osal_ioring_t));
 }
 
 /*----------------------------------------------------------------------------*/
@@ -31712,9 +31772,8 @@ static int check_mmap_limit(const size_t limit) {
   return MDBX_SUCCESS;
 }
 
-MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map,
-                                 const size_t size, const size_t limit,
-                                 const unsigned options) {
+MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map, size_t size,
+                                 const size_t limit, const unsigned options) {
   assert(size <= limit);
   map->limit = 0;
   map->current = 0;
@@ -31734,6 +31793,7 @@ MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map,
 
   if ((flags & MDBX_RDONLY) == 0 && (options & MMAP_OPTION_TRUNCATE) != 0) {
     err = osal_ftruncate(map->fd, size);
+    VERBOSE("ftruncate %zu, err %d", size, err);
     if (err != MDBX_SUCCESS)
       return err;
     map->filesize = size;
@@ -31742,9 +31802,16 @@ MDBX_INTERNAL_FUNC int osal_mmap(const int flags, osal_mmap_t *map,
 #endif /* !Windows */
   } else {
     err = osal_filesize(map->fd, &map->filesize);
+    VERBOSE("filesize %" PRIu64 ", err %d", map->filesize, err);
     if (err != MDBX_SUCCESS)
       return err;
-#if !(defined(_WIN32) || defined(_WIN64))
+#if defined(_WIN32) || defined(_WIN64)
+    if (map->filesize < size) {
+      WARNING("file size (%zu) less than requested for mapping (%zu)",
+              (size_t)map->filesize, size);
+      size = (size_t)map->filesize;
+    }
+#else
     map->current = (map->filesize > limit) ? limit : (size_t)map->filesize;
 #endif /* !Windows */
   }
@@ -31853,8 +31920,7 @@ MDBX_INTERNAL_FUNC int osal_munmap(osal_mmap_t *map) {
   VALGRIND_MAKE_MEM_NOACCESS(map->base, map->current);
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
-   * See https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203
-   */
+   * See https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203 */
   MDBX_ASAN_UNPOISON_MEMORY_REGION(
       map->base, (map->filesize && map->filesize < map->limit) ? map->filesize
                                                                : map->limit);
@@ -31879,25 +31945,38 @@ MDBX_INTERNAL_FUNC int osal_munmap(osal_mmap_t *map) {
 
 MDBX_INTERNAL_FUNC int osal_mresize(const int flags, osal_mmap_t *map,
                                     size_t size, size_t limit) {
+  int rc = osal_filesize(map->fd, &map->filesize);
+  VERBOSE("flags 0x%x, size %zu, limit %zu, filesize %" PRIu64, flags, size,
+          limit, map->filesize);
   assert(size <= limit);
+  if (rc != MDBX_SUCCESS) {
+    map->filesize = 0;
+    return rc;
+  }
+
 #if defined(_WIN32) || defined(_WIN64)
   assert(size != map->current || limit != map->limit || size < map->filesize);
 
   NTSTATUS status;
   LARGE_INTEGER SectionSize;
-  int err, rc = MDBX_SUCCESS;
+  int err;
 
-  if (!(flags & MDBX_RDONLY) && limit == map->limit && size > map->current &&
-      /* workaround for Wine */ mdbx_NtExtendSection) {
-    /* growth rw-section */
-    SectionSize.QuadPart = size;
-    status = mdbx_NtExtendSection(map->section, &SectionSize);
-    if (!NT_SUCCESS(status))
-      return ntstatus2errcode(status);
-    map->current = size;
-    if (map->filesize < size)
-      map->filesize = size;
-    return MDBX_SUCCESS;
+  if (limit == map->limit && size > map->current) {
+    if ((flags & MDBX_RDONLY) && map->filesize >= size) {
+      map->current = size;
+      return MDBX_SUCCESS;
+    } else if (!(flags & MDBX_RDONLY) &&
+               /* workaround for Wine */ mdbx_NtExtendSection) {
+      /* growth rw-section */
+      SectionSize.QuadPart = size;
+      status = mdbx_NtExtendSection(map->section, &SectionSize);
+      if (!NT_SUCCESS(status))
+        return ntstatus2errcode(status);
+      map->current = size;
+      if (map->filesize < size)
+        map->filesize = size;
+      return MDBX_SUCCESS;
+    }
   }
 
   if (limit > map->limit) {
@@ -31926,13 +32005,15 @@ MDBX_INTERNAL_FUNC int osal_mresize(const int flags, osal_mmap_t *map,
    *  - change size of mapped view;
    *  - extend read-only mapping;
    * Therefore we should unmap/map entire section. */
-  if ((flags & MDBX_MRESIZE_MAY_UNMAP) == 0)
+  if ((flags & MDBX_MRESIZE_MAY_UNMAP) == 0) {
+    if (size <= map->current && limit == map->limit)
+      return MDBX_SUCCESS;
     return MDBX_EPERM;
+  }
 
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
-   * See https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203
-   */
+   * See https://libmdbx.dqdkfa.ru/dead-github/pull/93#issuecomment-613687203 */
   MDBX_ASAN_UNPOISON_MEMORY_REGION(map->base, map->limit);
   status = NtUnmapViewOfSection(GetCurrentProcess(), map->base);
   if (!NT_SUCCESS(status))
@@ -31945,7 +32026,6 @@ MDBX_INTERNAL_FUNC int osal_mresize(const int flags, osal_mmap_t *map,
   if (!NT_SUCCESS(status)) {
   bailout_ntstatus:
     err = ntstatus2errcode(status);
-  bailout:
     map->base = NULL;
     map->current = map->limit = 0;
     if (ReservedAddress) {
@@ -31973,10 +32053,6 @@ retry_file_and_section:
       /* the base address could be changed */
       map->base = NULL;
   }
-
-  err = osal_filesize(map->fd, &map->filesize);
-  if (err != MDBX_SUCCESS)
-    goto bailout;
 
   if ((flags & MDBX_RDONLY) == 0 && map->filesize != size) {
     err = osal_ftruncate(map->fd, size);
@@ -32054,18 +32130,17 @@ retry_mapview:;
 
 #else /* Windows */
 
-  map->filesize = 0;
-  int rc = osal_filesize(map->fd, &map->filesize);
-  if (rc != MDBX_SUCCESS)
-    return rc;
-
   if (flags & MDBX_RDONLY) {
+    if (size > map->filesize)
+      rc = MDBX_UNABLE_EXTEND_MAPSIZE;
+    else if (size < map->filesize && map->filesize > limit)
+      rc = MDBX_EPERM;
     map->current = (map->filesize > limit) ? limit : (size_t)map->filesize;
-    if (map->current != size)
-      rc = (size > map->current) ? MDBX_UNABLE_EXTEND_MAPSIZE : MDBX_EPERM;
   } else {
-    if (map->filesize != size) {
+    if (size > map->filesize ||
+        (size < map->filesize && (flags & MDBX_SHRINK_ALLOWED))) {
       rc = osal_ftruncate(map->fd, size);
+      VERBOSE("ftruncate %zu, err %d", size, rc);
       if (rc != MDBX_SUCCESS)
         return rc;
       map->filesize = size;
@@ -32260,7 +32335,8 @@ retry_mapview:;
 
   assert(rc != MDBX_SUCCESS ||
          (map->base != nullptr && map->base != MAP_FAILED &&
-          map->current == size && map->limit == limit));
+          map->current == size && map->limit == limit &&
+          map->filesize >= size));
   return rc;
 }
 
@@ -33057,9 +33133,9 @@ __dll_export
         0,
         12,
         3,
-        0,
-        {"2023-01-07T00:11:51+03:00", "7c6941447b4b70d0657d92e9375af0ecfb3e4c71", "f1fdb88938c07037e5bef12c884eca47b7437fac",
-         "v0.12.3-0-gf1fdb889"},
+        16,
+        {"2023-02-01T01:04:24+03:00", "1143e3df3567e542307bede2fd579d6fb2d67202", "fb827959a9d2d12f1145d7409f08199809481e69",
+         "v0.12.3-16-gfb827959"},
         sourcery};
 
 __dll_export
@@ -33076,7 +33152,7 @@ __dll_export
 #endif
     const char *const mdbx_sourcery_anchor = sourcery;
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
@@ -33824,7 +33900,7 @@ static void WINAPI stub_srwlock_AcquireShared(osal_srwlock_t *srwl) {
     //  If there's a writer already, spin without unnecessarily
     //  interlocking the CPUs
     if (srwl->writerCount != 0) {
-      YieldProcessor();
+      SwitchToThread();
       continue;
     }
 
@@ -33838,7 +33914,7 @@ static void WINAPI stub_srwlock_AcquireShared(osal_srwlock_t *srwl) {
 
     // Remove from the readers list, spin, try again
     _InterlockedDecrement(&srwl->readerCount);
-    YieldProcessor();
+    SwitchToThread();
   }
 }
 
@@ -33854,7 +33930,7 @@ static void WINAPI stub_srwlock_AcquireExclusive(osal_srwlock_t *srwl) {
     //  If there's a writer already, spin without unnecessarily
     //  interlocking the CPUs
     if (srwl->writerCount != 0) {
-      YieldProcessor();
+      SwitchToThread();
       continue;
     }
 
@@ -33869,7 +33945,7 @@ static void WINAPI stub_srwlock_AcquireExclusive(osal_srwlock_t *srwl) {
   // that we're the writer.
   while (srwl->readerCount != 0) {
     assert(srwl->writerCount >= 0 && srwl->readerCount >= 0);
-    YieldProcessor();
+    SwitchToThread();
   }
 }
 
@@ -33968,7 +34044,7 @@ static void mdbx_winnt_import(void) {
 
 #endif /* Windows LCK-implementation */
 /*
- * Copyright 2015-2022 Leonid Yuriev <leo@yuriev.ru>
+ * Copyright 2015-2023 Leonid Yuriev <leo@yuriev.ru>
  * and other libmdbx authors: please see AUTHORS file.
  * All rights reserved.
  *
