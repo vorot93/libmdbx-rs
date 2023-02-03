@@ -77,6 +77,7 @@ impl Error {
         match self {
             Error::KeyExist => ffi::MDBX_KEYEXIST,
             Error::NotFound => ffi::MDBX_NOTFOUND,
+            Error::NoData => ffi::MDBX_ENODATA,
             Error::PageNotFound => ffi::MDBX_PAGE_NOTFOUND,
             Error::Corrupted => ffi::MDBX_CORRUPTED,
             Error::Panic => ffi::MDBX_PANIC,
@@ -111,7 +112,7 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::DecodeError(reason) => write!(fmt, "{}", reason),
+            Error::DecodeError(reason) => write!(fmt, "{reason}"),
             other => {
                 write!(fmt, "{}", unsafe {
                     let err = ffi::mdbx_strerror(other.to_err_code());

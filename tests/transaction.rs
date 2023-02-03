@@ -301,8 +301,8 @@ fn test_concurrent_writers() {
             let table = txn.open_table(None).unwrap();
             txn.put(
                 &table,
-                format!("{}{}", key, i),
-                format!("{}{}", val, i),
+                format!("{key}{i}"),
+                format!("{val}{i}"),
                 WriteFlags::empty(),
             )
             .unwrap();
@@ -316,8 +316,8 @@ fn test_concurrent_writers() {
 
     for i in 0..n {
         assert_eq!(
-            Cow::<Vec<u8>>::Owned(format!("{}{}", val, i).into_bytes()),
-            txn.get(&table, format!("{}{}", key, i).as_bytes())
+            Cow::<Vec<u8>>::Owned(format!("{val}{i}").into_bytes()),
+            txn.get(&table, format!("{key}{i}").as_bytes())
                 .unwrap()
                 .unwrap()
         );
