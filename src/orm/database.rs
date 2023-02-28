@@ -85,7 +85,7 @@ impl Database {
         let mut builder = crate::Database::<WriteMap>::new();
         builder.set_max_tables(chart.len());
         builder.set_geometry(Geometry {
-            size: Some(..usize::MAX),
+            size: Some(..isize::MAX as usize),
             growth_step: None,
             shrink_threshold: None,
             page_size: None,
