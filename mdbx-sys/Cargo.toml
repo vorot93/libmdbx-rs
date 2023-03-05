@@ -1,6 +1,6 @@
 [package]
 name = "mdbx-sys"
-version = "0.12.3-16-1"
+version = "0.12.4-0"
 edition = "2021"
 license = "MPL-2.0"
 description = "Rust bindings for libmdbx."

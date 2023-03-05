@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY ae57c9d1ed15e4f88284eac3f03e6f9b472a3154de838d314d024cb80055bcd0_v0_12_3_16_gfb827959
+#define MDBX_BUILD_SOURCERY 7a10d70b0b57e5ae8ac30e0728c9f1f7b6b3d51d69ef544f87ae054578c81daf_v0_12_4_0_g53177e48
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -109,13 +109,17 @@
 #pragma warning(disable : 4464) /* relative include path contains '..' */
 #endif
 #if _MSC_VER > 1913
-#pragma warning(disable : 5045) /* Compiler will insert Spectre mitigation...  \
-                                 */
+#pragma warning(disable : 5045) /* will insert Spectre mitigation... */
 #endif
 #if _MSC_VER > 1914
 #pragma warning(                                                               \
     disable : 5105) /* winbase.h(9531): warning C5105: macro expansion         \
                        producing 'defined' has undefined behavior */
+#endif
+#if _MSC_VER > 1930
+#pragma warning(disable : 6235) /* <expression> is always a constant */
+#pragma warning(disable : 6237) /* <expression> is never evaluated and might   \
+                                   have side effects */
 #endif
 #pragma warning(disable : 4710) /* 'xyz': function not inlined */
 #pragma warning(disable : 4711) /* function 'xyz' selected for automatic       \
@@ -729,17 +733,13 @@ __extern_C key_t ftok(const char *, int);
 
 #ifndef __hot
 #if defined(__OPTIMIZE__)
-#if defined(__e2k__)
-#define __hot __attribute__((__hot__)) __optimize(3)
-#elif defined(__clang__) && !__has_attribute(__hot_) &&                        \
+#if defined(__clang__) && !__has_attribute(__hot__) &&                         \
     __has_attribute(__section__) &&                                            \
     (defined(__linux__) || defined(__gnu_linux__))
 /* just put frequently used functions in separate section */
 #define __hot __attribute__((__section__("text.hot"))) __optimize("O3")
-#elif defined(__LCC__)
-#define __hot __attribute__((__hot__, __optimize__("Ofast,O4")))
 #elif defined(__GNUC__) || __has_attribute(__hot__)
-#define __hot __attribute__((__hot__)) __optimize("O3")
+#define __hot __attribute__((__hot__))
 #else
 #define __hot __optimize("O3")
 #endif
@@ -750,17 +750,13 @@ __extern_C key_t ftok(const char *, int);
 
 #ifndef __cold
 #if defined(__OPTIMIZE__)
-#if defined(__e2k__)
-#define __cold __attribute__((__cold__)) __optimize(1)
-#elif defined(__clang__) && !__has_attribute(cold) &&                          \
+#if defined(__clang__) && !__has_attribute(__cold__) &&                        \
     __has_attribute(__section__) &&                                            \
     (defined(__linux__) || defined(__gnu_linux__))
 /* just put infrequently used functions in separate section */
 #define __cold __attribute__((__section__("text.unlikely"))) __optimize("Os")
-#elif defined(__LCC__)
-#define __hot __attribute__((__cold__, __optimize__("Osize")))
-#elif defined(__GNUC__) || __has_attribute(cold)
-#define __cold __attribute__((__cold__)) __optimize("Os")
+#elif defined(__GNUC__) || __has_attribute(__cold__)
+#define __cold __attribute__((__cold__))
 #else
 #define __cold __optimize("Os")
 #endif
@@ -825,6 +821,28 @@ __extern_C key_t ftok(const char *, int);
 #define MDBX_WEAK_IMPORT_ATTRIBUTE
 #endif
 #endif /* MDBX_WEAK_IMPORT_ATTRIBUTE */
+
+#ifndef MDBX_GOOFY_MSVC_STATIC_ANALYZER
+#ifdef _PREFAST_
+#define MDBX_GOOFY_MSVC_STATIC_ANALYZER 1
+#else
+#define MDBX_GOOFY_MSVC_STATIC_ANALYZER 0
+#endif
+#endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
+
+#if MDBX_GOOFY_MSVC_STATIC_ANALYZER || (defined(_MSC_VER) && _MSC_VER > 1919)
+#define MDBX_ANALYSIS_ASSUME(expr) __analysis_assume(expr)
+#ifdef _PREFAST_
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)                             \
+  __pragma(prefast(suppress : warn_id))
+#else
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)                             \
+  __pragma(warning(suppress : warn_id))
+#endif
+#else
+#define MDBX_ANALYSIS_ASSUME(expr) assert(expr)
+#define MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(warn_id)
+#endif /* MDBX_GOOFY_MSVC_STATIC_ANALYZER */
 
 /*----------------------------------------------------------------------------*/
 
@@ -1748,22 +1766,7 @@ MDBX_INTERNAL_FUNC int osal_rpid_check(MDBX_env *env, uint32_t pid);
 
 #if defined(_WIN32) || defined(_WIN64)
 
-MDBX_INTERNAL_FUNC size_t osal_mb2w(wchar_t *dst, size_t dst_n, const char *src,
-                                    size_t src_n);
-
-#define OSAL_MB2WIDE(FROM, TO)                                                 \
-  do {                                                                         \
-    const char *const from_tmp = (FROM);                                       \
-    const size_t from_mblen = strlen(from_tmp);                                \
-    const size_t to_wlen = osal_mb2w(nullptr, 0, from_tmp, from_mblen);        \
-    if (to_wlen < 1 || to_wlen > /* MAX_PATH */ INT16_MAX)                     \
-      return ERROR_INVALID_NAME;                                               \
-    wchar_t *const to_tmp = _alloca((to_wlen + 1) * sizeof(wchar_t));          \
-    if (to_wlen + 1 !=                                                         \
-        osal_mb2w(to_tmp, to_wlen + 1, from_tmp, from_mblen + 1))              \
-      return ERROR_INVALID_NAME;                                               \
-    (TO) = to_tmp;                                                             \
-  } while (0)
+MDBX_INTERNAL_FUNC int osal_mb2w(const char *const src, wchar_t **const pdst);
 
 typedef void(WINAPI *osal_srwlock_t_function)(osal_srwlock_t *);
 MDBX_INTERNAL_VAR osal_srwlock_t_function osal_srwlock_Init,
@@ -2190,7 +2193,11 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #endif /* MDBX_HAVE_C11ATOMICS */
 
 /** If defined then enables use the GCC's `__builtin_cpu_supports()`
- *  for runtime dispatching depending on the CPU's capabilities. */
+ * for runtime dispatching depending on the CPU's capabilities.
+ * \note Defining `MDBX_HAVE_BUILTIN_CPU_SUPPORTS` to `0` should avoided unless
+ * build for particular single-target platform, since on AMD64/x86 this disables
+ * dynamic choice (at runtime) of SSE2 / AVX2 / AVX512 instructions
+ * with fallback to non-accelerated baseline code. */
 #ifndef MDBX_HAVE_BUILTIN_CPU_SUPPORTS
 #if defined(__APPLE__) || defined(BIONIC)
 /* Never use any modern features on Apple's or Google's OSes
@@ -3730,6 +3737,8 @@ struct MDBX_env {
   osal_srwlock_t me_remap_guard;
   /* Workaround for LockFileEx and WriteFile multithread bug */
   CRITICAL_SECTION me_windowsbug_lock;
+  char *me_pathname_char; /* cache of multi-byte representation of pathname
+                             to the DB files */
 #else
   osal_fastmutex_t me_remap_guard;
 #endif
@@ -3958,14 +3967,14 @@ int64pgno(int64_t i64) {
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
 pgno_add(size_t base, size_t augend) {
   assert(base <= MAX_PAGENO + 1 && augend < MAX_PAGENO);
-  return int64pgno(base + augend);
+  return int64pgno((int64_t)base + (int64_t)augend);
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __inline pgno_t
 pgno_sub(size_t base, size_t subtrahend) {
   assert(base >= MIN_PAGENO && base <= MAX_PAGENO + 1 &&
          subtrahend < MAX_PAGENO);
-  return int64pgno(base - subtrahend);
+  return int64pgno((int64_t)base - (int64_t)subtrahend);
 }
 
 MDBX_MAYBE_UNUSED MDBX_NOTHROW_CONST_FUNCTION static __always_inline bool
