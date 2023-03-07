@@ -93,9 +93,15 @@ fn main() {
             .unwrap()
             .trim()
     );
+
     cc_builder
         .define("MDBX_BUILD_FLAGS", flags.as_str())
-        .define("MDBX_TXN_CHECKOWNER", "0")
-        .file(mdbx.join("mdbx.c"))
-        .compile("libmdbx.a");
+        .define("MDBX_TXN_CHECKOWNER", "0");
+
+    // __cpu_model is not available in musl
+    if env::var("TARGET").unwrap().ends_with("-musl") {
+        cc_builder.define("MDBX_HAVE_BUILTIN_CPU_SUPPORTS", "0");
+    }
+
+    cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");
 }
