@@ -24,6 +24,7 @@ mod transaction;
 
 /// Fully typed ORM for use with libmdbx.
 #[cfg(feature = "orm")]
+#[cfg_attr(docsrs, doc(cfg(feature = "orm")))]
 pub mod orm;
 
 #[cfg(feature = "orm")]
