@@ -94,16 +94,14 @@ fn main() {
             .trim()
     );
 
-    // __cpu_model is not available in musl
-    let is_musl = env::var("TARGET").unwrap().ends_with("-musl");
-
     cc_builder
         .define("MDBX_BUILD_FLAGS", flags.as_str())
-        .define("MDBX_TXN_CHECKOWNER", "0")
-        .define(
-            "MDBX_HAVE_BUILTIN_CPU_SUPPORTS",
-            if is_musl { "0" } else { "1" },
-        )
-        .file(mdbx.join("mdbx.c"))
-        .compile("libmdbx.a");
+        .define("MDBX_TXN_CHECKOWNER", "0");
+
+    // __cpu_model is not available in musl
+    if env::var("TARGET").unwrap().ends_with("-musl") {
+        cc_builder.define("MDBX_HAVE_BUILTIN_CPU_SUPPORTS", "0");
+    }
+
+    cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");
 }
