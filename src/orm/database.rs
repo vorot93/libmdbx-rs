@@ -243,7 +243,7 @@ macro_rules! dupsort {
             #[doc = concat!("`DUPSORT` table with seek value type being: [`", stringify!($seek_value), "`].")]
             ( $table_name ) $key [$seek_key] => $value
         );
-        impl DupSort for $table_name {
+        impl $crate::orm::DupSort for $table_name {
             type SeekValue = $seek_value;
         }
     };
