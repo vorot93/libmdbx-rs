@@ -292,12 +292,7 @@ fn test_iter_dup() {
     );
 
     assert_eq!(
-        items
-            .iter()
-            .copied()
-            .into_iter()
-            .skip(3)
-            .collect::<Vec<_>>(),
+        items.iter().copied().skip(3).collect::<Vec<_>>(),
         cursor
             .iter_dup_from(b"b")
             .flatten()
@@ -306,12 +301,7 @@ fn test_iter_dup() {
     );
 
     assert_eq!(
-        items
-            .iter()
-            .copied()
-            .into_iter()
-            .skip(3)
-            .collect::<Vec<_>>(),
+        items.iter().copied().skip(3).collect::<Vec<_>>(),
         cursor
             .iter_dup_from(b"ab")
             .flatten()
@@ -320,12 +310,7 @@ fn test_iter_dup() {
     );
 
     assert_eq!(
-        items
-            .iter()
-            .copied()
-            .into_iter()
-            .skip(9)
-            .collect::<Vec<_>>(),
+        items.iter().copied().skip(9).collect::<Vec<_>>(),
         cursor
             .iter_dup_from(b"d")
             .flatten()
