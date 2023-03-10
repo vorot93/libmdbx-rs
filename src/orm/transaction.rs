@@ -68,7 +68,7 @@ where
 }
 
 impl<'db> Transaction<'db, RW> {
-    pub fn insert<T>(&self, key: T::Key, value: T::Value) -> anyhow::Result<()>
+    pub fn upsert<T>(&self, key: T::Key, value: T::Value) -> anyhow::Result<()>
     where
         T: Table,
     {

@@ -69,7 +69,7 @@
 //!
 //! // Insert user info into table
 //! for (nickname, user_info) in &users {
-//!     cursor.insert(nickname.clone(), user_info.clone()).unwrap();
+//!     cursor.upsert(nickname.clone(), user_info.clone()).unwrap();
 //! }
 //!
 //! // Walk over table and collect its contents

@@ -322,11 +322,11 @@ impl<'tx, T> Cursor<'tx, RW, T>
 where
     T: Table,
 {
-    pub fn insert(&mut self, key: T::Key, value: T::Value) -> anyhow::Result<()> {
+    pub fn upsert(&mut self, key: T::Key, value: T::Value) -> anyhow::Result<()> {
         Ok(self.inner.put(
             key.encode().as_ref(),
             value.encode().as_ref(),
-            WriteFlags::default(),
+            WriteFlags::UPSERT,
         )?)
     }
 
