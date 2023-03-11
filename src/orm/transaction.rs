@@ -59,7 +59,7 @@ where
     {
         Ok(self
             .inner
-            .get::<TableObjectWrapper<_>>(
+            .get::<DecodableWrapper<_>>(
                 &self.inner.open_table(Some(T::NAME))?,
                 key.encode().as_ref(),
             )?

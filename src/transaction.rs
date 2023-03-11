@@ -3,7 +3,7 @@ use crate::{
     error::{mdbx_result, Result},
     flags::{TableFlags, WriteFlags},
     table::Table,
-    Cursor, Error, Stat, TableObject,
+    Cursor, Decodable, Error, Stat,
 };
 use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
@@ -125,7 +125,7 @@ where
     /// [None] will be returned.
     pub fn get<'txn, Key>(&'txn self, table: &Table<'txn>, key: &[u8]) -> Result<Option<Key>>
     where
-        Key: TableObject<'txn>,
+        Key: Decodable<'txn>,
     {
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),

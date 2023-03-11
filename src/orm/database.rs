@@ -9,23 +9,6 @@ use std::{
 };
 use tempfile::tempdir;
 
-#[derive(Clone, Debug)]
-struct TableObjectWrapper<T>(T);
-
-impl<'tx, T> crate::TableObject<'tx> for TableObjectWrapper<T>
-where
-    T: Decodable,
-{
-    fn decode(data_val: &[u8]) -> Result<Self, crate::Error>
-    where
-        Self: Sized,
-    {
-        T::decode(data_val)
-            .map_err(|e| crate::Error::DecodeError(e.into()))
-            .map(Self)
-    }
-}
-
 #[derive(Debug)]
 enum DbFolder {
     Persisted(std::path::PathBuf),

@@ -4,7 +4,7 @@ use std::{borrow::Cow, slice};
 use thiserror::Error;
 
 /// Implement this to be able to decode data values
-pub trait TableObject<'tx> {
+pub trait Decodable<'tx> {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized;
@@ -19,11 +19,11 @@ pub trait TableObject<'tx> {
     {
         let s = slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len);
 
-        TableObject::decode(s)
+        Decodable::decode(s)
     }
 }
 
-impl<'tx> TableObject<'tx> for Cow<'tx, [u8]> {
+impl<'tx> Decodable<'tx> for Cow<'tx, [u8]> {
     fn decode(_: &[u8]) -> Result<Self, Error> {
         unreachable!()
     }
@@ -46,7 +46,7 @@ impl<'tx> TableObject<'tx> for Cow<'tx, [u8]> {
 }
 
 #[cfg(feature = "lifetimed-bytes")]
-impl<'tx> TableObject<'tx> for lifetimed_bytes::Bytes<'tx> {
+impl<'tx> Decodable<'tx> for lifetimed_bytes::Bytes<'tx> {
     fn decode(_: &[u8]) -> Result<Self, Error> {
         unreachable!()
     }
@@ -60,7 +60,7 @@ impl<'tx> TableObject<'tx> for lifetimed_bytes::Bytes<'tx> {
     }
 }
 
-impl<'tx> TableObject<'tx> for Vec<u8> {
+impl<'tx> Decodable<'tx> for Vec<u8> {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized,
@@ -69,7 +69,7 @@ impl<'tx> TableObject<'tx> for Vec<u8> {
     }
 }
 
-impl<'tx> TableObject<'tx> for () {
+impl<'tx> Decodable<'tx> for () {
     fn decode(_: &[u8]) -> Result<Self, Error> {
         Ok(())
     }
@@ -86,7 +86,7 @@ impl<'tx> TableObject<'tx> for () {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deref, DerefMut)]
 pub struct ObjectLength(pub usize);
 
-impl<'tx> TableObject<'tx> for ObjectLength {
+impl<'tx> Decodable<'tx> for ObjectLength {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized,
@@ -95,7 +95,7 @@ impl<'tx> TableObject<'tx> for ObjectLength {
     }
 }
 
-impl<'tx, const LEN: usize> TableObject<'tx> for [u8; LEN] {
+impl<'tx, const LEN: usize> Decodable<'tx> for [u8; LEN] {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized,

@@ -3,9 +3,9 @@ use crate::{TransactionKind, WriteFlags, RW};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-pub(crate) struct TableObjectWrapper<T>(pub T);
+pub(crate) struct DecodableWrapper<T>(pub T);
 
-impl<'tx, T> crate::TableObject<'tx> for TableObjectWrapper<T>
+impl<'tx, T> crate::Decodable<'tx> for DecodableWrapper<T>
 where
     T: Decodable,
 {
@@ -31,7 +31,7 @@ where
 
 #[allow(clippy::type_complexity)]
 fn map_res_inner<T, E>(
-    v: Result<Option<(TableObjectWrapper<T::Key>, TableObjectWrapper<T::Value>)>, E>,
+    v: Result<Option<(DecodableWrapper<T::Key>, DecodableWrapper<T::Value>)>, E>,
 ) -> anyhow::Result<Option<(T::Key, T::Value)>>
 where
     T: Table,
@@ -214,7 +214,7 @@ where
     where
         T::Key: Clone,
     {
-        let res = self.inner.get_both_range::<TableObjectWrapper<T::Value>>(
+        let res = self.inner.get_both_range::<DecodableWrapper<T::Value>>(
             key.encode().as_ref(),
             seek_value.encode().as_ref(),
         )?;
@@ -232,7 +232,7 @@ where
     {
         Ok(self
             .inner
-            .last_dup::<TableObjectWrapper<T::Value>>()?
+            .last_dup::<DecodableWrapper<T::Value>>()?
             .map(|v| v.0))
     }
 
