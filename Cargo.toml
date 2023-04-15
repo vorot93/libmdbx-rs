@@ -1,6 +1,6 @@
 [package]
 name = "libmdbx"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 license = "MPL-2.0"
 description = "Idiomatic and safe MDBX wrapper."
@@ -33,7 +33,7 @@ parking_lot = "0.12"
 tempfile = { version = "3", optional = true }
 thiserror = "1"
 
-ffi = { package = "mdbx-sys", version = "=0.12.4-0", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "=0.12.4", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
