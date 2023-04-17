@@ -15,43 +15,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
           components: rustfmt, clippy
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-hack
-          version: latest
-          use-tool-cache: true
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: hack
-          args: check --workspace --ignore-private --each-feature --no-dev-deps
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --workspace --all-targets --all-features
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --all-features
-
-      - uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo fmt --all --check -- --config=imports_granularity=Crate
+      - run: cargo install cargo-hack
+      - run: cargo hack clippy --workspace --each-feature -- -D warnings
+      - run: cargo hack test --workspace --each-feature
