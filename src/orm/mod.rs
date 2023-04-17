@@ -2,7 +2,7 @@
 //!
 //! Much simpler in usage but slightly more limited.
 //!
-//! ```rust
+//! ```rust,no_run
 //! use libmdbx::orm::{table, table_info, DatabaseChart, Decodable, Encodable};
 //! use std::sync::Arc;
 //! use once_cell::sync::Lazy;
@@ -19,15 +19,15 @@
 //!     type Encoded = Vec<u8>;
 //!
 //!     fn encode(self) -> Self::Encoded {
-//!         let mut v = vec![];
-//!         ciborium::ser::into_writer(&self, &mut v).unwrap();
-//!         v
+//!         // Here we define serialization of UserInfo
+//! #       todo!()
 //!     }
 //! }
 //!
 //! impl Decodable for UserInfo {
 //!     fn decode(v: &[u8]) -> anyhow::Result<Self> {
-//!         Ok(ciborium::de::from_reader(v)?)
+//!         // Here we define deserialization of UserInfo
+//! #       todo!()
 //!     }
 //! }
 //!
