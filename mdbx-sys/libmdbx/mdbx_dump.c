@@ -34,7 +34,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 7a10d70b0b57e5ae8ac30e0728c9f1f7b6b3d51d69ef544f87ae054578c81daf_v0_12_4_0_g53177e48
+#define MDBX_BUILD_SOURCERY a0e7c54f688eecaf45ddd7493b737f88a97e4e8b0fdaa55c9d3b00d69e0c8548_v0_12_6_0_gc019631a
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -113,8 +113,8 @@
 #endif
 #if _MSC_VER > 1914
 #pragma warning(                                                               \
-    disable : 5105) /* winbase.h(9531): warning C5105: macro expansion         \
-                       producing 'defined' has undefined behavior */
+        disable : 5105) /* winbase.h(9531): warning C5105: macro expansion     \
+                           producing 'defined' has undefined behavior */
 #endif
 #if _MSC_VER > 1930
 #pragma warning(disable : 6235) /* <expression> is always a constant */
@@ -124,16 +124,16 @@
 #pragma warning(disable : 4710) /* 'xyz': function not inlined */
 #pragma warning(disable : 4711) /* function 'xyz' selected for automatic       \
                                    inline expansion */
-#pragma warning(                                                               \
-    disable : 4201) /* nonstandard extension used : nameless struct / union */
+#pragma warning(disable : 4201) /* nonstandard extension used: nameless        \
+                                   struct/union */
 #pragma warning(disable : 4702) /* unreachable code */
 #pragma warning(disable : 4706) /* assignment within conditional expression */
 #pragma warning(disable : 4127) /* conditional expression is constant */
 #pragma warning(disable : 4324) /* 'xyz': structure was padded due to          \
                                    alignment specifier */
 #pragma warning(disable : 4310) /* cast truncates constant value */
-#pragma warning(                                                               \
-    disable : 4820) /* bytes padding added after data member for alignment */
+#pragma warning(disable : 4820) /* bytes padding added after data member for   \
+                                   alignment */
 #pragma warning(disable : 4548) /* expression before comma has no effect;      \
                                    expected expression with side - effect */
 #pragma warning(disable : 4366) /* the result of the unary '&' operator may be \
@@ -143,8 +143,8 @@
 #pragma warning(disable : 4204) /* nonstandard extension used: non-constant    \
                                    aggregate initializer */
 #pragma warning(                                                               \
-    disable : 4505) /* unreferenced local function has been removed */
-#endif              /* _MSC_VER (warnings) */
+        disable : 4505) /* unreferenced local function has been removed */
+#endif                  /* _MSC_VER (warnings) */
 
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
@@ -1255,8 +1255,12 @@ typedef struct osal_mmap {
 } osal_mmap_t;
 
 typedef union bin128 {
-  __anonymous_struct_extension__ struct { uint64_t x, y; };
-  __anonymous_struct_extension__ struct { uint32_t a, b, c, d; };
+  __anonymous_struct_extension__ struct {
+    uint64_t x, y;
+  };
+  __anonymous_struct_extension__ struct {
+    uint32_t a, b, c, d;
+  };
 } bin128_t;
 
 #if defined(_WIN32) || defined(_WIN64)

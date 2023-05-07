@@ -356,6 +356,9 @@ class cursor_managed;
      __cpp_lib_memory_resource >= 201603L && _GLIBCXX_USE_CXX11_ABI)
 /// \brief Default polymorphic allocator for modern code.
 using polymorphic_allocator = ::std::pmr::string::allocator_type;
+using default_allocator = polymorphic_allocator;
+#else
+using default_allocator = legacy_allocator;
 #endif /* __cpp_lib_memory_resource >= 201603L */
 
 /// \brief Default singe-byte string.
@@ -588,11 +591,11 @@ concept ImmutableByteProducer = requires(const T &a, char array[42]) {
  *  \interface SliceTranscoder
  *  \brief SliceTranscoder C++20 concept */
 template <typename T>
-concept SliceTranscoder = ImmutableByteProducer<T> &&
-    requires(const slice &source, const T &a) {
-  T(source);
-  { a.is_erroneous() } -> std::same_as<bool>;
-};
+concept SliceTranscoder =
+    ImmutableByteProducer<T> && requires(const slice &source, const T &a) {
+      T(source);
+      { a.is_erroneous() } -> std::same_as<bool>;
+    };
 
 #endif /* MDBX_HAVE_CXX20_CONCEPTS */
 
@@ -2663,40 +2666,64 @@ public:
     return buffer(::std::move(src));
   }
 
-  static buffer key_from(const double ieee754_64bit) {
+  static buffer key_from_double(const double ieee754_64bit) {
     return wrap(::mdbx_key_from_double(ieee754_64bit));
+  }
+
+  static buffer key_from(const double ieee754_64bit) {
+    return key_from_double(ieee754_64bit);
   }
 
   static buffer key_from(const double *ieee754_64bit) {
     return wrap(::mdbx_key_from_ptrdouble(ieee754_64bit));
   }
 
-  static buffer key_from(const uint64_t unsigned_int64) {
+  static buffer key_from_u64(const uint64_t unsigned_int64) {
     return wrap(unsigned_int64);
   }
 
-  static buffer key_from(const int64_t signed_int64) {
+  static buffer key_from(const uint64_t unsigned_int64) {
+    return key_from_u64(unsigned_int64);
+  }
+
+  static buffer key_from_i64(const int64_t signed_int64) {
     return wrap(::mdbx_key_from_int64(signed_int64));
+  }
+
+  static buffer key_from(const int64_t signed_int64) {
+    return key_from_i64(signed_int64);
   }
 
   static buffer key_from_jsonInteger(const int64_t json_integer) {
     return wrap(::mdbx_key_from_jsonInteger(json_integer));
   }
 
-  static buffer key_from(const float ieee754_32bit) {
+  static buffer key_from_float(const float ieee754_32bit) {
     return wrap(::mdbx_key_from_float(ieee754_32bit));
+  }
+
+  static buffer key_from(const float ieee754_32bit) {
+    return key_from_float(ieee754_32bit);
   }
 
   static buffer key_from(const float *ieee754_32bit) {
     return wrap(::mdbx_key_from_ptrfloat(ieee754_32bit));
   }
 
-  static buffer key_from(const uint32_t unsigned_int32) {
+  static buffer key_from_u32(const uint32_t unsigned_int32) {
     return wrap(unsigned_int32);
   }
 
-  static buffer key_from(const int32_t signed_int32) {
+  static buffer key_from(const uint32_t unsigned_int32) {
+    return key_from_u32(unsigned_int32);
+  }
+
+  static buffer key_from_i32(const int32_t signed_int32) {
     return wrap(::mdbx_key_from_int32(signed_int32));
+  }
+
+  static buffer key_from(const int32_t signed_int32) {
+    return key_from_i32(signed_int32);
   }
 };
 
