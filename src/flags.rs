@@ -163,7 +163,7 @@ impl DatabaseFlags {
 
 bitflags! {
     #[doc="Table options."]
-    #[derive(Default)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
     pub struct TableFlags: c_uint {
         const REVERSE_KEY = MDBX_REVERSEKEY;
         const DUP_SORT = MDBX_DUPSORT;
@@ -178,7 +178,7 @@ bitflags! {
 
 bitflags! {
     #[doc="Write options."]
-    #[derive(Default)]
+    #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
     pub struct WriteFlags: c_uint {
         const UPSERT = MDBX_UPSERT;
         const NO_OVERWRITE = MDBX_NOOVERWRITE;
