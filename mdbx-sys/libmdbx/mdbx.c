@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY a0e7c54f688eecaf45ddd7493b737f88a97e4e8b0fdaa55c9d3b00d69e0c8548_v0_12_6_0_gc019631a
+#define MDBX_BUILD_SOURCERY 16486114a4163d338f3406ae2803462d7d44320968ebeac3f52d73c918196fb8_v0_12_7_0_g7b12e732
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -4875,6 +4875,9 @@ atomic_store64(MDBX_atomic_uint64_t *p, const uint64_t value,
                enum MDBX_memory_order order) {
   STATIC_ASSERT(sizeof(MDBX_atomic_uint64_t) == 8);
 #if MDBX_64BIT_ATOMIC
+#if __GNUC_PREREQ(11, 0)
+  STATIC_ASSERT(__alignof__(MDBX_atomic_uint64_t) >= sizeof(uint64_t));
+#endif /* GNU C >= 11 */
 #ifdef MDBX_HAVE_C11ATOMICS
   assert(atomic_is_lock_free(MDBX_c11a_rw(uint64_t, p)));
   atomic_store_explicit(MDBX_c11a_rw(uint64_t, p), value, mo_c11_store(order));
@@ -10505,27 +10508,47 @@ MDBX_MAYBE_UNUSED static __always_inline size_t __builtin_clzl(size_t value) {
 #define MDBX_ATTRIBUTE_TARGET(target) __attribute__((__target__(target)))
 #endif /* MDBX_ATTRIBUTE_TARGET */
 
-#if defined(__SSE2__)
+#ifndef MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND
+/* Workaround for GCC's bug with `-m32 -march=i686 -Ofast`
+ * gcc/i686-buildroot-linux-gnu/12.2.0/include/xmmintrin.h:814:1:
+ *     error: inlining failed in call to 'always_inline' '_mm_movemask_ps':
+ *            target specific option mismatch */
+#if !defined(__FAST_MATH__) || !__FAST_MATH__ || !defined(__GNUC__) ||         \
+    defined(__e2k__) || defined(__clang__) || defined(__amd64__) ||            \
+    defined(__SSE2__)
+#define MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND 0
+#else
+#define MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND 1
+#endif
+#endif /* MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND */
+
+#if defined(__SSE2__) && defined(__SSE__)
 #define MDBX_ATTRIBUTE_TARGET_SSE2 /* nope */
 #elif (defined(_M_IX86_FP) && _M_IX86_FP >= 2) || defined(__amd64__)
 #define __SSE2__
 #define MDBX_ATTRIBUTE_TARGET_SSE2 /* nope */
-#elif defined(MDBX_ATTRIBUTE_TARGET) && defined(__ia32__)
-#define MDBX_ATTRIBUTE_TARGET_SSE2 MDBX_ATTRIBUTE_TARGET("sse2")
+#elif defined(MDBX_ATTRIBUTE_TARGET) && defined(__ia32__) &&                   \
+    !MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND
+#define MDBX_ATTRIBUTE_TARGET_SSE2 MDBX_ATTRIBUTE_TARGET("sse,sse2")
 #endif /* __SSE2__ */
 
 #if defined(__AVX2__)
 #define MDBX_ATTRIBUTE_TARGET_AVX2 /* nope */
-#elif defined(MDBX_ATTRIBUTE_TARGET) && defined(__ia32__)
-#define MDBX_ATTRIBUTE_TARGET_AVX2 MDBX_ATTRIBUTE_TARGET("avx2")
+#elif defined(MDBX_ATTRIBUTE_TARGET) && defined(__ia32__) &&                   \
+    !MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND
+#define MDBX_ATTRIBUTE_TARGET_AVX2 MDBX_ATTRIBUTE_TARGET("sse,sse2,avx,avx2")
 #endif /* __AVX2__ */
 
+#if defined(MDBX_ATTRIBUTE_TARGET_AVX2)
 #if defined(__AVX512BW__)
 #define MDBX_ATTRIBUTE_TARGET_AVX512BW /* nope */
 #elif defined(MDBX_ATTRIBUTE_TARGET) && defined(__ia32__) &&                   \
+    !MDBX_GCC_FASTMATH_i686_SIMD_WORKAROUND &&                                 \
     (__GNUC_PREREQ(6, 0) || __CLANG_PREREQ(5, 0))
-#define MDBX_ATTRIBUTE_TARGET_AVX512BW MDBX_ATTRIBUTE_TARGET("avx512bw")
+#define MDBX_ATTRIBUTE_TARGET_AVX512BW                                         \
+  MDBX_ATTRIBUTE_TARGET("sse,sse2,avx,avx2,avx512bw")
 #endif /* __AVX512BW__ */
+#endif /* MDBX_ATTRIBUTE_TARGET_AVX2 for MDBX_ATTRIBUTE_TARGET_AVX512BW */
 
 #ifdef MDBX_ATTRIBUTE_TARGET_SSE2
 MDBX_ATTRIBUTE_TARGET_SSE2 static __always_inline unsigned
@@ -10599,6 +10622,15 @@ diffcmp2mask_avx2(const pgno_t *const ptr, const ptrdiff_t offset,
   return _mm256_movemask_ps(*(const __m256 *)&cmp);
 }
 
+MDBX_ATTRIBUTE_TARGET_AVX2 static __always_inline unsigned
+diffcmp2mask_sse2avx(const pgno_t *const ptr, const ptrdiff_t offset,
+                     const __m128i pattern) {
+  const __m128i f = _mm_loadu_si128((const __m128i *)ptr);
+  const __m128i l = _mm_loadu_si128((const __m128i *)(ptr + offset));
+  const __m128i cmp = _mm_cmpeq_epi32(_mm_sub_epi32(f, l), pattern);
+  return _mm_movemask_ps(*(const __m128 *)&cmp);
+}
+
 MDBX_MAYBE_UNUSED __hot MDBX_ATTRIBUTE_TARGET_AVX2 static pgno_t *
 scan4seq_avx2(pgno_t *range, const size_t len, const size_t seq) {
   assert(seq > 0 && len > seq);
@@ -10644,7 +10676,7 @@ scan4seq_avx2(pgno_t *range, const size_t len, const size_t seq) {
   }
 #endif /* __SANITIZE_ADDRESS__ */
   if (range - 3 > detent) {
-    mask = diffcmp2mask_sse2(range - 3, offset, *(const __m128i *)&pattern);
+    mask = diffcmp2mask_sse2avx(range - 3, offset, *(const __m128i *)&pattern);
     if (mask)
       return range + 28 - __builtin_clz(mask);
     range -= 4;
@@ -10718,7 +10750,7 @@ scan4seq_avx512bw(pgno_t *range, const size_t len, const size_t seq) {
     range -= 8;
   }
   if (range - 3 > detent) {
-    mask = diffcmp2mask_sse2(range - 3, offset, *(const __m128i *)&pattern);
+    mask = diffcmp2mask_sse2avx(range - 3, offset, *(const __m128i *)&pattern);
     if (mask)
       return range + 28 - __builtin_clz(mask);
     range -= 4;
@@ -12122,13 +12154,9 @@ retry:;
   }
 
   const bool inside_txn = (env->me_txn0->mt_owner == osal_thread_self());
-  meta_ptr_t head;
-  if (inside_txn | locked)
-    head = meta_recent(env, &env->me_txn0->tw.troika);
-  else {
-    const meta_troika_t troika = meta_tap(env);
-    head = meta_recent(env, &troika);
-  }
+  const meta_troika_t troika =
+      (inside_txn | locked) ? env->me_txn0->tw.troika : meta_tap(env);
+  const meta_ptr_t head = meta_recent(env, &troika);
   const uint64_t unsynced_pages =
       atomic_load64(&env->me_lck->mti_unsynced_pages, mo_Relaxed);
   if (unsynced_pages == 0) {
@@ -12141,10 +12169,19 @@ retry:;
   if (!inside_txn && locked && (env->me_flags & MDBX_WRITEMAP) &&
       unlikely(head.ptr_c->mm_geo.next >
                bytes2pgno(env, env->me_dxb_mmap.current))) {
-    rc = dxb_resize(env, head.ptr_c->mm_geo.next, head.ptr_c->mm_geo.now,
-                    head.ptr_c->mm_geo.upper, implicit_grow);
-    if (unlikely(rc != MDBX_SUCCESS))
-      goto bailout;
+
+    if (unlikely(env->me_stuck_meta >= 0) &&
+        troika.recent != (uint8_t)env->me_stuck_meta) {
+      NOTICE("skip %s since wagering meta-page (%u) is mispatch the recent "
+             "meta-page (%u)",
+             "sync datafile", env->me_stuck_meta, troika.recent);
+      rc = MDBX_RESULT_TRUE;
+    } else {
+      rc = dxb_resize(env, head.ptr_c->mm_geo.next, head.ptr_c->mm_geo.now,
+                      head.ptr_c->mm_geo.upper, implicit_grow);
+      if (unlikely(rc != MDBX_SUCCESS))
+        goto bailout;
+    }
   }
 
   const size_t autosync_threshold =
@@ -12223,6 +12260,14 @@ retry:;
   eASSERT(env, inside_txn || locked);
   eASSERT(env, !inside_txn || (flags & MDBX_SHRINK_ALLOWED) == 0);
 
+  if (!head.is_steady && unlikely(env->me_stuck_meta >= 0) &&
+      troika.recent != (uint8_t)env->me_stuck_meta) {
+    NOTICE("skip %s since wagering meta-page (%u) is mispatch the recent "
+           "meta-page (%u)",
+           "sync datafile", env->me_stuck_meta, troika.recent);
+    rc = MDBX_RESULT_TRUE;
+    goto bailout;
+  }
   if (!head.is_steady || ((flags & MDBX_SAFE_NOSYNC) == 0 && unsynced_pages)) {
     DEBUG("meta-head %" PRIaPGNO ", %s, sync_pending %" PRIu64,
           data_page(head.ptr_c)->mp_pgno, durable_caption(head.ptr_c),
@@ -17768,8 +17813,9 @@ __cold static int setup_dxb(MDBX_env *env, const int lck_rc,
       mdbx_is_readahead_reasonable(used_bytes, 0) == MDBX_RESULT_TRUE;
 #endif /* MDBX_ENABLE_MADVISE */
 
-  err = osal_mmap(env->me_flags, &env->me_dxb_mmap, env->me_dbgeo.now,
-                  env->me_dbgeo.upper, lck_rc ? MMAP_OPTION_TRUNCATE : 0);
+  err = osal_mmap(
+      env->me_flags, &env->me_dxb_mmap, env->me_dbgeo.now, env->me_dbgeo.upper,
+      (lck_rc && env->me_stuck_meta < 0) ? MMAP_OPTION_TRUNCATE : 0);
   if (unlikely(err != MDBX_SUCCESS))
     return err;
 
@@ -17969,7 +18015,12 @@ __cold static int setup_dxb(MDBX_env *env, const int lck_rc,
     }
 
     const meta_ptr_t recent = meta_recent(env, &troika);
-    if (memcmp(&header.mm_geo, &recent.ptr_c->mm_geo, sizeof(header.mm_geo))) {
+    if (/* не учитываем различия в geo.next */
+        header.mm_geo.grow_pv != recent.ptr_c->mm_geo.grow_pv ||
+        header.mm_geo.shrink_pv != recent.ptr_c->mm_geo.shrink_pv ||
+        header.mm_geo.lower != recent.ptr_c->mm_geo.lower ||
+        header.mm_geo.upper != recent.ptr_c->mm_geo.upper ||
+        header.mm_geo.now != recent.ptr_c->mm_geo.now) {
       if ((env->me_flags & MDBX_RDONLY) != 0 ||
           /* recovery mode */ env->me_stuck_meta >= 0) {
         WARNING("skipped update meta.geo in %s mode: from l%" PRIaPGNO
@@ -18419,8 +18470,12 @@ __cold static int __must_check_result override_meta(MDBX_env *env,
   if (unlikely(MDBX_IS_ERROR(rc)))
     return MDBX_PROBLEM;
 
-  if (shape && memcmp(model, shape, sizeof(MDBX_meta)) == 0)
+  if (shape && memcmp(model, shape, sizeof(MDBX_meta)) == 0) {
+    NOTICE("skip overriding meta-%zu since no changes "
+           "for txnid #%" PRIaTXN,
+           target, txnid);
     return MDBX_SUCCESS;
+  }
 
   if (env->me_flags & MDBX_WRITEMAP) {
 #if MDBX_ENABLE_PGOP_STAT
@@ -18474,14 +18529,16 @@ __cold int mdbx_env_turn_for_recovery(MDBX_env *env, unsigned target) {
                MDBX_EXCLUSIVE))
     return MDBX_EPERM;
 
-  const MDBX_meta *target_meta = METAPAGE(env, target);
-  txnid_t new_txnid = safe64_txnid_next(constmeta_txnid(target_meta));
-  for (size_t n = 0; n < NUM_METAS; ++n) {
+  const MDBX_meta *const target_meta = METAPAGE(env, target);
+  txnid_t new_txnid = constmeta_txnid(target_meta);
+  if (new_txnid < MIN_TXNID)
+    new_txnid = MIN_TXNID;
+  for (unsigned n = 0; n < NUM_METAS; ++n) {
     if (n == target)
       continue;
-    MDBX_meta meta = *METAPAGE(env, target);
-    if (validate_meta(env, &meta, pgno2page(env, n), (pgno_t)n, nullptr) !=
-        MDBX_SUCCESS) {
+    MDBX_page *const page = pgno2page(env, n);
+    MDBX_meta meta = *page_meta(page);
+    if (validate_meta(env, &meta, page, n, nullptr) != MDBX_SUCCESS) {
       int err = override_meta(env, n, 0, nullptr);
       if (unlikely(err != MDBX_SUCCESS))
         return err;
@@ -33276,10 +33333,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
-        6,
+        7,
         0,
-        {"2023-04-29T21:30:35+03:00", "44de01dd81ac366a7d37111eaf72726edebe5528", "c019631a8c88a98a11d814e4111a2a9ae8cb4099",
-         "v0.12.6-0-gc019631a"},
+        {"2023-06-16T20:04:01+03:00", "3db91f2e10e2769aaa889dcd95101b5d6c11f24c", "7b12e7323f8d659144b5923c94da1ed9e3a4d01f",
+         "v0.12.7-0-g7b12e732"},
         sourcery};
 
 __dll_export
