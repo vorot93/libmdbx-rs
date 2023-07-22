@@ -4,7 +4,7 @@
 
 pub use crate::{
     codec::*,
-    cursor::{Cursor, Iter, IterDup},
+    cursor::{Cursor, IntoIter, Iter, IterDup},
     database::{
         Database, DatabaseBuilder, DatabaseKind, Geometry, Info, NoWriteMap, PageSize, Stat,
         WriteMap,
