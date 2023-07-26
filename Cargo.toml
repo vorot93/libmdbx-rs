@@ -27,7 +27,7 @@ byteorder = "1"
 ciborium = { version = "0.2", optional = true }
 derive_more = "0.99"
 impls = { version = "1", optional = true }
-indexmap = "1"
+indexmap = "2"
 libc = "0.2"
 parking_lot = "0.12"
 tempfile = { version = "3", optional = true }
