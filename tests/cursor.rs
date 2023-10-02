@@ -7,7 +7,7 @@ type Database = libmdbx::Database<NoWriteMap>;
 #[test]
 fn test_get() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
@@ -35,7 +35,7 @@ fn test_get() {
 #[test]
 fn test_get_dup() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
@@ -91,7 +91,7 @@ fn test_get_dup() {
 #[test]
 fn test_get_dupfixed() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn
@@ -117,7 +117,7 @@ fn test_get_dupfixed() {
 #[test]
 fn test_iter() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let items = vec![
         (*b"key1", *b"val1"),
@@ -187,7 +187,7 @@ fn test_iter() {
 #[test]
 fn test_iter_empty_database() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
     let txn = db.begin_ro_txn().unwrap();
     let table = txn.open_table(None).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
@@ -200,7 +200,7 @@ fn test_iter_empty_database() {
 #[test]
 fn test_iter_empty_dup_database() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     txn.create_table(None, TableFlags::DUP_SORT).unwrap();
@@ -227,7 +227,7 @@ fn test_iter_empty_dup_database() {
 #[test]
 fn test_iter_dup() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     txn.create_table(None, TableFlags::DUP_SORT).unwrap();
@@ -341,7 +341,7 @@ fn test_iter_dup() {
 #[test]
 fn test_iter_del_get() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let items = vec![(*b"a", *b"1"), (*b"b", *b"2")];
     {
@@ -405,7 +405,7 @@ fn test_iter_del_get() {
 #[test]
 fn test_put_del() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();

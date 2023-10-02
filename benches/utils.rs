@@ -11,7 +11,7 @@ pub fn get_data(n: u32) -> String {
 
 pub fn setup_bench_db(num_rows: u32) -> (TempDir, Database<NoWriteMap>) {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     {
         let txn = db.begin_rw_txn().unwrap();

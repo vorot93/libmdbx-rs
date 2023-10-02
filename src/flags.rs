@@ -77,88 +77,22 @@ impl Default for SyncMode {
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
     ReadOnly,
-    ReadWrite { sync_mode: SyncMode },
+    ReadWrite(ReadWriteOptions),
 }
 
 impl Default for Mode {
     fn default() -> Self {
-        Self::ReadWrite {
-            sync_mode: SyncMode::default(),
-        }
-    }
-}
-
-impl From<Mode> for DatabaseFlags {
-    fn from(mode: Mode) -> Self {
-        Self {
-            mode,
-            ..Default::default()
-        }
+        Self::ReadWrite(ReadWriteOptions::default())
     }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct DatabaseFlags {
-    pub no_sub_dir: bool,
-    pub exclusive: bool,
-    pub accede: bool,
-    pub mode: Mode,
-    pub no_rdahead: bool,
-    pub no_meminit: bool,
-    pub coalesce: bool,
-    pub liforeclaim: bool,
-}
-
-impl DatabaseFlags {
-    pub(crate) fn make_flags(&self) -> ffi::MDBX_env_flags_t {
-        let mut flags = 0;
-
-        if self.no_sub_dir {
-            flags |= ffi::MDBX_NOSUBDIR;
-        }
-
-        if self.exclusive {
-            flags |= ffi::MDBX_EXCLUSIVE;
-        }
-
-        if self.accede {
-            flags |= ffi::MDBX_ACCEDE;
-        }
-
-        match self.mode {
-            Mode::ReadOnly => {
-                flags |= ffi::MDBX_RDONLY;
-            }
-            Mode::ReadWrite { sync_mode } => {
-                flags |= match sync_mode {
-                    SyncMode::Durable => ffi::MDBX_SYNC_DURABLE,
-                    SyncMode::NoMetaSync => ffi::MDBX_NOMETASYNC,
-                    SyncMode::SafeNoSync => ffi::MDBX_SAFE_NOSYNC,
-                    SyncMode::UtterlyNoSync => ffi::MDBX_UTTERLY_NOSYNC,
-                };
-            }
-        }
-
-        if self.no_rdahead {
-            flags |= ffi::MDBX_NORDAHEAD;
-        }
-
-        if self.no_meminit {
-            flags |= ffi::MDBX_NOMEMINIT;
-        }
-
-        if self.coalesce {
-            flags |= ffi::MDBX_COALESCE;
-        }
-
-        if self.liforeclaim {
-            flags |= ffi::MDBX_LIFORECLAIM;
-        }
-
-        flags |= ffi::MDBX_NOTLS;
-
-        flags
-    }
+pub struct ReadWriteOptions {
+    pub sync_mode: SyncMode,
+    pub min_size: Option<isize>,
+    pub max_size: Option<isize>,
+    pub growth_step: Option<isize>,
+    pub shrink_threshold: Option<isize>,
 }
 
 bitflags! {

@@ -6,8 +6,7 @@ pub use crate::{
     codec::*,
     cursor::{Cursor, IntoIter, Iter, IterDup},
     database::{
-        Database, DatabaseBuilder, DatabaseKind, Geometry, Info, NoWriteMap, PageSize, Stat,
-        WriteMap,
+        Database, DatabaseKind, DatabaseOptions, Info, NoWriteMap, PageSize, Stat, WriteMap,
     },
     error::{Error, Result},
     flags::*,
@@ -61,15 +60,14 @@ mod test_utils {
 
         let dir = tempdir().unwrap();
 
-        let db = {
-            let mut builder = Database::new();
-            builder.set_max_tables(2);
-            builder.set_geometry(Geometry {
-                size: Some(1_000_000..1_000_000),
+        let db = Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                max_tables: Some(2),
                 ..Default::default()
-            });
-            builder.open(dir.path()).unwrap()
-        };
+            },
+        )
+        .unwrap();
 
         for height in 0..1000 {
             let mut value = [0u8; 8];

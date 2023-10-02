@@ -1,9 +1,8 @@
 use crate::{
     error::{mdbx_result, Error, Result},
-    flags::DatabaseFlags,
     table::Table,
     transaction::{RO, RW},
-    Mode, Transaction, TransactionKind,
+    Mode, ReadWriteOptions, SyncMode, Transaction, TransactionKind,
 };
 use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
@@ -15,7 +14,6 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     mem,
-    ops::{Bound, RangeBounds},
     os::unix::ffi::OsStrExt,
     path::Path,
     ptr, result,
@@ -78,26 +76,213 @@ where
     _marker: PhantomData<E>,
 }
 
+#[derive(Clone, Default)]
+pub struct DatabaseOptions {
+    pub permissions: Option<ffi::mdbx_mode_t>,
+    pub max_readers: Option<c_uint>,
+    pub max_tables: Option<u64>,
+    pub rp_augment_limit: Option<u64>,
+    pub loose_limit: Option<u64>,
+    pub dp_reserve_limit: Option<u64>,
+    pub txn_dp_limit: Option<u64>,
+    pub spill_max_denominator: Option<u64>,
+    pub spill_min_denominator: Option<u64>,
+    pub page_size: Option<PageSize>,
+    pub no_sub_dir: bool,
+    pub exclusive: bool,
+    pub accede: bool,
+    pub mode: Mode,
+    pub no_rdahead: bool,
+    pub no_meminit: bool,
+    pub coalesce: bool,
+    pub liforeclaim: bool,
+}
+
+impl DatabaseOptions {
+    pub(crate) fn make_flags(&self) -> ffi::MDBX_env_flags_t {
+        let mut flags = 0;
+
+        if self.no_sub_dir {
+            flags |= ffi::MDBX_NOSUBDIR;
+        }
+
+        if self.exclusive {
+            flags |= ffi::MDBX_EXCLUSIVE;
+        }
+
+        if self.accede {
+            flags |= ffi::MDBX_ACCEDE;
+        }
+
+        match self.mode {
+            Mode::ReadOnly => {
+                flags |= ffi::MDBX_RDONLY;
+            }
+            Mode::ReadWrite(ReadWriteOptions { sync_mode, .. }) => {
+                flags |= match sync_mode {
+                    SyncMode::Durable => ffi::MDBX_SYNC_DURABLE,
+                    SyncMode::NoMetaSync => ffi::MDBX_NOMETASYNC,
+                    SyncMode::SafeNoSync => ffi::MDBX_SAFE_NOSYNC,
+                    SyncMode::UtterlyNoSync => ffi::MDBX_UTTERLY_NOSYNC,
+                };
+            }
+        }
+
+        if self.no_rdahead {
+            flags |= ffi::MDBX_NORDAHEAD;
+        }
+
+        if self.no_meminit {
+            flags |= ffi::MDBX_NOMEMINIT;
+        }
+
+        if self.coalesce {
+            flags |= ffi::MDBX_COALESCE;
+        }
+
+        if self.liforeclaim {
+            flags |= ffi::MDBX_LIFORECLAIM;
+        }
+
+        flags |= ffi::MDBX_NOTLS;
+
+        flags
+    }
+}
+
 impl<E> Database<E>
 where
     E: DatabaseKind,
 {
-    /// Creates a new builder for specifying options for opening an MDBX database.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new() -> DatabaseBuilder<E> {
-        DatabaseBuilder {
-            flags: DatabaseFlags::default(),
-            max_readers: None,
-            max_tables: None,
-            rp_augment_limit: None,
-            loose_limit: None,
-            dp_reserve_limit: None,
-            txn_dp_limit: None,
-            spill_max_denominator: None,
-            spill_min_denominator: None,
-            geometry: None,
-            _marker: PhantomData,
+    /// Open a database.
+    pub fn open(path: impl AsRef<Path>) -> Result<Database<E>> {
+        Self::open_with_options(path, Default::default())
+    }
+
+    pub fn open_with_options(
+        path: impl AsRef<Path>,
+        options: DatabaseOptions,
+    ) -> Result<Database<E>> {
+        let mut db: *mut ffi::MDBX_env = ptr::null_mut();
+        unsafe {
+            mdbx_result(ffi::mdbx_env_create(&mut db))?;
+            if let Err(e) = (|| {
+                if let Mode::ReadWrite(ReadWriteOptions {
+                    min_size,
+                    max_size,
+                    growth_step,
+                    shrink_threshold,
+                    ..
+                }) = options.mode
+                {
+                    mdbx_result(ffi::mdbx_env_set_geometry(
+                        db,
+                        min_size.unwrap_or(-1),
+                        -1,
+                        max_size.unwrap_or(-1),
+                        growth_step.unwrap_or(-1),
+                        shrink_threshold.unwrap_or(-1),
+                        match options.page_size {
+                            None => -1,
+                            Some(PageSize::MinimalAcceptable) => 0,
+                            Some(PageSize::Set(size)) => size as isize,
+                        },
+                    ))?;
+                }
+                for (opt, v) in [
+                    (ffi::MDBX_opt_max_db, options.max_tables),
+                    (ffi::MDBX_opt_rp_augment_limit, options.rp_augment_limit),
+                    (ffi::MDBX_opt_loose_limit, options.loose_limit),
+                    (ffi::MDBX_opt_dp_reserve_limit, options.dp_reserve_limit),
+                    (ffi::MDBX_opt_txn_dp_limit, options.txn_dp_limit),
+                    (
+                        ffi::MDBX_opt_spill_max_denominator,
+                        options.spill_max_denominator,
+                    ),
+                    (
+                        ffi::MDBX_opt_spill_min_denominator,
+                        options.spill_min_denominator,
+                    ),
+                ] {
+                    if let Some(v) = v {
+                        mdbx_result(ffi::mdbx_env_set_option(db, opt, v))?;
+                    }
+                }
+
+                let path = match CString::new(path.as_ref().as_os_str().as_bytes()) {
+                    Ok(path) => path,
+                    Err(..) => return Err(crate::Error::Invalid),
+                };
+                mdbx_result(ffi::mdbx_env_open(
+                    db,
+                    path.as_ptr(),
+                    options.make_flags() | E::EXTRA_FLAGS,
+                    options.permissions.unwrap_or(0o644),
+                ))?;
+
+                Ok(())
+            })() {
+                ffi::mdbx_env_close_ex(db, false);
+
+                return Err(e);
+            }
         }
+
+        let mut db = Database {
+            inner: DbPtr(db),
+            txn_manager: None,
+            _marker: PhantomData,
+        };
+
+        if let Mode::ReadWrite { .. } = options.mode {
+            let (tx, rx) = std::sync::mpsc::sync_channel(0);
+            let e = db.inner;
+            std::thread::spawn(move || loop {
+                match rx.recv() {
+                    Ok(msg) => match msg {
+                        TxnManagerMessage::Begin {
+                            parent,
+                            flags,
+                            sender,
+                        } => {
+                            let e = e;
+                            let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
+                            sender
+                                .send(
+                                    mdbx_result(unsafe {
+                                        ffi::mdbx_txn_begin_ex(
+                                            e.0,
+                                            parent.0,
+                                            flags,
+                                            &mut txn,
+                                            ptr::null_mut(),
+                                        )
+                                    })
+                                    .map(|_| TxnPtr(txn)),
+                                )
+                                .unwrap()
+                        }
+                        TxnManagerMessage::Abort { tx, sender } => {
+                            sender
+                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
+                                .unwrap();
+                        }
+                        TxnManagerMessage::Commit { tx, sender } => {
+                            sender
+                                .send(mdbx_result(unsafe {
+                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
+                                }))
+                                .unwrap();
+                        }
+                    },
+                    Err(_) => return,
+                }
+            });
+
+            db.txn_manager = Some(tx);
+        }
+
+        Ok(db)
     }
 
     /// Returns a raw pointer to the underlying MDBX database.
@@ -179,7 +364,7 @@ where
     /// # use libmdbx::Database;
     /// # use libmdbx::NoWriteMap;
     /// let dir = tempfile::tempdir().unwrap();
-    /// let db = Database::<NoWriteMap>::new().open(dir.path()).unwrap();
+    /// let db = Database::<NoWriteMap>::open(&dir).unwrap();
     /// let info = db.info().unwrap();
     /// let stat = db.stat().unwrap();
     /// let freelist = db.freelist().unwrap();
@@ -362,270 +547,4 @@ where
 pub enum PageSize {
     MinimalAcceptable,
     Set(usize),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Geometry<R> {
-    pub size: Option<R>,
-    pub growth_step: Option<isize>,
-    pub shrink_threshold: Option<isize>,
-    pub page_size: Option<PageSize>,
-}
-
-impl<R> Default for Geometry<R> {
-    fn default() -> Self {
-        Self {
-            size: None,
-            growth_step: None,
-            shrink_threshold: None,
-            page_size: None,
-        }
-    }
-}
-
-/// Options for opening or creating an database.
-#[derive(Debug, Clone)]
-pub struct DatabaseBuilder<E>
-where
-    E: DatabaseKind,
-{
-    flags: DatabaseFlags,
-    max_readers: Option<c_uint>,
-    max_tables: Option<u64>,
-    rp_augment_limit: Option<u64>,
-    loose_limit: Option<u64>,
-    dp_reserve_limit: Option<u64>,
-    txn_dp_limit: Option<u64>,
-    spill_max_denominator: Option<u64>,
-    spill_min_denominator: Option<u64>,
-    geometry: Option<Geometry<(Option<usize>, Option<usize>)>>,
-    _marker: PhantomData<E>,
-}
-
-impl<E> DatabaseBuilder<E>
-where
-    E: DatabaseKind,
-{
-    /// Open a database.
-    ///
-    /// Database files will be opened with 644 permissions.
-    pub fn open(&self, path: &Path) -> Result<Database<E>> {
-        self.open_with_permissions(path, 0o644)
-    }
-
-    /// Open a database with the provided UNIX permissions.
-    ///
-    /// The path may not contain the null character.
-    pub fn open_with_permissions(
-        &self,
-        path: &Path,
-        mode: ffi::mdbx_mode_t,
-    ) -> Result<Database<E>> {
-        let mut db: *mut ffi::MDBX_env = ptr::null_mut();
-        unsafe {
-            mdbx_result(ffi::mdbx_env_create(&mut db))?;
-            if let Err(e) = (|| {
-                if let Some(geometry) = &self.geometry {
-                    let mut min_size = -1;
-                    let mut max_size = -1;
-
-                    if let Some(size) = geometry.size {
-                        if let Some(size) = size.0 {
-                            min_size = size as isize;
-                        }
-
-                        if let Some(size) = size.1 {
-                            max_size = size as isize;
-                        }
-                    }
-
-                    mdbx_result(ffi::mdbx_env_set_geometry(
-                        db,
-                        min_size,
-                        -1,
-                        max_size,
-                        geometry.growth_step.unwrap_or(-1),
-                        geometry.shrink_threshold.unwrap_or(-1),
-                        match geometry.page_size {
-                            None => -1,
-                            Some(PageSize::MinimalAcceptable) => 0,
-                            Some(PageSize::Set(size)) => size as isize,
-                        },
-                    ))?;
-                }
-                for (opt, v) in [
-                    (ffi::MDBX_opt_max_db, self.max_tables),
-                    (ffi::MDBX_opt_rp_augment_limit, self.rp_augment_limit),
-                    (ffi::MDBX_opt_loose_limit, self.loose_limit),
-                    (ffi::MDBX_opt_dp_reserve_limit, self.dp_reserve_limit),
-                    (ffi::MDBX_opt_txn_dp_limit, self.txn_dp_limit),
-                    (
-                        ffi::MDBX_opt_spill_max_denominator,
-                        self.spill_max_denominator,
-                    ),
-                    (
-                        ffi::MDBX_opt_spill_min_denominator,
-                        self.spill_min_denominator,
-                    ),
-                ] {
-                    if let Some(v) = v {
-                        mdbx_result(ffi::mdbx_env_set_option(db, opt, v))?;
-                    }
-                }
-
-                let path = match CString::new(path.as_os_str().as_bytes()) {
-                    Ok(path) => path,
-                    Err(..) => return Err(crate::Error::Invalid),
-                };
-                mdbx_result(ffi::mdbx_env_open(
-                    db,
-                    path.as_ptr(),
-                    self.flags.make_flags() | E::EXTRA_FLAGS,
-                    mode,
-                ))?;
-
-                Ok(())
-            })() {
-                ffi::mdbx_env_close_ex(db, false);
-
-                return Err(e);
-            }
-        }
-
-        let mut db = Database {
-            inner: DbPtr(db),
-            txn_manager: None,
-            _marker: PhantomData,
-        };
-
-        if let Mode::ReadWrite { .. } = self.flags.mode {
-            let (tx, rx) = std::sync::mpsc::sync_channel(0);
-            let e = db.inner;
-            std::thread::spawn(move || loop {
-                match rx.recv() {
-                    Ok(msg) => match msg {
-                        TxnManagerMessage::Begin {
-                            parent,
-                            flags,
-                            sender,
-                        } => {
-                            let e = e;
-                            let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-                            sender
-                                .send(
-                                    mdbx_result(unsafe {
-                                        ffi::mdbx_txn_begin_ex(
-                                            e.0,
-                                            parent.0,
-                                            flags,
-                                            &mut txn,
-                                            ptr::null_mut(),
-                                        )
-                                    })
-                                    .map(|_| TxnPtr(txn)),
-                                )
-                                .unwrap()
-                        }
-                        TxnManagerMessage::Abort { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
-                                .unwrap();
-                        }
-                        TxnManagerMessage::Commit { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe {
-                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                }))
-                                .unwrap();
-                        }
-                    },
-                    Err(_) => return,
-                }
-            });
-
-            db.txn_manager = Some(tx);
-        }
-
-        Ok(db)
-    }
-
-    /// Sets the provided options in the database.
-    pub fn set_flags(&mut self, flags: DatabaseFlags) -> &mut Self {
-        self.flags = flags;
-        self
-    }
-
-    /// Sets the maximum number of threads or reader slots for the database.
-    ///
-    /// This defines the number of slots in the lock table that is used to track readers in the
-    /// the database. The default is 126. Starting a read-only transaction normally ties a lock
-    /// table slot to the [Transaction] object until it or the [Database] object is destroyed.
-    pub fn set_max_readers(&mut self, max_readers: c_uint) -> &mut Self {
-        self.max_readers = Some(max_readers);
-        self
-    }
-
-    /// Sets the maximum number of named tables for the database.
-    ///
-    /// This function is only needed if multiple tables will be used in the
-    /// database. Simpler applications that use the database as a single
-    /// unnamed table can ignore this option.
-    ///
-    /// Currently a moderate number of slots are cheap but a huge number gets
-    /// expensive: 7-120 words per transaction, and every [Transaction::open_table()]
-    /// does a linear search of the opened slots.
-    pub fn set_max_tables(&mut self, v: usize) -> &mut Self {
-        self.max_tables = Some(v as u64);
-        self
-    }
-
-    pub fn set_rp_augment_limit(&mut self, v: u64) -> &mut Self {
-        self.rp_augment_limit = Some(v);
-        self
-    }
-
-    pub fn set_loose_limit(&mut self, v: u64) -> &mut Self {
-        self.loose_limit = Some(v);
-        self
-    }
-
-    pub fn set_dp_reserve_limit(&mut self, v: u64) -> &mut Self {
-        self.dp_reserve_limit = Some(v);
-        self
-    }
-
-    pub fn set_txn_dp_limit(&mut self, v: u64) -> &mut Self {
-        self.txn_dp_limit = Some(v);
-        self
-    }
-
-    pub fn set_spill_max_denominator(&mut self, v: u8) -> &mut Self {
-        self.spill_max_denominator = Some(v.into());
-        self
-    }
-
-    pub fn set_spill_min_denominator(&mut self, v: u8) -> &mut Self {
-        self.spill_min_denominator = Some(v.into());
-        self
-    }
-
-    /// Set all size-related parameters of database, including page size and the min/max size of the memory map.
-    pub fn set_geometry<R: RangeBounds<usize>>(&mut self, geometry: Geometry<R>) -> &mut Self {
-        let convert_bound = |bound: Bound<&usize>| match bound {
-            Bound::Included(v) | Bound::Excluded(v) => Some(*v),
-            _ => None,
-        };
-        self.geometry = Some(Geometry {
-            size: geometry.size.map(|range| {
-                (
-                    convert_bound(range.start_bound()),
-                    convert_bound(range.end_bound()),
-                )
-            }),
-            growth_step: geometry.growth_step,
-            shrink_threshold: geometry.shrink_threshold,
-            page_size: geometry.page_size,
-        });
-        self
-    }
 }

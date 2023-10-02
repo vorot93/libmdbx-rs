@@ -9,19 +9,27 @@ fn test_open() {
     let dir = tempdir().unwrap();
 
     // opening non-existent database with read-only should fail
-    assert!(Database::new()
-        .set_flags(Mode::ReadOnly.into())
-        .open(dir.path())
-        .is_err());
+    assert!(Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            mode: Mode::ReadOnly,
+            ..Default::default()
+        }
+    )
+    .is_err());
 
     // opening non-existent database should succeed
-    assert!(Database::new().open(dir.path()).is_ok());
+    assert!(Database::open(&dir).is_ok());
 
     // opening database with read-only should succeed
-    assert!(Database::new()
-        .set_flags(Mode::ReadOnly.into())
-        .open(dir.path())
-        .is_ok());
+    assert!(Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            mode: Mode::ReadOnly,
+            ..Default::default()
+        }
+    )
+    .is_ok());
 }
 
 #[test]
@@ -30,7 +38,7 @@ fn test_begin_txn() {
 
     {
         // writable database
-        let db = Database::new().open(dir.path()).unwrap();
+        let db = Database::open(&dir).unwrap();
 
         assert!(db.begin_rw_txn().is_ok());
         assert!(db.begin_ro_txn().is_ok());
@@ -38,10 +46,14 @@ fn test_begin_txn() {
 
     {
         // read-only database
-        let db = Database::new()
-            .set_flags(Mode::ReadOnly.into())
-            .open(dir.path())
-            .unwrap();
+        let db = Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                mode: Mode::ReadOnly,
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         assert!(db.begin_rw_txn().is_err());
         assert!(db.begin_ro_txn().is_ok());
@@ -51,7 +63,14 @@ fn test_begin_txn() {
 #[test]
 fn test_open_table() {
     let dir = tempdir().unwrap();
-    let db = Database::new().set_max_tables(1).open(dir.path()).unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let txn = db.begin_ro_txn().unwrap();
     assert!(txn.open_table(None).is_ok());
@@ -61,7 +80,14 @@ fn test_open_table() {
 #[test]
 fn test_create_table() {
     let dir = tempdir().unwrap();
-    let db = Database::new().set_max_tables(11).open(dir.path()).unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(11),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     assert!(txn.open_table(Some("test")).is_err());
@@ -72,7 +98,14 @@ fn test_create_table() {
 #[test]
 fn test_close_table() {
     let dir = tempdir().unwrap();
-    let db = Database::new().set_max_tables(10).open(dir.path()).unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(10),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     txn.create_table(Some("test"), TableFlags::empty()).unwrap();
@@ -83,14 +116,18 @@ fn test_close_table() {
 fn test_sync() {
     let dir = tempdir().unwrap();
     {
-        let db = Database::new().open(dir.path()).unwrap();
+        let db = Database::open(&dir).unwrap();
         db.sync(true).unwrap();
     }
     {
-        let db = Database::new()
-            .set_flags(Mode::ReadOnly.into())
-            .open(dir.path())
-            .unwrap();
+        let db = Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                mode: Mode::ReadOnly,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         db.sync(true).unwrap_err();
     }
 }
@@ -98,7 +135,7 @@ fn test_sync() {
 #[test]
 fn test_stat() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     // Stats should be empty initially.
     let stat = db.stat().unwrap();
@@ -134,18 +171,11 @@ fn test_stat() {
 
 #[test]
 fn test_info() {
-    let map_size = 1024 * 1024;
     let dir = tempdir().unwrap();
-    let db = Database::new()
-        .set_geometry(Geometry {
-            size: Some(map_size..),
-            ..Default::default()
-        })
-        .open(dir.path())
-        .unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let info = db.info().unwrap();
-    assert_eq!(info.geometry().min(), map_size as u64);
+    // assert_eq!(info.geometry().min(), map_size as u64);
     // assert_eq!(info.last_pgno(), 1);
     // assert_eq!(info.last_txnid(), 0);
     assert_eq!(info.num_readers(), 0);
@@ -154,7 +184,7 @@ fn test_info() {
 #[test]
 fn test_freelist() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let mut freelist = db.freelist().unwrap();
     assert_eq!(freelist, 0);

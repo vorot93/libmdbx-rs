@@ -42,7 +42,7 @@
 //!     Lazy::new(|| Arc::new([table_info!(Users)].into_iter().collect()));
 //!
 //! // Create database with the database chart
-//! let db = Arc::new(libmdbx::orm::Database::create(&TABLES, None).unwrap());
+//! let db = Arc::new(libmdbx::orm::Database::create(None, &TABLES).unwrap());
 //!
 //! let users = vec![
 //!     (
@@ -87,6 +87,6 @@ mod transaction;
 
 pub use self::{cursor::*, database::*, impls::*, traits::*, transaction::*};
 pub use crate::{
-    dupsort, table, table_info, DatabaseKind, Geometry, NoWriteMap, TransactionKind, WriteMap, RO,
-    RW,
+    dupsort, table, table_info, DatabaseKind, DatabaseOptions, Mode, NoWriteMap, ReadWriteOptions,
+    SyncMode, TransactionKind, WriteMap, RO, RW,
 };

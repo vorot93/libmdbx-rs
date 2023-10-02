@@ -1,5 +1,5 @@
 use super::{traits::*, transaction::Transaction};
-use crate::{Geometry, TableFlags, WriteMap, RO, RW};
+use crate::{DatabaseOptions, Mode, TableFlags, WriteMap, RO, RW};
 use anyhow::Context;
 use std::{
     collections::BTreeMap,
@@ -35,51 +35,28 @@ impl Database {
         self.folder.path()
     }
 
-    fn open_db(
-        mut builder: crate::DatabaseBuilder<WriteMap>,
-        folder: DbFolder,
-        chart: &DatabaseChart,
-        read_only: bool,
-    ) -> anyhow::Result<Self> {
-        builder.set_max_tables(std::cmp::max(chart.len(), 1));
-
-        builder.set_flags(crate::DatabaseFlags {
-            mode: if read_only {
-                crate::Mode::ReadOnly
-            } else {
-                crate::Mode::ReadWrite {
-                    sync_mode: crate::SyncMode::Durable,
-                }
-            },
-            no_rdahead: true,
-            coalesce: true,
-            ..Default::default()
-        });
-
+    fn open_db(folder: DbFolder, options: DatabaseOptions) -> anyhow::Result<Self> {
         Ok(Self {
-            inner: builder.open(folder.path()).with_context(|| {
-                format!("failed to open database at {}", folder.path().display())
-            })?,
+            inner: crate::Database::open_with_options(folder.path(), options).with_context(
+                || format!("failed to open database at {}", folder.path().display()),
+            )?,
             folder,
         })
     }
 
-    fn new(chart: &DatabaseChart, folder: DbFolder, read_only: bool) -> anyhow::Result<Self> {
-        let mut builder = crate::Database::<WriteMap>::new();
-        builder.set_max_tables(chart.len());
-        builder.set_geometry(Geometry {
-            size: Some(..isize::MAX as usize),
-            growth_step: None,
-            shrink_threshold: None,
-            page_size: None,
-        });
-        builder.set_rp_augment_limit(16 * 256 * 1024);
-        if read_only {
-            Self::open_db(builder, folder, chart, true)
+    fn new(
+        folder: DbFolder,
+        mut options: DatabaseOptions,
+        chart: &DatabaseChart,
+    ) -> anyhow::Result<Self> {
+        options.max_tables = Some(std::cmp::max(chart.len() as u64, 1));
+
+        if let Mode::ReadOnly = options.mode {
+            Self::open_db(folder, options)
         } else {
             let _ = DirBuilder::new().recursive(true).create(folder.path());
 
-            let this = Self::open_db(builder, folder, chart, false)?;
+            let this = Self::open_db(folder, options)?;
 
             let tx = this.inner.begin_rw_txn()?;
             for (table, settings) in chart {
@@ -98,7 +75,15 @@ impl Database {
         }
     }
 
-    pub fn create(chart: &DatabaseChart, path: Option<PathBuf>) -> anyhow::Result<Database> {
+    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> anyhow::Result<Database> {
+        Self::create_with_options(path, DatabaseOptions::default(), chart)
+    }
+
+    pub fn create_with_options(
+        path: Option<PathBuf>,
+        options: DatabaseOptions,
+        chart: &DatabaseChart,
+    ) -> anyhow::Result<Database> {
         let folder = if let Some(path) = path {
             DbFolder::Persisted(path)
         } else {
@@ -106,11 +91,25 @@ impl Database {
             DbFolder::Temporary(path)
         };
 
-        Self::new(chart, folder, false)
+        Self::new(folder, options, chart)
     }
 
-    pub fn open(chart: &DatabaseChart, path: &Path) -> anyhow::Result<Database> {
-        Self::new(chart, DbFolder::Persisted(path.to_path_buf()), true)
+    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> anyhow::Result<Database> {
+        Self::open_with_options(path, DatabaseOptions::default(), chart)
+    }
+
+    pub fn open_with_options(
+        path: impl AsRef<Path>,
+        mut options: DatabaseOptions,
+        chart: &DatabaseChart,
+    ) -> anyhow::Result<Database> {
+        options.mode = Mode::ReadOnly;
+
+        Self::new(
+            DbFolder::Persisted(path.as_ref().to_path_buf()),
+            options,
+            chart,
+        )
     }
 }
 

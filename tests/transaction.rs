@@ -12,7 +12,7 @@ type Database = libmdbx::Database<NoWriteMap>;
 #[test]
 fn test_put_get_del() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
@@ -41,7 +41,7 @@ fn test_put_get_del() {
 #[test]
 fn test_put_get_del_multi() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
@@ -94,7 +94,7 @@ fn test_put_get_del_multi() {
 #[test]
 fn test_put_get_del_empty_key() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.create_table(None, Default::default()).unwrap();
@@ -112,7 +112,7 @@ fn test_put_get_del_empty_key() {
 #[test]
 fn test_reserve() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
@@ -136,7 +136,7 @@ fn test_reserve() {
 #[test]
 fn test_nested_txn() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let mut txn = db.begin_rw_txn().unwrap();
     txn.put(
@@ -165,7 +165,7 @@ fn test_nested_txn() {
 #[test]
 fn test_clear_table() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     {
         let txn = db.begin_rw_txn().unwrap();
@@ -197,7 +197,14 @@ fn test_clear_table() {
 fn test_drop_table() {
     let dir = tempdir().unwrap();
     {
-        let db = Database::new().set_max_tables(2).open(dir.path()).unwrap();
+        let db = Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                max_tables: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         {
             let txn = db.begin_rw_txn().unwrap();
@@ -227,7 +234,14 @@ fn test_drop_table() {
         }
     }
 
-    let db = Database::new().set_max_tables(2).open(dir.path()).unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(2),
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
     let txn = db.begin_ro_txn().unwrap();
     txn.open_table(Some("canary")).unwrap();
@@ -240,7 +254,7 @@ fn test_drop_table() {
 #[test]
 fn test_concurrent_readers_single_writer() {
     let dir = tempdir().unwrap();
-    let db: Arc<Database> = Arc::new(Database::new().open(dir.path()).unwrap());
+    let db: Arc<Database> = Arc::new(Database::open(&dir).unwrap());
 
     let n = 10usize; // Number of concurrent readers
     let barrier = Arc::new(Barrier::new(n + 1));
@@ -285,7 +299,7 @@ fn test_concurrent_readers_single_writer() {
 #[test]
 fn test_concurrent_writers() {
     let dir = tempdir().unwrap();
-    let db = Arc::new(Database::new().open(dir.path()).unwrap());
+    let db = Arc::new(Database::open(&dir).unwrap());
 
     let n = 10usize; // Number of concurrent writers
     let mut threads: Vec<JoinHandle<bool>> = Vec::with_capacity(n);
@@ -327,7 +341,7 @@ fn test_concurrent_writers() {
 #[test]
 fn test_stat() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::empty()).unwrap();
@@ -375,7 +389,7 @@ fn test_stat() {
 #[test]
 fn test_stat_dupsort() {
     let dir = tempdir().unwrap();
-    let db = Database::new().open(dir.path()).unwrap();
+    let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
