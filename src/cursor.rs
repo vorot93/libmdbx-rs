@@ -1,4 +1,5 @@
 use crate::{
+    database::TxnPtr,
     error::{mdbx_result, Error, Result},
     flags::*,
     mdbx_try_optional,
@@ -16,13 +17,17 @@ use libc::{c_uint, c_void};
 use parking_lot::Mutex;
 use std::{borrow::Cow, fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
 
+#[derive(Copy, Clone, Debug)]
+pub struct CursorPtr(pub *mut ffi::MDBX_cursor);
+unsafe impl Send for CursorPtr {}
+
 /// A cursor for navigating the items within a table.
 pub struct Cursor<'txn, K>
 where
     K: TransactionKind,
 {
-    txn: Arc<Mutex<*mut ffi::MDBX_txn>>,
-    cursor: *mut ffi::MDBX_cursor,
+    txn: Arc<Mutex<TxnPtr>>,
+    cursor: CursorPtr,
     _marker: PhantomData<fn(&'txn (), K)>,
 }
 
@@ -44,7 +49,7 @@ where
         }
         Ok(Self {
             txn,
-            cursor,
+            cursor: CursorPtr(cursor),
             _marker: PhantomData,
         })
     }
@@ -53,11 +58,11 @@ where
         unsafe {
             let cursor = ffi::mdbx_cursor_create(ptr::null_mut());
 
-            let res = ffi::mdbx_cursor_copy(other.cursor(), cursor);
+            let res = ffi::mdbx_cursor_copy(other.cursor().0, cursor);
 
             let s = Self {
                 txn: other.txn.clone(),
-                cursor,
+                cursor: CursorPtr(cursor),
                 _marker: PhantomData,
             };
 
@@ -71,7 +76,7 @@ where
     ///
     /// The caller **must** ensure that the pointer is not used after the
     /// lifetime of the cursor.
-    pub fn cursor(&self) -> *mut ffi::MDBX_cursor {
+    pub fn cursor(&self) -> CursorPtr {
         self.cursor
     }
 
@@ -94,7 +99,7 @@ where
             let data_ptr = data_val.iov_base;
             txn_execute(&self.txn, |txn| {
                 let v = mdbx_result(ffi::mdbx_cursor_get(
-                    self.cursor,
+                    self.cursor.0,
                     &mut key_val,
                     &mut data_val,
                     op,
@@ -489,7 +494,7 @@ impl<'txn> Cursor<'txn, RW> {
         };
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
-                ffi::mdbx_cursor_put(self.cursor, &key_val, &mut data_val, flags.bits())
+                ffi::mdbx_cursor_put(self.cursor.0, &key_val, &mut data_val, flags.bits())
             })
         })?;
 
@@ -505,7 +510,7 @@ impl<'txn> Cursor<'txn, RW> {
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
-                ffi::mdbx_cursor_del(self.cursor, flags.bits())
+                ffi::mdbx_cursor_del(self.cursor.0, flags.bits())
             })
         })?;
 
@@ -537,7 +542,7 @@ where
 {
     fn drop(&mut self) {
         txn_execute(&self.txn, |_| unsafe {
-            ffi::mdbx_cursor_close(self.cursor)
+            ffi::mdbx_cursor_close(self.cursor.0)
         })
     }
 }
@@ -554,9 +559,6 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
         },
     }
 }
-
-unsafe impl<'txn, K> Send for Cursor<'txn, K> where K: TransactionKind {}
-unsafe impl<'txn, K> Sync for Cursor<'txn, K> where K: TransactionKind {}
 
 impl<'txn, K> IntoIterator for Cursor<'txn, K>
 where
@@ -647,7 +649,7 @@ where
                 let op = mem::replace(op, *next_op);
                 unsafe {
                     txn_execute(&cursor.txn, |txn| {
-                        match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
+                        match ffi::mdbx_cursor_get(cursor.cursor().0, &mut key, &mut data, op) {
                             ffi::MDBX_SUCCESS => {
                                 let key = match Key::decode_val::<K>(txn, &key) {
                                     Ok(v) => v,
@@ -753,7 +755,7 @@ where
                 let op = mem::replace(op, *next_op);
                 unsafe {
                     txn_execute(&cursor.txn, |txn| {
-                        match ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) {
+                        match ffi::mdbx_cursor_get(cursor.cursor().0, &mut key, &mut data, op) {
                             ffi::MDBX_SUCCESS => {
                                 let key = match Key::decode_val::<K>(txn, &key) {
                                     Ok(v) => v,
@@ -860,7 +862,7 @@ where
 
                 txn_execute(&cursor.txn, |_| {
                     let err_code =
-                        unsafe { ffi::mdbx_cursor_get(cursor.cursor(), &mut key, &mut data, op) };
+                        unsafe { ffi::mdbx_cursor_get(cursor.cursor().0, &mut key, &mut data, op) };
 
                     if err_code == ffi::MDBX_SUCCESS {
                         Some(IntoIter::new(

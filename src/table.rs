@@ -57,6 +57,3 @@ impl<'txn> Table<'txn> {
         self.dbi
     }
 }
-
-unsafe impl<'txn> Send for Table<'txn> {}
-unsafe impl<'txn> Sync for Table<'txn> {}

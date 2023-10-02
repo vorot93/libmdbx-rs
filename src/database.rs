@@ -49,14 +49,13 @@ impl DatabaseKind for WriteMap {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct TxnPtr(pub *mut ffi::MDBX_txn);
+pub struct TxnPtr(pub *mut ffi::MDBX_txn);
 unsafe impl Send for TxnPtr {}
-unsafe impl Sync for TxnPtr {}
 
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct EnvPtr(pub *mut ffi::MDBX_env);
-unsafe impl Send for EnvPtr {}
-unsafe impl Sync for EnvPtr {}
+pub struct DbPtr(pub *mut ffi::MDBX_env);
+unsafe impl Send for DbPtr {}
+unsafe impl Sync for DbPtr {}
 
 pub(crate) enum TxnManagerMessage {
     Begin {
@@ -79,7 +78,7 @@ pub struct Database<E>
 where
     E: DatabaseKind,
 {
-    db: *mut ffi::MDBX_env,
+    inner: DbPtr,
     pub(crate) txn_manager: Option<SyncSender<TxnManagerMessage>>,
     _marker: PhantomData<E>,
 }
@@ -110,8 +109,8 @@ where
     ///
     /// The caller **must** ensure that the pointer is not dereferenced after the lifetime of the
     /// database.
-    pub fn ptr(&self) -> *mut ffi::MDBX_env {
-        self.db
+    pub fn ptr(&self) -> DbPtr {
+        self.inner
     }
 
     /// Create a read-only transaction for use with the database.
@@ -145,7 +144,7 @@ where
 
     /// Flush the database data buffers to disk.
     pub fn sync(&self, force: bool) -> Result<bool> {
-        mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.ptr(), force, false) })
+        mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.ptr().0, force, false) })
     }
 
     /// Retrieves statistics about this database.
@@ -153,7 +152,7 @@ where
         unsafe {
             let mut stat = Stat::new();
             mdbx_result(ffi::mdbx_env_stat_ex(
-                self.ptr(),
+                self.ptr().0,
                 ptr::null(),
                 stat.mdb_stat(),
                 size_of::<Stat>(),
@@ -167,7 +166,7 @@ where
         unsafe {
             let mut info = Info(mem::zeroed());
             mdbx_result(ffi::mdbx_env_info_ex(
-                self.ptr(),
+                self.ptr().0,
                 ptr::null(),
                 &mut info.0,
                 size_of::<Info>(),
@@ -340,9 +339,6 @@ impl Info {
     }
 }
 
-unsafe impl<E> Send for Database<E> where E: DatabaseKind {}
-unsafe impl<E> Sync for Database<E> where E: DatabaseKind {}
-
 impl<E> fmt::Debug for Database<E>
 where
     E: DatabaseKind,
@@ -358,7 +354,7 @@ where
 {
     fn drop(&mut self) {
         unsafe {
-            ffi::mdbx_env_close_ex(self.db, false);
+            ffi::mdbx_env_close_ex(self.inner.0, false);
         }
     }
 }
@@ -430,9 +426,9 @@ where
         path: &Path,
         mode: ffi::mdbx_mode_t,
     ) -> Result<Database<E>> {
-        let mut env: *mut ffi::MDBX_env = ptr::null_mut();
+        let mut db: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
-            mdbx_result(ffi::mdbx_env_create(&mut env))?;
+            mdbx_result(ffi::mdbx_env_create(&mut db))?;
             if let Err(e) = (|| {
                 if let Some(geometry) = &self.geometry {
                     let mut min_size = -1;
@@ -449,7 +445,7 @@ where
                     }
 
                     mdbx_result(ffi::mdbx_env_set_geometry(
-                        env,
+                        db,
                         min_size,
                         -1,
                         max_size,
@@ -478,7 +474,7 @@ where
                     ),
                 ] {
                     if let Some(v) = v {
-                        mdbx_result(ffi::mdbx_env_set_option(env, opt, v))?;
+                        mdbx_result(ffi::mdbx_env_set_option(db, opt, v))?;
                     }
                 }
 
@@ -487,7 +483,7 @@ where
                     Err(..) => return Err(crate::Error::Invalid),
                 };
                 mdbx_result(ffi::mdbx_env_open(
-                    env,
+                    db,
                     path.as_ptr(),
                     self.flags.make_flags() | E::EXTRA_FLAGS,
                     mode,
@@ -495,21 +491,21 @@ where
 
                 Ok(())
             })() {
-                ffi::mdbx_env_close_ex(env, false);
+                ffi::mdbx_env_close_ex(db, false);
 
                 return Err(e);
             }
         }
 
         let mut db = Database {
-            db: env,
+            inner: DbPtr(db),
             txn_manager: None,
             _marker: PhantomData,
         };
 
         if let Mode::ReadWrite { .. } = self.flags.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
-            let e = EnvPtr(db.db);
+            let e = db.inner;
             std::thread::spawn(move || loop {
                 match rx.recv() {
                     Ok(msg) => match msg {

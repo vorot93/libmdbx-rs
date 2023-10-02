@@ -95,7 +95,7 @@ fn bench_get_seq_raw(c: &mut Criterion) {
 
     c.bench_function("bench_get_seq_raw", |b| {
         b.iter(|| unsafe {
-            mdbx_cursor_open(txn, dbi, &mut cursor);
+            mdbx_cursor_open(txn.0, dbi, &mut cursor);
             let mut i = 0;
             let mut count = 0u32;
 

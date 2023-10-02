@@ -57,7 +57,7 @@ where
     K: TransactionKind,
     E: DatabaseKind,
 {
-    txn: Arc<Mutex<*mut ffi::MDBX_txn>>,
+    txn: Arc<Mutex<TxnPtr>>,
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
     db: &'db Database<E>,
@@ -73,7 +73,7 @@ where
         let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_txn_begin_ex(
-                db.ptr(),
+                db.ptr().0,
                 ptr::null_mut(),
                 K::OPEN_FLAGS,
                 &mut txn,
@@ -85,7 +85,7 @@ where
 
     pub(crate) fn new_from_ptr(db: &'db Database<E>, txn: *mut ffi::MDBX_txn) -> Self {
         Self {
-            txn: Arc::new(Mutex::new(txn)),
+            txn: Arc::new(Mutex::new(TxnPtr(txn))),
             primed_dbis: Mutex::new(IndexSet::new()),
             committed: false,
             db,
@@ -97,11 +97,11 @@ where
     ///
     /// The caller **must** ensure that the pointer is not used after the
     /// lifetime of the transaction.
-    pub(crate) fn txn_mutex(&self) -> Arc<Mutex<*mut ffi::MDBX_txn>> {
+    pub(crate) fn txn_mutex(&self) -> Arc<Mutex<TxnPtr>> {
         self.txn.clone()
     }
 
-    pub fn txn(&self) -> *mut ffi::MDBX_txn {
+    pub fn txn(&self) -> TxnPtr {
         *self.txn.lock()
     }
 
@@ -159,7 +159,7 @@ where
     /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
     pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'db>>)> {
         let txnlck = self.txn.lock();
-        let txn = *txnlck;
+        let txn = txnlck.0;
         let result = if K::ONLY_CLEAN {
             mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
         } else {
@@ -231,12 +231,9 @@ where
     }
 }
 
-pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(
-    txn: &Mutex<*mut ffi::MDBX_txn>,
-    f: F,
-) -> T {
+pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(txn: &Mutex<TxnPtr>, f: F) -> T {
     let lck = txn.lock();
-    (f)(*lck)
+    (f)(lck.0)
 }
 
 impl<'db, E> Transaction<'db, RW, E>
@@ -408,7 +405,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn close_table(&self, table: Table<'_>) -> Result<()> {
-        mdbx_result(ffi::mdbx_dbi_close(self.db.ptr(), table.dbi()))?;
+        mdbx_result(ffi::mdbx_dbi_close(self.db.ptr().0, table.dbi()))?;
 
         Ok(())
     }
@@ -475,18 +472,4 @@ where
             }
         })
     }
-}
-
-unsafe impl<'db, K, E> Send for Transaction<'db, K, E>
-where
-    K: TransactionKind,
-    E: DatabaseKind,
-{
-}
-
-unsafe impl<'db, K, E> Sync for Transaction<'db, K, E>
-where
-    K: TransactionKind,
-    E: DatabaseKind,
-{
 }

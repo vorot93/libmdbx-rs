@@ -60,7 +60,7 @@ fn bench_get_rand_raw(c: &mut Criterion) {
                 key_val.iov_len = key.len() as size_t;
                 key_val.iov_base = key.as_bytes().as_ptr() as *mut _;
 
-                mdbx_get(txn, dbi, &key_val, &mut data_val);
+                mdbx_get(txn.0, dbi, &key_val, &mut data_val);
 
                 i += key_val.iov_len;
             }
@@ -113,7 +113,7 @@ fn bench_put_rand_raw(c: &mut Criterion) {
     c.bench_function("bench_put_rand_raw", |b| {
         b.iter(|| unsafe {
             let mut txn: *mut MDBX_txn = ptr::null_mut();
-            mdbx_txn_begin_ex(env, ptr::null_mut(), 0, &mut txn, ptr::null_mut());
+            mdbx_txn_begin_ex(env.0, ptr::null_mut(), 0, &mut txn, ptr::null_mut());
 
             let mut i: ::libc::c_int = 0;
             for (key, data) in items.iter() {
