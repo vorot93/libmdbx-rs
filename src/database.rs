@@ -8,6 +8,7 @@ use crate::{
 use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
 use mem::size_of;
+use sealed::sealed;
 use std::{
     ffi::CString,
     fmt,
@@ -23,16 +24,8 @@ use std::{
     time::Duration,
 };
 
-mod private {
-    use super::*;
-
-    pub trait Sealed {}
-
-    impl Sealed for NoWriteMap {}
-    impl Sealed for WriteMap {}
-}
-
-pub trait DatabaseKind: private::Sealed + Debug + 'static {
+#[sealed]
+pub trait DatabaseKind: Debug + 'static {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
 }
 
@@ -41,9 +34,11 @@ pub struct NoWriteMap;
 #[derive(Debug)]
 pub struct WriteMap;
 
+#[sealed]
 impl DatabaseKind for NoWriteMap {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_ENV_DEFAULTS;
 }
+#[sealed]
 impl DatabaseKind for WriteMap {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_WRITEMAP;
 }

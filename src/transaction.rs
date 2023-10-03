@@ -9,6 +9,7 @@ use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
 use libc::{c_uint, c_void};
 use parking_lot::Mutex;
+use sealed::sealed;
 use std::{
     fmt,
     fmt::Debug,
@@ -18,16 +19,8 @@ use std::{
     sync::{mpsc::sync_channel, Arc},
 };
 
-mod private {
-    use super::*;
-
-    pub trait Sealed {}
-
-    impl Sealed for RO {}
-    impl Sealed for RW {}
-}
-
-pub trait TransactionKind: private::Sealed + Debug + 'static {
+#[sealed]
+pub trait TransactionKind: Debug + 'static {
     #[doc(hidden)]
     const ONLY_CLEAN: bool;
 
@@ -40,10 +33,12 @@ pub struct RO;
 #[derive(Debug)]
 pub struct RW;
 
+#[sealed]
 impl TransactionKind for RO {
     const ONLY_CLEAN: bool = true;
     const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_TXN_RDONLY;
 }
+#[sealed]
 impl TransactionKind for RW {
     const ONLY_CLEAN: bool = false;
     const OPEN_FLAGS: MDBX_txn_flags_t = MDBX_TXN_READWRITE;

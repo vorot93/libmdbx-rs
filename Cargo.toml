@@ -30,6 +30,7 @@ impls = { version = "1", optional = true }
 indexmap = "2"
 libc = "0.2"
 parking_lot = "0.12"
+sealed = "0.5"
 tempfile = { version = "3", optional = true }
 thiserror = "1"
 
