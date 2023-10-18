@@ -234,6 +234,7 @@ where
             _marker: PhantomData,
         };
 
+        #[allow(clippy::redundant_locals)]
         if let Mode::ReadWrite { .. } = options.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
             let e = db.inner;
@@ -538,10 +539,6 @@ where
         }
     }
 }
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-//// Database Builder
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PageSize {
