@@ -243,8 +243,8 @@ macro_rules! cbor_table_object {
 
 impl<A, B, const A_LEN: usize, const B_LEN: usize> Encodable for (A, B)
 where
-    A: TableObject<Encoded = [u8; A_LEN]>,
-    B: TableObject<Encoded = [u8; B_LEN]>,
+    A: Encodable<Encoded = [u8; A_LEN]>,
+    B: Encodable<Encoded = [u8; B_LEN]>,
 {
     type Encoded = Vec<u8>;
 
