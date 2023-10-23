@@ -6,11 +6,11 @@ use crate::{
     Cursor, Decodable, Error, Stat,
 };
 use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
-use indexmap::IndexSet;
 use libc::{c_uint, c_void};
 use parking_lot::Mutex;
 use sealed::sealed;
 use std::{
+    collections::HashMap,
     fmt,
     fmt::Debug,
     marker::PhantomData,
@@ -53,7 +53,7 @@ where
     E: DatabaseKind,
 {
     txn: Arc<Mutex<TxnPtr>>,
-    primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
+    opened_tables: Mutex<HashMap<String, ffi::MDBX_dbi>>,
     committed: bool,
     db: &'db Database<E>,
     _marker: PhantomData<fn(K)>,
@@ -81,7 +81,7 @@ where
     pub(crate) fn new_from_ptr(db: &'db Database<E>, txn: *mut ffi::MDBX_txn) -> Self {
         Self {
             txn: Arc::new(Mutex::new(TxnPtr(txn))),
-            primed_dbis: Mutex::new(IndexSet::new()),
+            opened_tables: Mutex::new(HashMap::new()),
             committed: false,
             db,
             _marker: PhantomData,
@@ -143,16 +143,7 @@ where
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
-    pub fn commit(self) -> Result<bool> {
-        self.commit_and_rebind_open_dbs().map(|v| v.0)
-    }
-
-    pub fn prime_for_permaopen(&self, table: Table<'_>) {
-        self.primed_dbis.lock().insert(table.dbi());
-    }
-
-    /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
-    pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'db>>)> {
+    pub fn commit(mut self) -> Result<bool> {
         let txnlck = self.txn.lock();
         let txn = txnlck.0;
         let result = if K::ONLY_CLEAN {
@@ -165,22 +156,14 @@ where
                 .unwrap()
                 .send(TxnManagerMessage::Commit {
                     tx: TxnPtr(txn),
+                    opened_tables: std::mem::take(&mut self.opened_tables.lock()),
                     sender,
                 })
                 .unwrap();
             rx.recv().unwrap()
         };
         self.committed = true;
-        result.map(|v| {
-            (
-                v,
-                self.primed_dbis
-                    .lock()
-                    .iter()
-                    .map(|&dbi| Table::new_from_ptr(dbi))
-                    .collect(),
-            )
-        })
+        result
     }
 
     /// Opens a handle to an MDBX table.
@@ -195,7 +178,32 @@ where
     ///
     /// The table name may not contain the null character.
     pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
-        Table::new(self, name, 0)
+        self.open_table_with_flags(name, TableFlags::default())
+    }
+
+    fn open_table_with_flags<'txn>(
+        &'txn self,
+        name: Option<&str>,
+        flags: TableFlags,
+    ) -> Result<Table<'txn>> {
+        if let Some(name) = name {
+            if let Some(table) = self.db.open_table(name) {
+                return Ok(table);
+            }
+
+            let mut opened_tables = self.opened_tables.lock();
+
+            match opened_tables.get(name) {
+                Some(dbi) => Ok(Table::new_from_ptr(*dbi)),
+                None => {
+                    let table = Table::new(self, Some(name), flags.bits())?;
+                    opened_tables.insert(name.to_string(), table.dbi());
+                    Ok(table)
+                }
+            }
+        } else {
+            Table::new(self, name, flags.bits())
+        }
     }
 
     /// Gets the option flags for the given table in the transaction.
@@ -235,14 +243,6 @@ impl<'db, E> Transaction<'db, RW, E>
 where
     E: DatabaseKind,
 {
-    fn open_table_with_flags<'txn>(
-        &'txn self,
-        name: Option<&str>,
-        flags: TableFlags,
-    ) -> Result<Table<'txn>> {
-        Table::new(self, name, flags.bits())
-    }
-
     /// Opens a handle to an MDBX table, creating the table if necessary.
     ///
     /// If the table is already created, the given option flags will be added to it.
@@ -378,11 +378,7 @@ where
         Ok(())
     }
 
-    /// Drops the table from the database.
-    ///
-    /// # Safety
-    /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
-    pub unsafe fn drop_table<'txn>(&'txn self, table: Table<'txn>) -> Result<()> {
+    pub(crate) unsafe fn drop_table<'txn>(&'txn self, table: Table<'txn>) -> Result<()> {
         mdbx_result(txn_execute(&self.txn, |txn| {
             ffi::mdbx_drop(txn, table.dbi(), true)
         }))?;

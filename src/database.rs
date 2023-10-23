@@ -7,8 +7,10 @@ use crate::{
 use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
 use mem::size_of;
+use parking_lot::RwLock;
 use sealed::sealed;
 use std::{
+    collections::{BTreeSet, HashMap},
     ffi::CString,
     fmt,
     fmt::Debug,
@@ -17,7 +19,10 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::Path,
     ptr, result,
-    sync::mpsc::{sync_channel, SyncSender},
+    sync::{
+        mpsc::{sync_channel, SyncSender},
+        Arc,
+    },
     thread::sleep,
     time::Duration,
 };
@@ -62,6 +67,7 @@ pub(crate) enum TxnManagerMessage {
     },
     Commit {
         tx: TxnPtr,
+        opened_tables: HashMap<String, ffi::MDBX_dbi>,
         sender: SyncSender<Result<bool>>,
     },
 }
@@ -72,6 +78,7 @@ where
     E: DatabaseKind,
 {
     inner: DbPtr,
+    permanently_open_tables: Arc<RwLock<Option<HashMap<String, ffi::MDBX_dbi>>>>,
     pub(crate) txn_manager: Option<SyncSender<TxnManagerMessage>>,
     _marker: PhantomData<E>,
 }
@@ -230,6 +237,7 @@ where
 
         let mut db = Database {
             inner: DbPtr(db),
+            permanently_open_tables: Default::default(),
             txn_manager: None,
             _marker: PhantomData,
         };
@@ -238,6 +246,7 @@ where
         if let Mode::ReadWrite { .. } = options.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
             let e = db.inner;
+            let permanently_open_tables = db.permanently_open_tables.clone();
             std::thread::spawn(move || loop {
                 match rx.recv() {
                     Ok(msg) => match msg {
@@ -268,7 +277,19 @@ where
                                 .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
                                 .unwrap();
                         }
-                        TxnManagerMessage::Commit { tx, sender } => {
+                        TxnManagerMessage::Commit {
+                            tx,
+                            opened_tables,
+                            sender,
+                        } => {
+                            {
+                                let mut p = permanently_open_tables.write();
+                                if let Some(p) = p.as_mut() {
+                                    for (name, dbi) in opened_tables {
+                                        p.insert(name, dbi);
+                                    }
+                                }
+                            }
                             sender
                                 .send(mdbx_result(unsafe {
                                     ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
@@ -326,6 +347,47 @@ where
     /// Flush the database data buffers to disk.
     pub fn sync(&self, force: bool) -> Result<bool> {
         mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.ptr().0, force, false) })
+    }
+
+    /// Enable caching of opened table handles.
+    ///
+    /// # Safety
+    /// Please make sure no other processes use table drop functionality while this instance is open.
+    pub unsafe fn enable_table_handle_cache(&mut self) {
+        self.permanently_open_tables
+            .write()
+            .get_or_insert_with(Default::default);
+    }
+
+    pub fn open_table(&self, table: &str) -> Option<Table<'_>> {
+        self.permanently_open_tables
+            .read()
+            .as_ref()
+            .and_then(|p| p.get(table))
+            .copied()
+            .map(Table::new_from_ptr)
+    }
+
+    /// Drops the specified tables from the database.
+    ///
+    /// # Safety
+    /// Please make sure no other processes use table drop functionality while this instance is open.
+    pub unsafe fn drop_tables(&self, tables: &BTreeSet<&str>) -> Result<()> {
+        let txn = self.begin_rw_txn()?;
+        for &tname in tables {
+            let table = txn.open_table(Some(tname))?;
+
+            if let Some(p) = self.permanently_open_tables.write().as_mut() {
+                p.remove(tname);
+            }
+
+            unsafe {
+                txn.drop_table(table)?;
+            }
+        }
+        txn.commit()?;
+
+        Ok(())
     }
 
     /// Retrieves statistics about this database.

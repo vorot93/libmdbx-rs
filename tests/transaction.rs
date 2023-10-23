@@ -220,12 +220,11 @@ fn test_drop_table() {
                 .unwrap();
             assert!(!txn.commit().unwrap());
         }
+        unsafe {
+            db.drop_tables(&vec!["test"].into_iter().collect()).unwrap();
+        }
         {
             let txn = db.begin_rw_txn().unwrap();
-            let table = txn.open_table(Some("test")).unwrap();
-            unsafe {
-                txn.drop_table(table).unwrap();
-            }
             assert!(matches!(
                 txn.open_table(Some("test")).unwrap_err(),
                 Error::NotFound
