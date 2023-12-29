@@ -210,4 +210,5 @@ fn test_freelist() {
     // Freelist should not be empty after clear_table.
     freelist = db.freelist().unwrap();
     assert!(freelist > 0);
+    assert!(freelist < 10);
 }
