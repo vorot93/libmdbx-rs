@@ -1,4 +1,3 @@
-use byteorder::{ByteOrder, LittleEndian};
 use libmdbx::*;
 use tempfile::tempdir;
 
@@ -146,9 +145,8 @@ fn test_stat() {
     assert_eq!(stat.entries(), 0);
 
     // Write a few small values.
-    for i in 0..64 {
-        let mut value = [0u8; 8];
-        LittleEndian::write_u64(&mut value, i);
+    for i in 0..64_u64 {
+        let value = i.to_le_bytes();
         let tx = db.begin_rw_txn().unwrap();
         tx.put(
             &tx.open_table(None).unwrap(),
@@ -190,9 +188,8 @@ fn test_freelist() {
     assert_eq!(freelist, 0);
 
     // Write a few small values.
-    for i in 0..64 {
-        let mut value = [0u8; 8];
-        LittleEndian::write_u64(&mut value, i);
+    for i in 0..64_u64 {
+        let value = i.to_le_bytes();
         let tx = db.begin_rw_txn().unwrap();
         tx.put(
             &tx.open_table(None).unwrap(),

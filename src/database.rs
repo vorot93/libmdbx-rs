@@ -4,7 +4,6 @@ use crate::{
     transaction::{RO, RW},
     Mode, ReadWriteOptions, SyncMode, Transaction, TransactionKind,
 };
-use byteorder::{ByteOrder, NativeEndian};
 use libc::c_uint;
 use mem::size_of;
 use sealed::sealed;
@@ -14,6 +13,7 @@ use std::{
     fmt::Debug,
     marker::PhantomData,
     mem,
+    ops::Deref,
     os::unix::ffi::OsStrExt,
     path::Path,
     ptr, result,
@@ -378,7 +378,7 @@ where
     /// Note:
     ///
     /// * MDBX stores all the freelists in the designated table 0 in each database,
-    ///   and the freelist count is stored at the beginning of the value as `libc::size_t`
+    ///   and the freelist count is stored at the beginning of the value as 32-bit integer
     ///   in the native byte order.
     ///
     /// * It will create a read transaction to traverse the freelist table.
@@ -390,16 +390,13 @@ where
 
         for result in cursor {
             let (_key, value) = result?;
-            if value.len() < mem::size_of::<usize>() {
+            if value.len() < mem::size_of::<u32>() {
                 return Err(Error::Corrupted);
             }
 
-            let s = &value[..mem::size_of::<usize>()];
-            if cfg!(target_pointer_width = "64") {
-                freelist += NativeEndian::read_u64(s) as usize;
-            } else {
-                freelist += NativeEndian::read_u32(s) as usize;
-            }
+            freelist +=
+                u32::from_ne_bytes(value.deref()[..mem::size_of::<u32>()].try_into().unwrap())
+                    as usize;
         }
 
         Ok(freelist)

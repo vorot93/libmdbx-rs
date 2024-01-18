@@ -46,7 +46,6 @@ pub use orm_uses::*;
 #[cfg(test)]
 mod test_utils {
     use super::*;
-    use byteorder::{ByteOrder, LittleEndian};
     use tempfile::tempdir;
 
     type Database = crate::Database<NoWriteMap>;
@@ -69,9 +68,8 @@ mod test_utils {
         )
         .unwrap();
 
-        for height in 0..1000 {
-            let mut value = [0u8; 8];
-            LittleEndian::write_u64(&mut value, height);
+        for height in 0..1000_u64 {
+            let value = height.to_le_bytes();
             let tx = db.begin_rw_txn().unwrap();
             let index = tx.create_table(None, TableFlags::DUP_SORT).unwrap();
             tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
