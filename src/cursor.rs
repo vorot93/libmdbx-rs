@@ -321,12 +321,16 @@ where
     ///
     /// For DupSort-ed a data value is taken into account for duplicates, i.e. for a pairs/tuples of a key and an each data value of duplicates.
     /// Returns [false] if key-value pair found exactly and [true] if the next pair was returned.
-    pub fn set_lowerbound<Key, Value>(&mut self, key: &[u8]) -> Result<Option<(bool, Key, Value)>>
+    pub fn set_lowerbound<Key, Value>(
+        &mut self,
+        key: &[u8],
+        value: Option<&[u8]>,
+    ) -> Result<Option<(bool, Key, Value)>>
     where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let (k, v, found) = mdbx_try_optional!(self.get(Some(key), None, MDBX_SET_LOWERBOUND));
+        let (k, v, found) = mdbx_try_optional!(self.get(Some(key), value, MDBX_SET_LOWERBOUND));
 
         Ok(Some((found, k.unwrap(), v)))
     }
