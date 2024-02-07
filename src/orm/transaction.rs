@@ -1,5 +1,5 @@
 use super::{cursor::*, traits::*};
-use crate::{TransactionKind, WriteFlags, WriteMap, RO, RW};
+use crate::{Stat, TransactionKind, WriteFlags, WriteMap, RO, RW};
 use anyhow::Context;
 use std::{collections::HashMap, marker::PhantomData};
 
@@ -42,6 +42,14 @@ impl<'db, K> Transaction<'db, K>
 where
     K: TransactionKind,
 {
+    pub fn table_stat<T>(&self) -> Result<Stat, crate::Error>
+    where
+        T: Table,
+    {
+        self.inner
+            .table_stat(&self.inner.open_table(Some(T::NAME))?)
+    }
+
     pub fn cursor<'tx, T>(&'tx self) -> anyhow::Result<Cursor<'tx, K, T>>
     where
         'db: 'tx,
