@@ -220,6 +220,11 @@ where
         }
     }
 
+    /// Retrieves the freelist table statistics.
+    pub fn freelist_table_stat(&self) -> Result<Stat> {
+        self.table_stat(&Table::freelist_table())
+    }
+
     /// Open a new cursor on the given table.
     pub fn cursor<'txn>(&'txn self, table: &Table<'txn>) -> Result<Cursor<'txn, K>> {
         Cursor::new(self, table)
