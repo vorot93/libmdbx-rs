@@ -1,5 +1,5 @@
 use super::{traits::*, transaction::Transaction};
-use crate::{DatabaseOptions, Mode, TableFlags, WriteMap, RO, RW};
+use crate::{DatabaseKind, DatabaseOptions, Mode, TableFlags, WriteMap, RO, RW};
 use anyhow::Context;
 use std::{
     collections::BTreeMap,
@@ -25,12 +25,18 @@ impl DbFolder {
 }
 
 #[derive(Debug)]
-pub struct Database {
-    inner: crate::Database<WriteMap>,
+pub struct Database<K = WriteMap>
+where
+    K: DatabaseKind,
+{
+    inner: crate::Database<K>,
     folder: DbFolder,
 }
 
-impl Database {
+impl<K> Database<K>
+where
+    K: DatabaseKind,
+{
     pub fn path(&self) -> &Path {
         self.folder.path()
     }
@@ -75,7 +81,7 @@ impl Database {
         }
     }
 
-    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> anyhow::Result<Database> {
+    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> anyhow::Result<Self> {
         Self::create_with_options(path, DatabaseOptions::default(), chart)
     }
 
@@ -83,7 +89,7 @@ impl Database {
         path: Option<PathBuf>,
         options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> anyhow::Result<Database> {
+    ) -> anyhow::Result<Self> {
         let folder = if let Some(path) = path {
             DbFolder::Persisted(path)
         } else {
@@ -94,7 +100,7 @@ impl Database {
         Self::new(folder, options, chart)
     }
 
-    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> anyhow::Result<Database> {
+    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> anyhow::Result<Self> {
         Self::open_with_options(path, DatabaseOptions::default(), chart)
     }
 
@@ -102,7 +108,7 @@ impl Database {
         path: impl AsRef<Path>,
         mut options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> anyhow::Result<Database> {
+    ) -> anyhow::Result<Self> {
         options.mode = Mode::ReadOnly;
 
         Self::new(
@@ -111,27 +117,28 @@ impl Database {
             chart,
         )
     }
-}
 
-impl Deref for Database {
-    type Target = crate::Database<WriteMap>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl Database {
-    pub fn begin_read(&self) -> anyhow::Result<Transaction<'_, RO>> {
+    pub fn begin_read(&self) -> anyhow::Result<Transaction<'_, RO, K>> {
         Ok(Transaction {
             inner: self.inner.begin_ro_txn()?,
         })
     }
 
-    pub fn begin_readwrite(&self) -> anyhow::Result<Transaction<'_, RW>> {
+    pub fn begin_readwrite(&self) -> anyhow::Result<Transaction<'_, RW, K>> {
         Ok(Transaction {
             inner: self.inner.begin_rw_txn()?,
         })
+    }
+}
+
+impl<K> Deref for Database<K>
+where
+    K: DatabaseKind,
+{
+    type Target = crate::Database<K>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 

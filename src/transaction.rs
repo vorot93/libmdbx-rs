@@ -47,15 +47,15 @@ impl TransactionKind for RW {
 /// An MDBX transaction.
 ///
 /// All table operations require a transaction.
-pub struct Transaction<'db, K, E>
+pub struct Transaction<'db, K, DK>
 where
     K: TransactionKind,
-    E: DatabaseKind,
+    DK: DatabaseKind,
 {
     txn: Arc<Mutex<TxnPtr>>,
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
-    db: &'db Database<E>,
+    db: &'db Database<DK>,
     _marker: PhantomData<fn(K)>,
 }
 

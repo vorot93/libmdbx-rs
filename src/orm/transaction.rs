@@ -1,17 +1,21 @@
 use super::{cursor::*, traits::*};
-use crate::{Stat, TransactionKind, WriteFlags, WriteMap, RO, RW};
+use crate::{DatabaseKind, NoWriteMap, Stat, TransactionKind, WriteFlags, WriteMap, RO, RW};
 use anyhow::Context;
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Debug)]
-pub struct Transaction<'db, K>
+pub struct Transaction<'db, TK, DK = WriteMap>
 where
-    K: TransactionKind,
+    TK: TransactionKind,
+    DK: DatabaseKind,
 {
-    pub(crate) inner: crate::Transaction<'db, K, WriteMap>,
+    pub(crate) inner: crate::Transaction<'db, TK, DK>,
 }
 
-impl<'db> Transaction<'db, RO> {
+impl<'db, DK> Transaction<'db, RO, DK>
+where
+    DK: DatabaseKind,
+{
     pub fn table_sizes(&self) -> anyhow::Result<HashMap<String, u64>> {
         let mut out = HashMap::new();
         let main_table = self.inner.open_table(None)?;
@@ -38,9 +42,10 @@ impl<'db> Transaction<'db, RO> {
     }
 }
 
-impl<'db, K> Transaction<'db, K>
+impl<'db, TK, DK> Transaction<'db, TK, DK>
 where
-    K: TransactionKind,
+    TK: TransactionKind,
+    DK: DatabaseKind,
 {
     pub fn table_stat<T>(&self) -> Result<Stat, crate::Error>
     where
@@ -50,7 +55,7 @@ where
             .table_stat(&self.inner.open_table(Some(T::NAME))?)
     }
 
-    pub fn cursor<'tx, T>(&'tx self) -> anyhow::Result<Cursor<'tx, K, T>>
+    pub fn cursor<'tx, T>(&'tx self) -> anyhow::Result<Cursor<'tx, TK, T>>
     where
         'db: 'tx,
         T: Table,
@@ -75,7 +80,10 @@ where
     }
 }
 
-impl<'db> Transaction<'db, RW> {
+impl<'db, DK> Transaction<'db, RW, DK>
+where
+    DK: DatabaseKind,
+{
     pub fn upsert<T>(&self, key: T::Key, value: T::Value) -> anyhow::Result<()>
     where
         T: Table,
@@ -117,5 +125,14 @@ impl<'db> Transaction<'db, RW> {
         self.inner.commit()?;
 
         Ok(())
+    }
+}
+
+impl<'db> Transaction<'db, RW, NoWriteMap> {
+    /// Begins a new nested transaction inside of this transaction.
+    pub fn begin_nested_txn(&mut self) -> anyhow::Result<Transaction<'_, RW, NoWriteMap>> {
+        Ok(Transaction {
+            inner: self.inner.begin_nested_txn()?,
+        })
     }
 }
