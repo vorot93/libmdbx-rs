@@ -13,7 +13,7 @@ use ffi::{
     MDBX_NEXT_MULTIPLE, MDBX_NEXT_NODUP, MDBX_PREV, MDBX_PREV_DUP, MDBX_PREV_MULTIPLE,
     MDBX_PREV_NODUP, MDBX_SET, MDBX_SET_KEY, MDBX_SET_LOWERBOUND, MDBX_SET_RANGE,
 };
-use libc::{c_uint, c_void};
+use libc::c_void;
 use parking_lot::Mutex;
 use std::{borrow::Cow, fmt, marker::PhantomData, mem, ptr, result, sync::Arc};
 
@@ -498,7 +498,7 @@ impl<'txn> Cursor<'txn, RW> {
         };
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
-                ffi::mdbx_cursor_put(self.cursor.0, &key_val, &mut data_val, flags.bits())
+                ffi::mdbx_cursor_put(self.cursor.0, &key_val, &mut data_val, c_enum(flags.bits()))
             })
         })?;
 
@@ -514,7 +514,7 @@ impl<'txn> Cursor<'txn, RW> {
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
-                ffi::mdbx_cursor_del(self.cursor.0, flags.bits())
+                ffi::mdbx_cursor_del(self.cursor.0, c_enum(flags.bits()))
             })
         })?;
 
@@ -810,7 +810,7 @@ where
         cursor: &'cur mut Cursor<'txn, K>,
 
         /// The first operation to perform when the consumer calls Iter.next().
-        op: c_uint,
+        op: ffi::MDBX_cursor_op,
 
         _marker: PhantomData<fn(&'txn (Key, Value))>,
     },
@@ -823,7 +823,7 @@ where
     Value: Decodable<'txn>,
 {
     /// Creates a new iterator backed by the given cursor.
-    fn new(cursor: &'cur mut Cursor<'txn, K>, op: c_uint) -> Self {
+    fn new(cursor: &'cur mut Cursor<'txn, K>, op: ffi::MDBX_cursor_op) -> Self {
         IterDup::Ok {
             cursor,
             op,

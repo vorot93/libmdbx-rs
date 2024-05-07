@@ -153,6 +153,7 @@ mod test {
 
     #[test]
     fn test_description() {
+        #[cfg(not(windows))]
         assert_eq!("Permission denied", Error::from_err_code(13).to_string());
 
         assert_eq!(

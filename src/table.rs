@@ -1,6 +1,7 @@
 use crate::{
     database::DatabaseKind,
     error::{mdbx_result, Result},
+    flags::c_enum,
     transaction::{txn_execute, TransactionKind},
     Transaction,
 };
@@ -30,7 +31,7 @@ impl<'txn> Table<'txn> {
         };
         let mut dbi: ffi::MDBX_dbi = 0;
         mdbx_result(txn_execute(&txn.txn_mutex(), |txn| unsafe {
-            ffi::mdbx_dbi_open(txn, name_ptr, flags, &mut dbi)
+            ffi::mdbx_dbi_open(txn, name_ptr, c_enum(flags), &mut dbi)
         }))?;
         Ok(Self::new_from_ptr(dbi))
     }
