@@ -106,5 +106,10 @@ fn main() {
         cc_builder.define("MDBX_HAVE_BUILTIN_CPU_SUPPORTS", "0");
     }
 
+    if cfg!(windows) {
+        println!(r"cargo:rustc-link-lib=dylib=ntdll");
+        println!(r"cargo:rustc-link-lib=dylib=user32");
+    }
+
     cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");
 }

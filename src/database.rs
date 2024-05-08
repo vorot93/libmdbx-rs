@@ -7,6 +7,10 @@ use crate::{
 use libc::c_uint;
 use mem::size_of;
 use sealed::sealed;
+#[cfg(windows)]
+use std::ffi::OsStr;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::CString,
     fmt,
@@ -14,13 +18,24 @@ use std::{
     marker::PhantomData,
     mem,
     ops::Deref,
-    os::unix::ffi::OsStrExt,
     path::Path,
     ptr, result,
     sync::mpsc::{sync_channel, SyncSender},
     thread::sleep,
     time::Duration,
 };
+
+#[cfg(windows)]
+/// Adding a 'missing' trait from windows OsStrExt
+trait OsStrExtLmdb {
+    fn as_bytes(&self) -> &[u8];
+}
+#[cfg(windows)]
+impl OsStrExtLmdb for OsStr {
+    fn as_bytes(&self) -> &[u8] {
+        self.to_str().unwrap().as_bytes()
+    }
+}
 
 #[sealed]
 pub trait DatabaseKind: Debug + 'static {

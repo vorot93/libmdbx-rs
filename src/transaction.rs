@@ -1,7 +1,7 @@
 use crate::{
     database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
-    flags::{TableFlags, WriteFlags},
+    flags::{c_enum, TableFlags, WriteFlags},
     table::Table,
     Cursor, Decodable, Error, Stat,
 };
@@ -287,7 +287,13 @@ where
             iov_base: data.as_ptr() as *mut c_void,
         };
         mdbx_result(txn_execute(&self.txn, |txn| unsafe {
-            ffi::mdbx_put(txn, table.dbi(), &key_val, &mut data_val, flags.bits())
+            ffi::mdbx_put(
+                txn,
+                table.dbi(),
+                &key_val,
+                &mut data_val,
+                c_enum(flags.bits()),
+            )
         }))?;
 
         Ok(())
@@ -319,7 +325,7 @@ where
                     table.dbi(),
                     &key_val,
                     &mut data_val,
-                    flags.bits() | ffi::MDBX_RESERVE,
+                    c_enum(flags.bits() | ffi::MDBX_RESERVE as u32),
                 )
             }))?;
             Ok(slice::from_raw_parts_mut(
