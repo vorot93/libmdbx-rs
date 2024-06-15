@@ -1,5 +1,6 @@
 use crate::{
     error::{mdbx_result, Error, Result},
+    latency::CommitLatency,
     table::Table,
     transaction::{RO, RW},
     Mode, ReadWriteOptions, SyncMode, Transaction, TransactionKind,
@@ -77,7 +78,7 @@ pub(crate) enum TxnManagerMessage {
     },
     Commit {
         tx: TxnPtr,
-        sender: SyncSender<Result<bool>>,
+        sender: SyncSender<Result<(bool, CommitLatency)>>,
     },
 }
 
@@ -284,10 +285,14 @@ where
                                 .unwrap();
                         }
                         TxnManagerMessage::Commit { tx, sender } => {
+                            let mut latency = CommitLatency::new();
                             sender
-                                .send(mdbx_result(unsafe {
-                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                }))
+                                .send(
+                                    mdbx_result(unsafe {
+                                        ffi::mdbx_txn_commit_ex(tx.0, &mut latency.0)
+                                    })
+                                    .map(|v| (v, latency)),
+                                )
                                 .unwrap();
                         }
                     },

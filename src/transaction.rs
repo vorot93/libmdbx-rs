@@ -2,6 +2,7 @@ use crate::{
     database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
     flags::{c_enum, TableFlags, WriteFlags},
+    latency::CommitLatency,
     table::Table,
     Cursor, Decodable, Error, Stat,
 };
@@ -152,11 +153,16 @@ where
     }
 
     /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
-    pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'db>>)> {
+    /// Also returns measured latency.
+    pub fn commit_and_rebind_open_dbs_with_latency(
+        mut self,
+    ) -> Result<(bool, CommitLatency, Vec<Table<'db>>)> {
         let txnlck = self.txn.lock();
         let txn = txnlck.0;
         let result = if K::ONLY_CLEAN {
-            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
+            let mut latency = CommitLatency::new();
+            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, &mut latency.0) })
+                .map(|v| (v, latency))
         } else {
             let (sender, rx) = sync_channel(0);
             self.db
@@ -171,9 +177,10 @@ where
             rx.recv().unwrap()
         };
         self.committed = true;
-        result.map(|v| {
+        result.map(|(v, latency)| {
             (
                 v,
+                latency,
                 self.primed_dbis
                     .lock()
                     .iter()
@@ -181,6 +188,13 @@ where
                     .collect(),
             )
         })
+    }
+
+    /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
+    pub fn commit_and_rebind_open_dbs(self) -> Result<(bool, Vec<Table<'db>>)> {
+        // Drop `CommitLatency` from return value.
+        self.commit_and_rebind_open_dbs_with_latency()
+            .map(|v| (v.0, v.2))
     }
 
     /// Opens a handle to an MDBX table.
