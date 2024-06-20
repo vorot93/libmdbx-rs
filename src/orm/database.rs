@@ -161,7 +161,7 @@ where
 
     pub fn decode_key(encoded: &[u8]) -> anyhow::Result<T::Key>
     where
-        <T as Table>::Key: Decodable,
+        T::Key: Decodable,
     {
         <T::Key as Decodable>::decode(encoded)
     }

@@ -34,8 +34,7 @@ fn map_res_inner<T, E>(
     v: Result<Option<(DecodableWrapper<T::Key>, DecodableWrapper<T::Value>)>, E>,
 ) -> anyhow::Result<Option<(T::Key, T::Value)>>
 where
-    T: Table,
-    <T as Table>::Key: Decodable,
+    T: Table<Key: Decodable>,
     E: std::error::Error + Send + Sync + 'static,
 {
     if let Some((k, v)) = v? {
@@ -105,14 +104,12 @@ where
         start: Option<T::SeekKey>,
     ) -> impl Iterator<Item = anyhow::Result<(T::Key, T::Value)>>
     where
-        T: Table,
-        T::Key: Decodable,
+        T: Table<Key: Decodable>,
     {
         struct I<'tx, K, T>
         where
             K: TransactionKind,
-            T: Table,
-            T::Key: Decodable,
+            T: Table<Key: Decodable>,
         {
             cursor: Cursor<'tx, K, T>,
             start: Option<T::SeekKey>,
@@ -123,8 +120,7 @@ where
         impl<'tx, K, T> Iterator for I<'tx, K, T>
         where
             K: TransactionKind,
-            T: Table,
-            T::Key: Decodable,
+            T: Table<Key: Decodable>,
         {
             type Item = anyhow::Result<(T::Key, T::Value)>;
 
@@ -155,14 +151,12 @@ where
         start: Option<T::SeekKey>,
     ) -> impl Iterator<Item = anyhow::Result<(T::Key, T::Value)>>
     where
-        T: Table,
-        T::Key: Decodable,
+        T: Table<Key: Decodable>,
     {
         struct I<'tx, K, T>
         where
             K: TransactionKind,
-            T: Table,
-            T::Key: Decodable,
+            T: Table<Key: Decodable>,
         {
             cursor: Cursor<'tx, K, T>,
             start: Option<T::SeekKey>,
@@ -173,8 +167,7 @@ where
         impl<'tx, K, T> Iterator for I<'tx, K, T>
         where
             K: TransactionKind,
-            T: Table,
-            T::Key: Decodable,
+            T: Table<Key: Decodable>,
         {
             type Item = anyhow::Result<(T::Key, T::Value)>;
 
@@ -275,8 +268,7 @@ where
         struct I<'tx, K, T>
         where
             K: TransactionKind,
-            T: DupSort,
-            T::Key: Clone + Decodable,
+            T: DupSort<Key: Clone + Decodable>,
         {
             cursor: Cursor<'tx, K, T>,
             start: Option<T::Key>,
@@ -288,8 +280,7 @@ where
         impl<'tx, K, T> Iterator for I<'tx, K, T>
         where
             K: TransactionKind,
-            T: DupSort,
-            T::Key: Clone + Decodable,
+            T: DupSort<Key: Clone + Decodable>,
         {
             type Item = anyhow::Result<T::Value>;
 
