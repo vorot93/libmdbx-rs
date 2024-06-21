@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 80f8d3cca95e09b6d77d31515372cc042bf47022b369a7a53abdda9f68c04519_v0_12_10_0_gaea40fb7
+#define MDBX_BUILD_SOURCERY b82409303b7dc64ed5059ccf2efce36a56a43f8badd571c26eb54f961aafa677_v0_13_0_0_g5fc3965f
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -93,6 +93,10 @@
 #pragma warning(                                                               \
         disable : 5105) /* winbase.h(9531): warning C5105: macro expansion     \
                            producing 'defined' has undefined behavior */
+#endif
+#if _MSC_VER < 1920
+/* avoid "error C2219: syntax error: type qualifier must be after '*'" */
+#define __restrict
 #endif
 #if _MSC_VER > 1930
 #pragma warning(disable : 6235) /* <expression> is always a constant */
@@ -187,6 +191,7 @@
 #include <stdlib.h>
 
 #include <assert.h>
+#include <ctype.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
@@ -824,7 +829,7 @@ __extern_C key_t ftok(const char *, int);
 
 /*----------------------------------------------------------------------------*/
 
-#if defined(MDBX_USE_VALGRIND)
+#if defined(ENABLE_MEMCHECK)
 #include <valgrind/memcheck.h>
 #ifndef VALGRIND_DISABLE_ADDR_ERROR_REPORTING_IN_RANGE
 /* LY: available since Valgrind 3.10 */
@@ -846,7 +851,7 @@ __extern_C key_t ftok(const char *, int);
 #define VALGRIND_CHECK_MEM_IS_ADDRESSABLE(a, s) (0)
 #define VALGRIND_CHECK_MEM_IS_DEFINED(a, s) (0)
 #define RUNNING_ON_VALGRIND (0)
-#endif /* MDBX_USE_VALGRIND */
+#endif /* ENABLE_MEMCHECK */
 
 #ifdef __SANITIZE_ADDRESS__
 #include <sanitizer/asan_interface.h>
@@ -1677,7 +1682,8 @@ MDBX_INTERNAL_FUNC int osal_lck_init(MDBX_env *env,
 ///     restore POSIX-fcntl locks after the closing of file descriptors.
 /// \return Error code (MDBX_PANIC) or zero on success.
 MDBX_INTERNAL_FUNC int osal_lck_destroy(MDBX_env *env,
-                                        MDBX_env *inprocess_neighbor);
+                                        MDBX_env *inprocess_neighbor,
+                                        const uint32_t current_pid);
 
 /// \brief Connects to shared interprocess locking objects and tries to acquire
 ///   the maximum lock level (shared if exclusive is not available)
@@ -1705,6 +1711,8 @@ MDBX_INTERNAL_FUNC int osal_lck_seize(MDBX_env *env);
 ///   operational lock.
 /// \return Error code or zero on success
 MDBX_INTERNAL_FUNC int osal_lck_downgrade(MDBX_env *env);
+MDBX_MAYBE_UNUSED MDBX_INTERNAL_FUNC int osal_lck_upgrade(MDBX_env *env,
+                                                          bool dont_wait);
 
 /// \brief Locks LCK-file or/and table of readers for (de)registering.
 /// \return Error code or zero on success
@@ -1713,16 +1721,12 @@ MDBX_INTERNAL_FUNC int osal_rdt_lock(MDBX_env *env);
 /// \brief Unlocks LCK-file or/and table of readers after (de)registering.
 MDBX_INTERNAL_FUNC void osal_rdt_unlock(MDBX_env *env);
 
-/// \brief Acquires lock for DB change (on writing transaction start)
-///   Reading transactions will not be blocked.
-///   Declared as LIBMDBX_API because it is used in mdbx_chk.
+/// \brief Acquires write-transaction lock.
 /// \return Error code or zero on success
-LIBMDBX_API int mdbx_txn_lock(MDBX_env *env, bool dont_wait);
+MDBX_INTERNAL_FUNC int osal_txn_lock(MDBX_env *env, bool dont_wait);
 
-/// \brief Releases lock once DB changes is made (after writing transaction
-///   has finished).
-///   Declared as LIBMDBX_API because it is used in mdbx_chk.
-LIBMDBX_API void mdbx_txn_unlock(MDBX_env *env);
+/// \brief Releases write-transaction lock..
+MDBX_INTERNAL_FUNC void osal_txn_unlock(MDBX_env *env);
 
 /// \brief Sets alive-flag of reader presence (indicative lock) for PID of
 ///   the current process. The function does no more than needed for
@@ -2119,6 +2123,20 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 #error MDBX_AVOID_MSYNC must be defined as 0 or 1
 #endif /* MDBX_AVOID_MSYNC */
 
+/** FIXME */
+#ifndef MDBX_ENABLE_DBI_SPARSE
+#define MDBX_ENABLE_DBI_SPARSE 1
+#elif !(MDBX_ENABLE_DBI_SPARSE == 0 || MDBX_ENABLE_DBI_SPARSE == 1)
+#error MDBX_ENABLE_DBI_SPARSE must be defined as 0 or 1
+#endif /* MDBX_ENABLE_DBI_SPARSE */
+
+/** FIXME */
+#ifndef MDBX_ENABLE_DBI_LOCKFREE
+#define MDBX_ENABLE_DBI_LOCKFREE 1
+#elif !(MDBX_ENABLE_DBI_LOCKFREE == 0 || MDBX_ENABLE_DBI_LOCKFREE == 1)
+#error MDBX_ENABLE_DBI_LOCKFREE must be defined as 0 or 1
+#endif /* MDBX_ENABLE_DBI_LOCKFREE */
+
 /** Controls sort order of internal page number lists.
  * This mostly experimental/advanced option with not for regular MDBX users.
  * \warning The database format depend on this option and libmdbx built with
@@ -2166,8 +2184,8 @@ extern LIBMDBX_API const char *const mdbx_sourcery_anchor;
 
 /** If defined then enables integration with Valgrind,
  * a memory analyzing tool. */
-#ifndef MDBX_USE_VALGRIND
-#endif /* MDBX_USE_VALGRIND */
+#ifndef ENABLE_MEMCHECK
+#endif /* ENABLE_MEMCHECK */
 
 /** If defined then enables use C11 atomics,
  *  otherwise detects ones availability automatically. */
@@ -2955,7 +2973,8 @@ typedef struct MDBX_page {
 
 #define PAGETYPE_WHOLE(p) ((uint8_t)(p)->mp_flags)
 
-/* Drop legacy P_DIRTY flag for sub-pages for compatilibity */
+/* Drop legacy P_DIRTY flag for sub-pages for compatilibity,
+ * for assertions only. */
 #define PAGETYPE_COMPAT(p)                                                     \
   (unlikely(PAGETYPE_WHOLE(p) & P_SUBP)                                        \
        ? PAGETYPE_WHOLE(p) & ~(P_SUBP | P_LEGACY_DIRTY)                        \
@@ -3064,7 +3083,7 @@ typedef sem_t osal_ipclock_t;
 #endif /* MDBX_LOCKING */
 
 #if MDBX_LOCKING > MDBX_LOCKING_SYSV && !defined(__cplusplus)
-MDBX_INTERNAL_FUNC int osal_ipclock_stub(osal_ipclock_t *ipc);
+MDBX_INTERNAL_FUNC int osal_ipclock_stubinit(osal_ipclock_t *ipc);
 MDBX_INTERNAL_FUNC int osal_ipclock_destroy(osal_ipclock_t *ipc);
 #endif /* MDBX_LOCKING */
 
@@ -3388,10 +3407,10 @@ typedef struct troika {
 #if MDBX_WORDBITS > 32 /* Workaround for false-positives from Valgrind */
   uint32_t unused_pad;
 #endif
-#define TROIKA_HAVE_STEADY(troika) ((troika)->fsm & 7)
-#define TROIKA_STRICT_VALID(troika) ((troika)->tail_and_flags & 64)
-#define TROIKA_VALID(troika) ((troika)->tail_and_flags & 128)
-#define TROIKA_TAIL(troika) ((troika)->tail_and_flags & 3)
+#define TROIKA_HAVE_STEADY(troika) ((troika)->fsm & 7u)
+#define TROIKA_STRICT_VALID(troika) ((troika)->tail_and_flags & 64u)
+#define TROIKA_VALID(troika) ((troika)->tail_and_flags & 128u)
+#define TROIKA_TAIL(troika) ((troika)->tail_and_flags & 3u)
   txnid_t txnid[NUM_METAS];
 } meta_troika_t;
 
@@ -3421,6 +3440,8 @@ struct MDBX_txn {
 #error "Oops, some txn flags overlapped or wrong"
 #endif
   uint32_t mt_flags;
+  unsigned mt_numdbs;
+  size_t mt_owner; /* thread ID that owns this transaction */
 
   MDBX_txn *mt_parent; /* parent of a nested txn */
   /* Nested txn under this txn, set together with flag MDBX_TXN_HAS_CHILD */
@@ -3438,31 +3459,30 @@ struct MDBX_txn {
   txnid_t mt_front;
 
   MDBX_env *mt_env; /* the DB environment */
-  /* Array of records for each DB known in the environment. */
-  MDBX_dbx *mt_dbxs;
   /* Array of MDBX_db records for each known DB */
   MDBX_db *mt_dbs;
-  /* Array of sequence numbers for each DB handle */
-  MDBX_atomic_uint32_t *mt_dbiseqs;
 
-  /* Transaction DBI Flags */
-#define DBI_DIRTY MDBX_DBI_DIRTY /* DB was written in this txn */
-#define DBI_STALE MDBX_DBI_STALE /* Named-DB record is older than txnID */
-#define DBI_FRESH MDBX_DBI_FRESH /* Named-DB handle opened in this txn */
-#define DBI_CREAT MDBX_DBI_CREAT /* Named-DB handle created in this txn */
-#define DBI_VALID 0x10           /* DB handle is valid, see also DB_VALID */
-#define DBI_USRVALID 0x20        /* As DB_VALID, but not set for FREE_DBI */
-#define DBI_AUDITED 0x40         /* Internal flag for accounting during audit */
-  /* Array of flags for each DB */
-  uint8_t *mt_dbistate;
-  /* Number of DB records in use, or 0 when the txn is finished.
-   * This number only ever increments until the txn finishes; we
-   * don't decrement it when individual DB handles are closed. */
-  MDBX_dbi mt_numdbs;
-  size_t mt_owner; /* thread ID that owns this transaction */
+#if MDBX_ENABLE_DBI_SPARSE
+  unsigned *__restrict mt_dbi_sparse;
+#endif /* MDBX_ENABLE_DBI_SPARSE */
+
+  /* Non-shared DBI state flags inside transaction */
+#define DBI_DIRTY 0x01 /* DB was written in this txn */
+#define DBI_STALE 0x02 /* Named-DB record is older than txnID */
+#define DBI_FRESH 0x04 /* Named-DB handle opened in this txn */
+#define DBI_CREAT 0x08 /* Named-DB handle created in this txn */
+#define DBI_VALID 0x10 /* Handle is valid, see also DB_VALID */
+#define DBI_OLDEN 0x40 /* Handle was closed/reopened outside txn */
+#define DBI_LINDO 0x80 /* Lazy initialization done for DBI-slot */
+  /* Array of non-shared txn's flags of DBI */
+  uint8_t *__restrict mt_dbi_state;
+
+  /* Array of sequence numbers for each DB handle. */
+  uint32_t *__restrict mt_dbi_seqs;
+  MDBX_cursor **mt_cursors;
+
   MDBX_canary mt_canary;
   void *mt_userctx; /* User-settable context */
-  MDBX_cursor **mt_cursors;
 
   union {
     struct {
@@ -3472,8 +3492,8 @@ struct MDBX_txn {
     struct {
       meta_troika_t troika;
       /* In write txns, array of cursors for each DB */
-      MDBX_PNL relist;        /* Reclaimed GC pages */
-      txnid_t last_reclaimed; /* ID of last used record */
+      MDBX_PNL __restrict relist; /* Reclaimed GC pages */
+      txnid_t last_reclaimed;     /* ID of last used record */
 #if MDBX_ENABLE_REFUND
       pgno_t loose_refund_wl /* FIXME: describe */;
 #endif /* MDBX_ENABLE_REFUND */
@@ -3485,14 +3505,14 @@ struct MDBX_txn {
        * dirtylist into mt_parent after freeing hidden mt_parent pages. */
       size_t dirtyroom;
       /* For write txns: Modified pages. Sorted when not MDBX_WRITEMAP. */
-      MDBX_dpl *dirtylist;
+      MDBX_dpl *__restrict dirtylist;
       /* The list of reclaimed txns from GC */
-      MDBX_TXL lifo_reclaimed;
+      MDBX_TXL __restrict lifo_reclaimed;
       /* The list of pages that became unused during this transaction. */
-      MDBX_PNL retired_pages;
+      MDBX_PNL __restrict retired_pages;
       /* The list of loose pages that became unused and may be reused
        * in this transaction, linked through `mp_next`. */
-      MDBX_page *loose_pages;
+      MDBX_page *__restrict loose_pages;
       /* Number of loose pages (tw.loose_pages) */
       size_t loose_count;
       union {
@@ -3501,11 +3521,12 @@ struct MDBX_txn {
           /* The sorted list of dirty pages we temporarily wrote to disk
            * because the dirty list was full. page numbers in here are
            * shifted left by 1, deleted slots have the LSB set. */
-          MDBX_PNL list;
+          MDBX_PNL __restrict list;
         } spilled;
         size_t writemap_dirty_npages;
         size_t writemap_spilled_npages;
       };
+      uint64_t gc_time_acc;
     } tw;
   };
 };
@@ -3544,8 +3565,8 @@ struct MDBX_cursor {
   MDBX_db *mc_db;
   /* The database auxiliary record for this cursor */
   MDBX_dbx *mc_dbx;
-  /* The mt_dbistate for this database */
-  uint8_t *mc_dbistate;
+  /* The mt_dbi_state[] for this DBI */
+  uint8_t *__restrict mc_dbi_state;
   uint8_t mc_snum; /* number of pushed pages */
   uint8_t mc_top;  /* index of top page, normally mc_snum-1 */
 
@@ -3598,6 +3619,11 @@ typedef struct MDBX_cursor_couple {
   MDBX_xcursor inner;
 } MDBX_cursor_couple;
 
+struct mdbx_defer_free_item {
+  struct mdbx_defer_free_item *next;
+  uint64_t timestamp;
+};
+
 /* The database environment. */
 struct MDBX_env {
   /* ----------------------------------------------------- mostly static part */
@@ -3615,6 +3641,7 @@ struct MDBX_env {
 #define MDBX_DEPRECATED_COALESCE UINT32_C(0x2000000)
 #define ENV_INTERNAL_FLAGS (MDBX_FATAL_ERROR | MDBX_ENV_ACTIVE | MDBX_ENV_TXKEY)
   uint32_t me_flags;
+  unsigned me_psize;       /* DB page size, initialized from me_os_psize */
   osal_mmap_t me_dxb_mmap; /* The main data file */
 #define me_map me_dxb_mmap.base
 #define me_lazy_fd me_dxb_mmap.fd
@@ -3627,7 +3654,6 @@ struct MDBX_env {
 #define me_lfd me_lck_mmap.fd
   struct MDBX_lockinfo *me_lck;
 
-  unsigned me_psize;          /* DB page size, initialized from me_os_psize */
   uint16_t me_leaf_nodemax;   /* max size of a leaf-node */
   uint16_t me_branch_nodemax; /* max size of a branch-node */
   uint16_t me_subpage_limit;
@@ -3645,13 +3671,15 @@ struct MDBX_env {
   MDBX_dbi me_maxdbs;         /* size of the DB table */
   uint32_t me_pid;            /* process ID of this env */
   osal_thread_key_t me_txkey; /* thread-key for readers */
-  pathchar_t *me_pathname;    /* path to the DB files */
-  void *me_pbuf;              /* scratch area for DUPSORT put() */
-  MDBX_txn *me_txn0;          /* preallocated write transaction */
-
-  MDBX_dbx *me_dbxs;                /* array of static DB info */
-  uint16_t *me_dbflags;             /* array of flags from MDBX_db.md_flags */
-  MDBX_atomic_uint32_t *me_dbiseqs; /* array of dbi sequence numbers */
+  struct {                    /* path to the DB files */
+    pathchar_t *lck, *dxb, *specified;
+    void *buffer;
+  } me_pathname;
+  void *me_pbuf;                     /* scratch area for DUPSORT put() */
+  MDBX_txn *me_txn0;                 /* preallocated write transaction */
+  MDBX_dbx *me_dbxs;                 /* array of static DB info */
+  uint16_t *__restrict me_db_flags;  /* array of flags from MDBX_db.md_flags */
+  MDBX_atomic_uint32_t *me_dbi_seqs; /* array of dbi sequence numbers */
   unsigned
       me_maxgc_ov1page; /* Number of pgno_t fit in a single overflow page */
   unsigned me_maxgc_per_branch;
@@ -3665,6 +3693,7 @@ struct MDBX_env {
     unsigned rp_augment_limit;
     unsigned dp_limit;
     unsigned dp_initial;
+    uint64_t gc_time_limit;
     uint8_t dp_loose_limit;
     uint8_t spill_max_denominator;
     uint8_t spill_min_denominator;
@@ -3674,6 +3703,8 @@ struct MDBX_env {
     unsigned writethrough_threshold;
 #endif /* Windows */
     bool prefault_write;
+    bool prefer_waf_insteadof_balance; /* Strive to minimize WAF instead of
+                                          balancing pages fullment */
     union {
       unsigned all;
       /* tracks options with non-auto values but tuned by user */
@@ -3703,20 +3734,23 @@ struct MDBX_env {
   } me_sysv_ipc;
 #endif /* MDBX_LOCKING == MDBX_LOCKING_SYSV */
   bool me_incore;
+  bool me_prefault_write;
 
-  MDBX_env *me_lcklist_next;
+#if MDBX_ENABLE_DBI_LOCKFREE
+  struct mdbx_defer_free_item *me_defer_free;
+#endif /* MDBX_ENABLE_DBI_LOCKFREE */
 
   /* --------------------------------------------------- mostly volatile part */
 
   MDBX_txn *me_txn; /* current write transaction */
   osal_fastmutex_t me_dbi_lock;
-  MDBX_dbi me_numdbs; /* number of DBs opened */
-  bool me_prefault_write;
+  unsigned me_numdbs; /* number of DBs opened */
 
-  MDBX_page *me_dp_reserve; /* list of malloc'ed blocks for re-use */
   unsigned me_dp_reserve_len;
+  MDBX_page *__restrict me_dp_reserve; /* list of malloc'ed blocks for re-use */
+
   /* PNL of pages that became unused in a write txn */
-  MDBX_PNL me_retired_pages;
+  MDBX_PNL __restrict me_retired_pages;
   osal_ioring_t me_ioring;
 
 #if defined(_WIN32) || defined(_WIN64)
@@ -3734,13 +3768,12 @@ struct MDBX_env {
 #if MDBX_DEBUG
   MDBX_assert_func *me_assert_func; /*  Callback for assertion failures */
 #endif
-#ifdef MDBX_USE_VALGRIND
+#ifdef ENABLE_MEMCHECK
   int me_valgrind_handle;
 #endif
-#if defined(MDBX_USE_VALGRIND) || defined(__SANITIZE_ADDRESS__)
-  MDBX_atomic_uint32_t me_ignore_EDEADLK;
+#if defined(ENABLE_MEMCHECK) || defined(__SANITIZE_ADDRESS__)
   pgno_t me_poison_edge;
-#endif /* MDBX_USE_VALGRIND || __SANITIZE_ADDRESS__ */
+#endif /* ENABLE_MEMCHECK || __SANITIZE_ADDRESS__ */
 
 #ifndef xMDBX_DEBUG_SPILLING
 #define xMDBX_DEBUG_SPILLING 0
@@ -3800,10 +3833,6 @@ osal_flush_incoherent_mmap(const void *addr, size_t nbytes,
 
 MDBX_INTERNAL_FUNC int cleanup_dead_readers(MDBX_env *env, int rlocked,
                                             int *dead);
-MDBX_INTERNAL_FUNC int rthc_alloc(osal_thread_key_t *key, MDBX_reader *begin,
-                                  MDBX_reader *end);
-MDBX_INTERNAL_FUNC void rthc_remove(const osal_thread_key_t key);
-
 MDBX_INTERNAL_FUNC void global_ctor(void);
 MDBX_INTERNAL_FUNC void osal_ctor(void);
 MDBX_INTERNAL_FUNC void global_dtor(void);
@@ -3918,7 +3947,8 @@ typedef struct MDBX_node {
 /* mdbx_dbi_open() flags */
 #define DB_USABLE_FLAGS (DB_PERSISTENT_FLAGS | MDBX_CREATE | MDBX_DB_ACCEDE)
 
-#define DB_VALID 0x8000 /* DB handle is valid, for me_dbflags */
+#define DB_VALID 0x8000u  /* DB handle is valid, for me_db_flags */
+#define DB_POISON 0x7fffu /* update pending */
 #define DB_INTERNAL_FLAGS DB_VALID
 
 #if DB_INTERNAL_FLAGS & DB_USABLE_FLAGS
@@ -4044,6 +4074,36 @@ MDBX_MAYBE_UNUSED static void static_checks(void) {
           (size_t)(size), __LINE__);                                           \
     ASAN_UNPOISON_MEMORY_REGION(addr, size);                                   \
   } while (0)
+
+/******************************************************************************/
+
+/** \brief Page types for traverse the b-tree.
+ * \see mdbx_env_pgwalk() \see MDBX_pgvisitor_func */
+enum MDBX_page_type_t {
+  MDBX_page_broken,
+  MDBX_page_large,
+  MDBX_page_branch,
+  MDBX_page_leaf,
+  MDBX_page_dupfixed_leaf,
+  MDBX_subpage_leaf,
+  MDBX_subpage_dupfixed_leaf,
+  MDBX_subpage_broken,
+};
+typedef enum MDBX_page_type_t MDBX_page_type_t;
+
+typedef struct MDBX_walk_sdb {
+  MDBX_val name;
+  struct MDBX_db *internal, *nested;
+} MDBX_walk_sdb_t;
+
+/** \brief Callback function for traverse the b-tree. \see mdbx_env_pgwalk() */
+typedef int
+MDBX_pgvisitor_func(const size_t pgno, const unsigned number, void *const ctx,
+                    const int deep, const MDBX_walk_sdb_t *subdb,
+                    const size_t page_size, const MDBX_page_type_t page_type,
+                    const MDBX_error_t err, const size_t nentries,
+                    const size_t payload_bytes, const size_t header_bytes,
+                    const size_t unused_bytes);
 //
 // Copyright (c) 2020-2024, Leonid Yuriev <leo@yuriev.ru>.
 // SPDX-License-Identifier: Apache-2.0
@@ -4315,6 +4375,11 @@ namespace mdbx {
       "into an incompatible memory allocation scheme.");
 }
 
+[[noreturn]] __cold void throw_incomparable_cursors() {
+  throw std::logic_error(
+      "mdbx:: incomparable and/or invalid cursors to compare positions.");
+}
+
 [[noreturn]] __cold void throw_bad_value_size() {
   throw bad_value_size(MDBX_BAD_VALSIZE);
 }
@@ -4368,6 +4433,8 @@ DEFINE_EXCEPTION(thread_mismatch)
 DEFINE_EXCEPTION(transaction_full)
 DEFINE_EXCEPTION(transaction_overlapping)
 DEFINE_EXCEPTION(duplicated_lck_file)
+DEFINE_EXCEPTION(dangling_map_id)
+
 #undef DEFINE_EXCEPTION
 
 __cold const char *error::what() const noexcept {
@@ -4454,6 +4521,7 @@ __cold void error::throw_exception() const {
     CASE_EXCEPTION(transaction_full, MDBX_TXN_FULL);
     CASE_EXCEPTION(transaction_overlapping, MDBX_TXN_OVERLAPPING);
     CASE_EXCEPTION(duplicated_lck_file, MDBX_DUPLICATED_CLK);
+    CASE_EXCEPTION(dangling_map_id, MDBX_DANGLING_DBI);
 #undef CASE_EXCEPTION
   default:
     if (is_mdbx_error())
@@ -4571,48 +4639,48 @@ bool slice::is_printable(bool disable_utf8) const noexcept {
 }
 
 #ifdef MDBX_U128_TYPE
-MDBX_U128_TYPE slice::as_uint128() const {
+MDBX_U128_TYPE slice::as_uint128_adapt() const {
   static_assert(sizeof(MDBX_U128_TYPE) == 16, "WTF?");
   if (size() == 16) {
     MDBX_U128_TYPE r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_uint64();
+    return as_uint64_adapt();
 }
 #endif /* MDBX_U128_TYPE */
 
-uint64_t slice::as_uint64() const {
+uint64_t slice::as_uint64_adapt() const {
   static_assert(sizeof(uint64_t) == 8, "WTF?");
   if (size() == 8) {
     uint64_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_uint32();
+    return as_uint32_adapt();
 }
 
-uint32_t slice::as_uint32() const {
+uint32_t slice::as_uint32_adapt() const {
   static_assert(sizeof(uint32_t) == 4, "WTF?");
   if (size() == 4) {
     uint32_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_uint16();
+    return as_uint16_adapt();
 }
 
-uint16_t slice::as_uint16() const {
+uint16_t slice::as_uint16_adapt() const {
   static_assert(sizeof(uint16_t) == 2, "WTF?");
   if (size() == 2) {
     uint16_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_uint8();
+    return as_uint8_adapt();
 }
 
-uint8_t slice::as_uint8() const {
+uint8_t slice::as_uint8_adapt() const {
   static_assert(sizeof(uint8_t) == 1, "WTF?");
   if (size() == 1)
     return *static_cast<const uint8_t *>(data());
@@ -4623,48 +4691,48 @@ uint8_t slice::as_uint8() const {
 }
 
 #ifdef MDBX_I128_TYPE
-MDBX_I128_TYPE slice::as_int128() const {
+MDBX_I128_TYPE slice::as_int128_adapt() const {
   static_assert(sizeof(MDBX_I128_TYPE) == 16, "WTF?");
   if (size() == 16) {
     MDBX_I128_TYPE r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_int64();
+    return as_int64_adapt();
 }
 #endif /* MDBX_I128_TYPE */
 
-int64_t slice::as_int64() const {
+int64_t slice::as_int64_adapt() const {
   static_assert(sizeof(int64_t) == 8, "WTF?");
   if (size() == 8) {
     uint64_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_int32();
+    return as_int32_adapt();
 }
 
-int32_t slice::as_int32() const {
+int32_t slice::as_int32_adapt() const {
   static_assert(sizeof(int32_t) == 4, "WTF?");
   if (size() == 4) {
     int32_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_int16();
+    return as_int16_adapt();
 }
 
-int16_t slice::as_int16() const {
+int16_t slice::as_int16_adapt() const {
   static_assert(sizeof(int16_t) == 2, "WTF?");
   if (size() == 2) {
     int16_t r;
     memcpy(&r, data(), sizeof(r));
     return r;
   } else
-    return as_int8();
+    return as_int8_adapt();
 }
 
-int8_t slice::as_int8() const {
+int8_t slice::as_int8_adapt() const {
   if (size() == 1)
     return *static_cast<const int8_t *>(data());
   else if (size() == 0)
@@ -5577,6 +5645,13 @@ void txn_managed::commit(commit_latency *latency) {
     MDBX_CXX20_LIKELY handle_ = nullptr;
   if (MDBX_UNLIKELY(err.code() != MDBX_SUCCESS))
     MDBX_CXX20_UNLIKELY err.throw_exception();
+}
+
+void txn_managed::commit_embark_read() {
+  auto env = this->env();
+  commit();
+  error::success_or_throw(
+      ::mdbx_txn_begin(env, nullptr, MDBX_TXN_RDONLY, &handle_));
 }
 
 //------------------------------------------------------------------------------
