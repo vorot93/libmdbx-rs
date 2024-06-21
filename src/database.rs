@@ -500,6 +500,7 @@ impl GeometryInfo {
 /// Contains database information about the map size, readers, last txn id etc.
 #[repr(transparent)]
 pub struct Info(pub(crate) ffi::MDBX_envinfo);
+pub type PgOpStat = ffi::MDBX_envinfo__bindgen_ty_3;
 
 impl Info {
     pub fn geometry(&self) -> GeometryInfo {
@@ -534,6 +535,12 @@ impl Info {
     #[inline]
     pub fn num_readers(&self) -> usize {
         self.0.mi_numreaders as usize
+    }
+
+    /// Max reader slots used in the database
+    #[inline]
+    pub fn pg_op_stat(&self) -> PgOpStat {
+        self.0.mi_pgop_stat
     }
 }
 
