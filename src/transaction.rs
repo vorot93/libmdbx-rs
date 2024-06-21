@@ -2,8 +2,9 @@ use crate::{
     database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
     error::{mdbx_result, Result},
     flags::{c_enum, TableFlags, WriteFlags},
+    latency::CommitLatency,
     table::Table,
-    Cursor, Decodable, Error, Stat,
+    Cursor, Decodable, Error, Info, Stat,
 };
 use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
@@ -11,10 +12,9 @@ use libc::{c_uint, c_void};
 use parking_lot::Mutex;
 use sealed::sealed;
 use std::{
-    fmt,
-    fmt::Debug,
+    fmt::{self, Debug},
     marker::PhantomData,
-    mem::size_of,
+    mem::{self, size_of},
     ptr, result, slice,
     sync::{mpsc::sync_channel, Arc},
 };
@@ -152,11 +152,16 @@ where
     }
 
     /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
-    pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'db>>)> {
+    /// Also returns measured latency.
+    pub fn commit_and_rebind_open_dbs_with_latency(
+        mut self,
+    ) -> Result<(bool, CommitLatency, Vec<Table<'db>>)> {
         let txnlck = self.txn.lock();
         let txn = txnlck.0;
         let result = if K::ONLY_CLEAN {
-            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, ptr::null_mut()) })
+            let mut latency = CommitLatency::new();
+            mdbx_result(unsafe { ffi::mdbx_txn_commit_ex(txn, &mut latency.0) })
+                .map(|v| (v, latency))
         } else {
             let (sender, rx) = sync_channel(0);
             self.db
@@ -171,9 +176,10 @@ where
             rx.recv().unwrap()
         };
         self.committed = true;
-        result.map(|v| {
+        result.map(|(v, latency)| {
             (
                 v,
+                latency,
                 self.primed_dbis
                     .lock()
                     .iter()
@@ -181,6 +187,13 @@ where
                     .collect(),
             )
         })
+    }
+
+    /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
+    pub fn commit_and_rebind_open_dbs(self) -> Result<(bool, Vec<Table<'db>>)> {
+        // Drop `CommitLatency` from return value.
+        self.commit_and_rebind_open_dbs_with_latency()
+            .map(|v| (v.0, v.2))
     }
 
     /// Opens a handle to an MDBX table.
@@ -217,6 +230,28 @@ where
                 ffi::mdbx_dbi_stat(txn, table.dbi(), stat.mdb_stat(), size_of::<Stat>())
             }))?;
             Ok(stat)
+        }
+    }
+
+    /// Retrieves statistics about this transaction.
+    pub fn txn_stat(&self) -> Result<Stat> {
+        unsafe {
+            let mut stat = Stat::new();
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_env_stat_ex(self.db.ptr().0, txn, stat.mdb_stat(), size_of::<Stat>())
+            }))?;
+            Ok(stat)
+        }
+    }
+
+    /// Retrieves info about this transaction.
+    pub fn txn_info(&self) -> Result<Info> {
+        unsafe {
+            let mut info = Info(mem::zeroed());
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_env_info_ex(self.db.ptr().0, txn, &mut info.0, size_of::<Info>())
+            }))?;
+            Ok(info)
         }
     }
 
