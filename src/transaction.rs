@@ -234,6 +234,17 @@ where
         }
     }
 
+    /// Retrieves statistics about this transaction.
+    pub fn txn_stat(&self) -> Result<Stat> {
+        unsafe {
+            let mut stat = Stat::new();
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_env_stat_ex(self.db.ptr().0, txn, stat.mdb_stat(), size_of::<Stat>())
+            }))?;
+            Ok(stat)
+        }
+    }
+
     /// Open a new cursor on the given table.
     pub fn cursor<'txn>(&'txn self, table: &Table<'txn>) -> Result<Cursor<'txn, K>> {
         Cursor::new(self, table)
