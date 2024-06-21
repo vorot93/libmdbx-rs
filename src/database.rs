@@ -499,7 +499,7 @@ impl GeometryInfo {
 ///
 /// Contains database information about the map size, readers, last txn id etc.
 #[repr(transparent)]
-pub struct Info(ffi::MDBX_envinfo);
+pub struct Info(pub(crate) ffi::MDBX_envinfo);
 
 impl Info {
     pub fn geometry(&self) -> GeometryInfo {

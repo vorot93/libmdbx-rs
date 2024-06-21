@@ -4,7 +4,7 @@ use crate::{
     flags::{c_enum, TableFlags, WriteFlags},
     latency::CommitLatency,
     table::Table,
-    Cursor, Decodable, Error, Stat,
+    Cursor, Decodable, Error, Info, Stat,
 };
 use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
 use indexmap::IndexSet;
@@ -12,10 +12,9 @@ use libc::{c_uint, c_void};
 use parking_lot::Mutex;
 use sealed::sealed;
 use std::{
-    fmt,
-    fmt::Debug,
+    fmt::{self, Debug},
     marker::PhantomData,
-    mem::size_of,
+    mem::{self, size_of},
     ptr, result, slice,
     sync::{mpsc::sync_channel, Arc},
 };
@@ -242,6 +241,17 @@ where
                 ffi::mdbx_env_stat_ex(self.db.ptr().0, txn, stat.mdb_stat(), size_of::<Stat>())
             }))?;
             Ok(stat)
+        }
+    }
+
+    /// Retrieves info about this transaction.
+    pub fn txn_info(&self) -> Result<Info> {
+        unsafe {
+            let mut info = Info(mem::zeroed());
+            mdbx_result(txn_execute(&self.txn, |txn| {
+                ffi::mdbx_env_info_ex(self.db.ptr().0, txn, &mut info.0, size_of::<Info>())
+            }))?;
+            Ok(info)
         }
     }
 
