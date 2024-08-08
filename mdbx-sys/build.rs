@@ -51,32 +51,7 @@ impl ParseCallbacks for Callbacks {
     }
 }
 
-fn main() {
-    let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
-    mdbx.push("libmdbx");
-
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-
-    let bindings = bindgen::Builder::default()
-        .header(mdbx.join("mdbx.h").to_string_lossy())
-        .allowlist_var("^(MDBX|mdbx)_.*")
-        .allowlist_type("^(MDBX|mdbx)_.*")
-        .allowlist_function("^(MDBX|mdbx)_.*")
-        .size_t_is_usize(true)
-        .ctypes_prefix("::libc")
-        .parse_callbacks(Box::new(Callbacks))
-        .layout_tests(false)
-        .prepend_enum_name(false)
-        .generate_comments(false)
-        .disable_header_comment()
-        .formatter(Formatter::None)
-        .generate()
-        .expect("Unable to generate bindings");
-
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
-
+fn build_mdbx() {
     let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     mdbx.push("libmdbx");
 
@@ -112,4 +87,44 @@ fn main() {
     }
 
     cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");
+}
+
+fn main() {
+    let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
+    mdbx.push("libmdbx");
+
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    let bindings = bindgen::Builder::default()
+        .header(mdbx.join("mdbx.h").to_string_lossy())
+        .allowlist_var("^(MDBX|mdbx)_.*")
+        .allowlist_type("^(MDBX|mdbx)_.*")
+        .allowlist_function("^(MDBX|mdbx)_.*")
+        .size_t_is_usize(true)
+        .ctypes_prefix("::libc")
+        .parse_callbacks(Box::new(Callbacks))
+        .layout_tests(false)
+        .prepend_enum_name(false)
+        .generate_comments(false)
+        .disable_header_comment()
+        .formatter(Formatter::None)
+        .generate()
+        .expect("Unable to generate bindings");
+
+    bindings
+        .write_to_file(out_path.join("bindings.rs"))
+        .expect("Couldn't write bindings!");
+
+    println!("cargo::rerun-if-env-changed=LIBMDBX_NO_VENDOR");
+    let no_vendor = env::var("LIBMDBX_NO_VENDOR").map_or(false, |x| x != "0");
+
+    if no_vendor {
+        println!("cargo:rustc-link-lib=mdbx");
+        if cfg!(windows) {
+            println!(r"cargo:rustc-link-lib=ntdll");
+            println!(r"cargo:rustc-link-search=C:\windows\system32");
+        }
+    } else {
+        build_mdbx();
+    }
 }
