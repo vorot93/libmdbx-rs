@@ -1,8 +1,7 @@
 use super::traits::*;
 use anyhow::bail;
 use arrayvec::ArrayVec;
-use derive_more::*;
-use std::fmt::Display;
+use derive_more::Display;
 
 #[derive(
     Clone,
@@ -124,7 +123,7 @@ pub struct BadLength<const EXPECTED: usize> {
     pub received: usize,
 }
 
-impl<const EXPECTED: usize> Display for BadLength<EXPECTED> {
+impl<const EXPECTED: usize> std::fmt::Display for BadLength<EXPECTED> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Bad length: {EXPECTED} != {}", self.received)
     }
@@ -137,7 +136,7 @@ pub struct TooShort<const MINIMUM: usize> {
     pub received: usize,
 }
 
-impl<const MINIMUM: usize> Display for TooShort<MINIMUM> {
+impl<const MINIMUM: usize> std::fmt::Display for TooShort<MINIMUM> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Value too short: {} < {MINIMUM}", self.received)
     }
@@ -149,7 +148,7 @@ impl<const MINIMUM: usize> std::error::Error for TooShort<MINIMUM> {}
 pub struct TooLong<const MAXIMUM: usize> {
     pub received: usize,
 }
-impl<const MAXIMUM: usize> Display for TooLong<MAXIMUM> {
+impl<const MAXIMUM: usize> std::fmt::Display for TooLong<MAXIMUM> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Value too long: {} > {MAXIMUM}", self.received)
     }
