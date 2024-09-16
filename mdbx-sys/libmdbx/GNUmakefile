@@ -61,7 +61,7 @@ MDBX_BUILD_CXX       ?= YES
 CFLAGS       ?= $(strip $(eval CFLAGS := -std=gnu11 -O2 -g -Wall -Werror -Wextra -Wpedantic -ffunction-sections -fPIC -fvisibility=hidden -pthread -Wno-error=attributes $$(shell for opt in -fno-semantic-interposition -Wno-unused-command-line-argument -Wno-tautological-compare; do [ -z "$$$$($(CC) '-DMDBX_BUILD_FLAGS="probe"' $$$${opt} -c $(SRC_PROBE_C) -o /dev/null >/dev/null 2>&1 || echo failed)" ] && echo "$$$${opt} "; done)$(CFLAGS_EXTRA))$(CFLAGS))
 
 # choosing C++ standard with variable expansion trick (seems this work two times per session for GNU Make 3.81)
-CXXSTD       ?= $(eval CXXSTD := $$(shell for std in gnu++23 c++23 gnu++2b c++2b gnu++20 c++20 gnu++2a c++2a gnu++17 c++17 gnu++1z c++1z gnu++14 c++14 gnu++1y c++1y gnu+11 c++11 gnu++0x c++0x; do $(CXX) -std=$$$${std} -c $(SRC_PROBE_CXX) -o /dev/null 2>probe4std-$$$${std}.err >/dev/null && echo "-std=$$$${std}" && exit; done))$(CXXSTD)
+CXXSTD       ?= $(eval CXXSTD := $$(shell for std in gnu++23 c++23 gnu++2b c++2b gnu++20 c++20 gnu++2a c++2a gnu++17 c++17 gnu++1z c++1z gnu++14 c++14 gnu++1y c++1y gnu+11 c++11 gnu++0x c++0x; do $(CXX) -std=$$$${std} -DMDBX_BUILD_CXX=1 -c $(SRC_PROBE_CXX) -o /dev/null 2>probe4std-$$$${std}.err >/dev/null && echo "-std=$$$${std}" && exit; done))$(CXXSTD)
 CXXFLAGS     ?= $(strip $(CXXSTD) $(filter-out -std=gnu11,$(CFLAGS)))
 
 # libraries and options for linking
@@ -121,7 +121,8 @@ endef
 SO_SUFFIX  := $(shell $(uname2sosuffix))
 HEADERS    := mdbx.h mdbx.h++
 LIBRARIES  := libmdbx.a libmdbx.$(SO_SUFFIX)
-TOOLS      := mdbx_stat mdbx_copy mdbx_dump mdbx_load mdbx_chk mdbx_drop
+TOOLS      := chk copy drop dump load stat
+MDBX_TOOLS := $(addprefix mdbx_,$(TOOLS))
 MANPAGES   := mdbx_stat.1 mdbx_copy.1 mdbx_dump.1 mdbx_load.1 mdbx_chk.1 mdbx_drop.1
 TIP        := // TIP:
 
@@ -148,7 +149,7 @@ else
   $(info $(TIP) Use `make V=1` for verbose.)
 endif
 
-all: show-options $(LIBRARIES) $(TOOLS)
+all: show-options $(LIBRARIES) $(MDBX_TOOLS)
 
 help:
 	@echo "  make all                 - build libraries and tools"
@@ -207,20 +208,20 @@ options:
 	@echo "##   Note that the defaults should already be correct for most platforms;"
 	@echo "##   you should not need to change any of these. Read their descriptions"
 	@echo "##   in README and source code (see mdbx.c) if you do."
-	@grep -h '#ifndef MDBX_' mdbx.c | grep -v BUILD | uniq | sed 's/#ifndef /  /'
+	@grep -h '#ifndef MDBX_' mdbx.c | grep -v BUILD | sort -u | sed 's/#ifndef /  /'
 
 lib libs libmdbx mdbx: libmdbx.a libmdbx.$(SO_SUFFIX)
 
-tools: $(TOOLS)
-tools-static: $(addsuffix .static,$(TOOLS)) $(addsuffix .static-lto,$(TOOLS))
+tools: $(MDBX_TOOLS)
+tools-static: $(addsuffix .static,$(MDBX_TOOLS)) $(addsuffix .static-lto,$(MDBX_TOOLS))
 
 strip: all
-	@echo '  STRIP libmdbx.$(SO_SUFFIX) $(TOOLS)'
-	$(TRACE )strip libmdbx.$(SO_SUFFIX) $(TOOLS)
+	@echo '  STRIP libmdbx.$(SO_SUFFIX) $(MDBX_TOOLS)'
+	$(TRACE )strip libmdbx.$(SO_SUFFIX) $(MDBX_TOOLS)
 
 clean:
 	@echo '  REMOVE ...'
-	$(QUIET)rm -rf $(TOOLS) mdbx_test @* *.[ao] *.[ls]o *.$(SO_SUFFIX) *.dSYM *~ tmp.db/* \
+	$(QUIET)rm -rf $(MDBX_TOOLS) mdbx_test @* *.[ao] *.[ls]o *.$(SO_SUFFIX) *.dSYM *~ tmp.db/* \
 		*.gcov *.log *.err src/*.o test/*.o mdbx_example dist \
 		config.h src/config.h src/version.c *.tar* buildflags.tag \
 		mdbx_*.static mdbx_*.static-lto
@@ -248,27 +249,28 @@ lib-shared libmdbx.$(SO_SUFFIX): mdbx-dylib.o $(call select_by,MDBX_BUILD_CXX,md
 # Amalgamated source code, i.e. distributed after `make dist`
 MAN_SRCDIR := man1/
 
-config.h: buildflags.tag mdbx.c $(lastword $(MAKEFILE_LIST))
+config.h: buildflags.tag mdbx.c $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
 	@echo '  MAKE $@'
 	$(QUIET)(echo '#define MDBX_BUILD_TIMESTAMP "$(MDBX_BUILD_TIMESTAMP)"' \
 	&& echo "#define MDBX_BUILD_FLAGS \"$$(cat buildflags.tag)\"" \
 	&& echo '#define MDBX_BUILD_COMPILER "$(shell (LC_ALL=C $(CC) --version || echo 'Please use GCC or CLANG compatible compiler') | head -1)"' \
 	&& echo '#define MDBX_BUILD_TARGET "$(shell set -o pipefail; (LC_ALL=C $(CC) -v 2>&1 | grep -i '^Target:' | cut -d ' ' -f 2- || (LC_ALL=C $(CC) --version | grep -qi e2k && echo E2K) || echo 'Please use GCC or CLANG compatible compiler') | head -1)"' \
+	&& echo '#define MDBX_BUILD_CXX $(call select_by,MDBX_BUILD_CXX,1,0)' \
 	) >$@
 
-mdbx-dylib.o: config.h mdbx.c mdbx.h $(lastword $(MAKEFILE_LIST))
+mdbx-dylib.o: config.h mdbx.c mdbx.h $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
 	@echo '  CC $@'
 	$(QUIET)$(CC) $(CFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' -DLIBMDBX_EXPORTS=1 -c mdbx.c -o $@
 
-mdbx-static.o: config.h mdbx.c mdbx.h $(lastword $(MAKEFILE_LIST))
+mdbx-static.o: config.h mdbx.c mdbx.h $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
 	@echo '  CC $@'
 	$(QUIET)$(CC) $(CFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' -ULIBMDBX_EXPORTS -c mdbx.c -o $@
 
-mdbx++-dylib.o: config.h mdbx.c++ mdbx.h mdbx.h++ $(lastword $(MAKEFILE_LIST))
+mdbx++-dylib.o: config.h mdbx.c++ mdbx.h mdbx.h++ $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
 	@echo '  CC $@'
 	$(QUIET)$(CXX) $(CXXFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' -DLIBMDBX_EXPORTS=1 -c mdbx.c++ -o $@
 
-mdbx++-static.o: config.h mdbx.c++ mdbx.h mdbx.h++ $(lastword $(MAKEFILE_LIST))
+mdbx++-static.o: config.h mdbx.c++ mdbx.h mdbx.h++ $(lastword $(MAKEFILE_LIST)) LICENSE NOTICE
 	@echo '  CC $@'
 	$(QUIET)$(CXX) $(CXXFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' -ULIBMDBX_EXPORTS -c mdbx.c++ -o $@
 
@@ -286,10 +288,10 @@ mdbx_%.static-lto: mdbx_%.c config.h mdbx.c mdbx.h
 		$< mdbx.c $(EXE_LDFLAGS) $(LIBS) -static -Wl,--strip-all -o $@
 
 
-install: $(LIBRARIES) $(TOOLS) $(HEADERS)
+install: $(LIBRARIES) $(MDBX_TOOLS) $(HEADERS)
 	@echo '  INSTALLING...'
 	$(QUIET)mkdir -p $(DESTDIR)$(prefix)/bin$(suffix) && \
-		$(INSTALL) -p $(EXE_INSTALL_FLAGS) $(TOOLS) $(DESTDIR)$(prefix)/bin$(suffix)/ && \
+		$(INSTALL) -p $(EXE_INSTALL_FLAGS) $(MDBX_TOOLS) $(DESTDIR)$(prefix)/bin$(suffix)/ && \
 	mkdir -p $(DESTDIR)$(prefix)/lib$(suffix)/ && \
 		$(INSTALL) -p $(EXE_INSTALL_FLAGS) $(filter-out libmdbx.a,$(LIBRARIES)) $(DESTDIR)$(prefix)/lib$(suffix)/ && \
 	mkdir -p $(DESTDIR)$(prefix)/lib$(suffix)/ && \
@@ -307,7 +309,7 @@ install-no-strip: install
 
 uninstall:
 	@echo '  UNINSTALLING/REMOVE...'
-	$(QUIET)rm -f $(addprefix $(DESTDIR)$(prefix)/bin$(suffix)/,$(TOOLS)) \
+	$(QUIET)rm -f $(addprefix $(DESTDIR)$(prefix)/bin$(suffix)/,$(MDBX_TOOLS)) \
 		$(addprefix $(DESTDIR)$(prefix)/lib$(suffix)/,$(LIBRARIES)) \
 		$(addprefix $(DESTDIR)$(prefix)/include/,$(HEADERS)) \
 		$(addprefix $(DESTDIR)$(mandir)/man1/,$(MANPAGES))

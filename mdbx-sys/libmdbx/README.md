@@ -1,24 +1,5 @@
 <!-- Required extensions: pymdownx.betterem, pymdownx.tilde, pymdownx.emoji, pymdownx.tasklist, pymdownx.superfences -->
 
-### The origin has been migrated to [GitFlic](https://gitflic.ru/project/erthink/libmdbx)
-since on 2022-04-15 the Github administration, without any warning
-nor explanation, deleted _libmdbx_ along with a lot of other projects,
-simultaneously blocking access for many developers.
-For the same reason ~~Github~~ is blacklisted forever.
-
-GitFlic's developers plan to support other languages,
-including English 和 中文, in the near future.
-
-### Основной репозиторий перемещен на [GitFlic](https://gitflic.ru/project/erthink/libmdbx)
-так как 15 апреля 2022 администрация Github без предупреждения и
-объяснения причин удалила _libmdbx_ вместе с массой других проектов,
-одновременно заблокировав доступ многим разработчикам.
-По этой же причине ~~Github~~ навсегда занесен в черный список.
-
---------------------------------------------------------------------------------
-
-*The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
-
 > Please refer to the online [documentation](https://libmdbx.dqdkfa.ru)
 > with [`C` API description](https://libmdbx.dqdkfa.ru/group__c__api.html)
 > and pay attention to the [`C++` API](https://gitflic.ru/project/erthink/libmdbx/blob?file=mdbx.h%2B%2B#line-num-1).
@@ -28,6 +9,8 @@ including English 和 中文, in the near future.
 > For NEWS take a look to the [ChangeLog](https://gitflic.ru/project/erthink/libmdbx/blob?file=ChangeLog.md)
 > or the [TODO](https://gitflic.ru/project/erthink/libmdbx/blob?file=TODO.md).
 
+*The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
+
 
 libmdbx
 ========
@@ -36,7 +19,7 @@ libmdbx
 
 _libmdbx_ is an extremely fast, compact, powerful, embedded, transactional
 [key-value database](https://en.wikipedia.org/wiki/Key-value_database),
-with [permissive license](https://gitflic.ru/project/erthink/libmdbx/blob?file=LICENSE).
+with [Apache 2.0 license](https://gitflic.ru/project/erthink/libmdbx/blob?file=LICENSE).
 _libmdbx_ has a specific set of properties and capabilities,
 focused on creating unique lightweight solutions.
 
@@ -132,15 +115,14 @@ $ objdump -f -h -j .text libmdbx.so
   libmdbx.so:     формат файла elf64-e2k
   архитектура: elbrus-v6:64, флаги 0x00000150:
   HAS_SYMS, DYNAMIC, D_PAGED
-  начальный адрес 0x0000000000021680
+  начальный адрес 0x00000000??????00
 
   Разделы:
-  Idx Name          Разм      VMA               LMA               Фа  смещ.  Выр.
-   10 .text         000ddd28  0000000000021680  0000000000021680  00021680  2**3
-                  CONTENTS, ALLOC, LOAD, READONLY, CODE
+  Idx Name          Разм      VMA               LMA               Фа  смещ.  Выр.  Флаги
+   10 .text         000e7460  0000000000025c00  0000000000025c00  00025c00  2**10  CONTENTS, ALLOC, LOAD, READONLY, CODE
 
 $ cc --version
-  lcc:1.26.12:Jun-05-2022:e2k-v6-linux
+  lcc:1.27.14:Jan-31-2024:e2k-v6-linux
   gcc (GCC) 9.3.0 compatible
 ```
 
@@ -178,7 +160,7 @@ $ cc --version
 [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control)
 and [CoW](https://en.wikipedia.org/wiki/Copy-on-write).
 
-- Multiple key-value sub-databases within a single datafile.
+- Multiple key-value tables/sub-databases within a single datafile.
 
 - Range lookups, including range query estimation.
 
@@ -222,7 +204,7 @@ transaction journal. No crash recovery needed. No maintenance is required.
 - **Value size**: minimum `0`, maximum `2146435072` (`0x7FF00000`) bytes for maps, ≈½ pagesize for multimaps (`2022` bytes for default 4K pagesize, `32742` bytes for 64K pagesize).
 - **Write transaction size**: up to `1327217884` pages (`4.944272` TiB for default 4K pagesize, `79.108351` TiB for 64K pagesize).
 - **Database size**: up to `2147483648` pages (≈`8.0` TiB for default 4K pagesize, ≈`128.0` TiB for 64K pagesize).
-- **Maximum sub-databases**: `32765`.
+- **Maximum tables/sub-databases**: `32765`.
 
 ## Gotchas
 
@@ -264,7 +246,7 @@ out-of-the-box, not silently and catastrophically break down. The list
 below is pruned down to the improvements most notable and obvious from
 the user's point of view.
 
-## Added Features
+## Some Added Features
 
 1. Keys could be more than 2 times longer than _LMDB_.
    > For DB with default page size _libmdbx_ support keys up to 2022 bytes
@@ -307,8 +289,7 @@ be found between a `KEY1` and a `KEY2`. This is a prerequisite for build
 and/or optimize query execution plans.
    > _libmdbx_ performs a rough estimate based on common B-tree pages of the paths from root to corresponding keys.
 
-8. `mdbx_chk` utility for database integrity check.
-Since version 0.9.1, the utility supports checking the database using any of the three meta pages and the ability to switch to it.
+8. Database integrity check API both with standalone `mdbx_chk` utility.
 
 9. Support for opening databases in the exclusive mode, including on a network share.
 
@@ -317,7 +298,7 @@ Since version 0.9.1, the utility supports checking the database using any of the
 11. Ability to determine whether the particular data is on a dirty page
 or not, that allows to avoid copy-out before updates.
 
-12. Extended information of whole-database, sub-databases, transactions, readers enumeration.
+12. Extended information of whole-database, tables/sub-databases, transactions, readers enumeration.
    > _libmdbx_ provides a lot of information, including dirty and leftover pages
    > for a write transaction, reading lag and holdover space for read transactions.
 
@@ -340,7 +321,7 @@ pair, to the first, to the last, or not set to anything.
 ## Other fixes and specifics
 
 1. Fixed more than 10 significant errors, in particular: page leaks,
-wrong sub-database statistics, segfault in several conditions,
+wrong table/sub-database statistics, segfault in several conditions,
 nonoptimal page merge strategy, updating an existing record with
 a change in data size (including for multimap), etc.
 
@@ -398,12 +379,26 @@ The origin for now is at [GitFlic](https://gitflic.ru/project/erthink/libmdbx)
 with backup at [ABF by ROSA Лаб](https://abf.rosalinux.ru/erthink/libmdbx).
 For the same reason ~~Github~~ is blacklisted forever.
 
+Начиная с 2021 года наблюдаются устойчивые тенденции к распространению
+недостоверной информации о libmdbx в странах НАТО, политизированной
+критики, а также отказу от использования библиотеки в пользу LMDB,
+несмотря на явные проблемы с одной стороны и преимущества с другой.
+Поэтому, начиная с 17 марта 2024 года, прекращается документирование и
+сопровождение проекта на английском языке. Новая функциональность будет
+документироваться только на русском языке, однако, целенаправленного
+переписывания/перевода документации пока не планируется.
+
+Since May 2024 and version v0.13 _libmdbx_ was re-licensed under Apache-2.0 license.
+Please refer to the `COPYRIGHT` file for license change explanations.
+
+
 ## Acknowledgments
-Howard Chu <hyc@openldap.org> is the author of LMDB, from which
-originated the _libmdbx_ in 2015.
+Howard Chu <hyc@openldap.org> and Hallvard Furuseth
+<hallvard@openldap.org> are the authors of _LMDB_, from which _libmdbx_
+was forked in 2015.
 
 Martin Hedenfalk <martin@bzero.se> is the author of `btree.c` code, which
-was used to begin development of LMDB.
+was used to begin development of _LMDB_.
 
 <!-- section-end -->
 
@@ -511,8 +506,10 @@ There are no special traits nor quirks if you use libmdbx ONLY inside the single
 But in a cross-container cases or with a host-container(s) mix the two major things MUST be
 guaranteed:
 
-1. Coherence of memory mapping content and unified page cache inside OS kernel for host and all container(s) operated with a DB.
-Basically this means must be only a single physical copy of each memory mapped DB' page in the system memory.
+1. Coherence of memory mapping content and unified page cache inside OS
+kernel for host and all container(s) operated with a DB. Basically this
+means must be only a single physical copy of each memory mapped DB' page
+in the system memory.
 
 2. Uniqueness of [PID](https://en.wikipedia.org/wiki/Process_identifier) values and/or a common space for ones:
     - for POSIX systems: PID uniqueness for all processes operated with a DB.
