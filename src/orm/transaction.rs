@@ -82,8 +82,8 @@ impl<'db> Transaction<'db, RW> {
     {
         Ok(self.inner.put(
             &self.inner.open_table(Some(T::NAME))?,
-            &key.encode(),
-            &value.encode(),
+            key.encode(),
+            value.encode(),
             WriteFlags::UPSERT,
         )?)
     }
