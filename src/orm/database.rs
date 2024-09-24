@@ -7,7 +7,7 @@ use std::{
     ops::Deref,
     path::{Path, PathBuf},
 };
-use tempfile::tempdir;
+use tempfile::*;
 
 #[derive(Debug)]
 enum DbFolder {
@@ -110,6 +110,15 @@ impl Database {
             options,
             chart,
         )
+    }
+
+    /// Close the database and retain temporary directory
+    pub fn into_tempdir(self) -> Option<TempDir> {
+        if let DbFolder::Temporary(temp_dir) = self.folder {
+            Some(temp_dir)
+        } else {
+            None
+        }
     }
 }
 
