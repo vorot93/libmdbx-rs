@@ -10,6 +10,7 @@ pub use crate::{
     },
     error::{Error, Result},
     flags::*,
+    latency::CommitLatency,
     table::Table,
     transaction::{Transaction, TransactionKind, RO, RW},
 };
@@ -19,6 +20,7 @@ mod cursor;
 mod database;
 mod error;
 mod flags;
+mod latency;
 mod table;
 mod transaction;
 
