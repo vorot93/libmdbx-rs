@@ -60,7 +60,7 @@ impl<'tx> Decodable<'tx> for lifetimed_bytes::Bytes<'tx> {
     }
 }
 
-impl<'tx> Decodable<'tx> for Vec<u8> {
+impl Decodable<'_> for Vec<u8> {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized,
@@ -69,7 +69,7 @@ impl<'tx> Decodable<'tx> for Vec<u8> {
     }
 }
 
-impl<'tx> Decodable<'tx> for () {
+impl Decodable<'_> for () {
     fn decode(_: &[u8]) -> Result<Self, Error> {
         Ok(())
     }
@@ -86,7 +86,7 @@ impl<'tx> Decodable<'tx> for () {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Deref, DerefMut)]
 pub struct ObjectLength(pub usize);
 
-impl<'tx> Decodable<'tx> for ObjectLength {
+impl Decodable<'_> for ObjectLength {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized,
@@ -95,7 +95,7 @@ impl<'tx> Decodable<'tx> for ObjectLength {
     }
 }
 
-impl<'tx, const LEN: usize> Decodable<'tx> for [u8; LEN] {
+impl<const LEN: usize> Decodable<'_> for [u8; LEN] {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized,

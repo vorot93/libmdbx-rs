@@ -11,7 +11,7 @@ where
     pub(crate) inner: crate::Transaction<'db, K, WriteMap>,
 }
 
-impl<'db> Transaction<'db, RO> {
+impl Transaction<'_, RO> {
     pub fn table_sizes(&self) -> anyhow::Result<HashMap<String, u64>> {
         let mut out = HashMap::new();
         let main_table = self.inner.open_table(None)?;
@@ -75,7 +75,7 @@ where
     }
 }
 
-impl<'db> Transaction<'db, RW> {
+impl Transaction<'_, RW> {
     pub fn upsert<T>(&self, key: T::Key, value: T::Value) -> anyhow::Result<()>
     where
         T: Table,

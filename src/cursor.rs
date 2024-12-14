@@ -484,7 +484,7 @@ where
     }
 }
 
-impl<'txn> Cursor<'txn, RW> {
+impl Cursor<'_, RW> {
     /// Puts a key/data pair into the table. The cursor will be positioned at
     /// the new data item, or on failure usually near it.
     pub fn put(&mut self, key: &[u8], data: &[u8], flags: WriteFlags) -> Result<()> {
@@ -522,7 +522,7 @@ impl<'txn> Cursor<'txn, RW> {
     }
 }
 
-impl<'txn, K> Clone for Cursor<'txn, K>
+impl<K> Clone for Cursor<'_, K>
 where
     K: TransactionKind,
 {
@@ -531,7 +531,7 @@ where
     }
 }
 
-impl<'txn, K> fmt::Debug for Cursor<'txn, K>
+impl<K> fmt::Debug for Cursor<'_, K>
 where
     K: TransactionKind,
 {
@@ -540,7 +540,7 @@ where
     }
 }
 
-impl<'txn, K> Drop for Cursor<'txn, K>
+impl<K> Drop for Cursor<'_, K>
 where
     K: TransactionKind,
 {
@@ -732,7 +732,7 @@ where
     }
 }
 
-impl<'txn, 'cur, K, Key, Value> Iterator for Iter<'txn, 'cur, K, Key, Value>
+impl<'txn, K, Key, Value> Iterator for Iter<'txn, '_, K, Key, Value>
 where
     K: TransactionKind,
     Key: Decodable<'txn>,
@@ -832,7 +832,7 @@ where
     }
 }
 
-impl<'txn, 'cur, K, Key, Value> fmt::Debug for IterDup<'txn, 'cur, K, Key, Value>
+impl<'txn, K, Key, Value> fmt::Debug for IterDup<'txn, '_, K, Key, Value>
 where
     K: TransactionKind,
     Key: Decodable<'txn>,
@@ -843,7 +843,7 @@ where
     }
 }
 
-impl<'txn, 'cur, K, Key, Value> Iterator for IterDup<'txn, 'cur, K, Key, Value>
+impl<'txn, K, Key, Value> Iterator for IterDup<'txn, '_, K, Key, Value>
 where
     K: TransactionKind,
     Key: Decodable<'txn>,
