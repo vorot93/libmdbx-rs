@@ -74,9 +74,9 @@ fn bench_put_rand(c: &mut Criterion) {
     let (_dir, db) = setup_bench_db(0);
 
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
-    txn.prime_for_permaopen(table);
-    let table = txn.commit_and_rebind_open_dbs().unwrap().1.remove(0);
+    txn.open_table(Some("test")).unwrap();
+    txn.commit().unwrap();
+    let table = db.open_table("test").unwrap();
 
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
