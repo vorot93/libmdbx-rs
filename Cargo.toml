@@ -1,6 +1,6 @@
 [package]
 name = "libmdbx"
-version = "0.5.0"
+version = "0.5.3"
 edition = "2021"
 rust-version = "1.79"
 license = "MPL-2.0"
@@ -25,16 +25,21 @@ arrayvec = { version = "0.7", optional = true }
 bytes = { version = "1", optional = true }
 bitflags = "2"
 ciborium = { version = "0.2", optional = true }
-derive_more = "0.99"
+derive_more = { version = "1", features = [
+    "deref",
+    "deref_mut",
+    "display",
+    "from",
+] }
 impls = { version = "1", optional = true }
 indexmap = "2"
 libc = "0.2"
 parking_lot = "0.12"
-sealed = "0.5"
+sealed = "0.6"
 tempfile = { version = "3", optional = true }
-thiserror = "1"
+thiserror = "2"
 
-ffi = { package = "mdbx-sys", version = "=12.10.0", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "=12.12.0", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 

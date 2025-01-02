@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 #[derive(Clone, Debug)]
 pub(crate) struct DecodableWrapper<T>(pub T);
 
-impl<'tx, T> crate::Decodable<'tx> for DecodableWrapper<T>
+impl<T> crate::Decodable<'_> for DecodableWrapper<T>
 where
     T: Decodable,
 {
@@ -44,7 +44,7 @@ where
     Ok(None)
 }
 
-impl<'tx, K, T> Cursor<'tx, K, T>
+impl<K, T> Cursor<'_, K, T>
 where
     K: TransactionKind,
     T: Table,
@@ -117,7 +117,7 @@ where
             first: bool,
         }
 
-        impl<'tx, K, T> Iterator for I<'tx, K, T>
+        impl<K, T> Iterator for I<'_, K, T>
         where
             K: TransactionKind,
             T: Table<Key: Decodable>,
@@ -164,7 +164,7 @@ where
             first: bool,
         }
 
-        impl<'tx, K, T> Iterator for I<'tx, K, T>
+        impl<K, T> Iterator for I<'_, K, T>
         where
             K: TransactionKind,
             T: Table<Key: Decodable>,
@@ -194,7 +194,7 @@ where
     }
 }
 
-impl<'tx, K, T> Cursor<'tx, K, T>
+impl<K, T> Cursor<'_, K, T>
 where
     K: TransactionKind,
     T: DupSort,
@@ -277,7 +277,7 @@ where
             first: bool,
         }
 
-        impl<'tx, K, T> Iterator for I<'tx, K, T>
+        impl<K, T> Iterator for I<'_, K, T>
         where
             K: TransactionKind,
             T: DupSort<Key: Clone + Decodable>,
@@ -309,7 +309,7 @@ where
     }
 }
 
-impl<'tx, T> Cursor<'tx, RW, T>
+impl<T> Cursor<'_, RW, T>
 where
     T: Table,
 {
@@ -336,7 +336,7 @@ where
     }
 }
 
-impl<'tx, T> Cursor<'tx, RW, T>
+impl<T> Cursor<'_, RW, T>
 where
     T: DupSort,
 {
