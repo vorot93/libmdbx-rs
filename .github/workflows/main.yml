@@ -28,6 +28,8 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - run: cargo fmt --all --check -- --config=imports_granularity=Crate
-      - run: cargo install cargo-hack
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
       - run: cargo hack clippy --workspace --each-feature -- -D warnings
       - run: cargo hack test --workspace --each-feature

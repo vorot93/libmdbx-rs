@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 80f8d3cca95e09b6d77d31515372cc042bf47022b369a7a53abdda9f68c04519_v0_12_10_0_gaea40fb7
+#define MDBX_BUILD_SOURCERY 0e1c8e56485e54e08f8b91bd0fbcb3008c5720a53798abd90620ddbbb254e369_v0_12_12_0_gb16c2570
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -91,8 +91,8 @@
 #endif
 #if _MSC_VER > 1914
 #pragma warning(                                                               \
-        disable : 5105) /* winbase.h(9531): warning C5105: macro expansion     \
-                           producing 'defined' has undefined behavior */
+    disable : 5105) /* winbase.h(9531): warning C5105: macro expansion         \
+                       producing 'defined' has undefined behavior */
 #endif
 #if _MSC_VER > 1930
 #pragma warning(disable : 6235) /* <expression> is always a constant */
@@ -121,8 +121,8 @@
 #pragma warning(disable : 4204) /* nonstandard extension used: non-constant    \
                                    aggregate initializer */
 #pragma warning(                                                               \
-        disable : 4505) /* unreferenced local function has been removed */
-#endif                  /* _MSC_VER (warnings) */
+    disable : 4505) /* unreferenced local function has been removed */
+#endif              /* _MSC_VER (warnings) */
 
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
@@ -225,6 +225,10 @@
 
 #ifndef __has_extension
 #define __has_extension(x) (0)
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x) (0)
 #endif
 
 #if __has_feature(thread_sanitizer)
@@ -640,7 +644,7 @@ __extern_C key_t ftok(const char *, int);
 
 #ifndef container_of
 #define container_of(ptr, type, member)                                        \
-  ((type *)((char *)(ptr)-offsetof(type, member)))
+  ((type *)((char *)(ptr) - offsetof(type, member)))
 #endif /* container_of */
 
 /*----------------------------------------------------------------------------*/
@@ -651,7 +655,7 @@ __extern_C key_t ftok(const char *, int);
 #elif defined(_MSC_VER)
 #define __always_inline __forceinline
 #else
-#define __always_inline
+#define __always_inline __inline
 #endif
 #endif /* __always_inline */
 
@@ -2936,7 +2940,7 @@ typedef struct MDBX_page {
 #define P_LOOSE 0x4000u      /* page was dirtied then freed, can be reused */
 #define P_FROZEN 0x8000u     /* used for retire page with known status */
 #define P_ILL_BITS                                                             \
-  ((uint16_t) ~(P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_SPILLED))
+  ((uint16_t)~(P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_SPILLED))
   uint16_t mp_flags;
   union {
     uint32_t mp_pages; /* number of overflow pages */
@@ -3555,8 +3559,8 @@ struct MDBX_cursor {
 #define C_SUB 0x04         /* Cursor is a sub-cursor */
 #define C_DEL 0x08         /* last op was a cursor_del */
 #define C_UNTRACK 0x10     /* Un-track cursor when closing */
-#define C_GCU                                                                                  \
-  0x20 /* Происходит подготовка к обновлению GC, поэтому \
+#define C_GCU                                                                  \
+  0x20 /* Происходит подготовка к обновлению GC, поэтому                     \
         * можно брать страницы из GC даже для FREE_DBI */
   uint8_t mc_flags;
 
@@ -4473,7 +4477,7 @@ node_largedata_pgno(const MDBX_node *const __restrict node) {
  *                                 max(DATALEN_NO_OVERFLOW, sizeof(MDBX_db));
  */
 
-#define PAGEROOM(pagesize) ((pagesize)-PAGEHDRSZ)
+#define PAGEROOM(pagesize) ((pagesize) - PAGEHDRSZ)
 #define EVEN_FLOOR(n) ((n) & ~(size_t)1)
 #define BRANCH_NODE_MAX(pagesize)                                              \
   (EVEN_FLOOR((PAGEROOM(pagesize) - sizeof(indx_t) - NODESIZE) / (3 - 1) -     \
@@ -7228,9 +7232,9 @@ static __always_inline int __must_check_result dpl_append(MDBX_txn *txn,
       STATIC_ASSERT(sizeof(MDBX_dp) == sizeof(__uint128_t));
       ((__uint128_t *)i)[1] = *(volatile __uint128_t *)i;
 #else
-      i[1].ptr = i->ptr;
-      i[1].pgno = i->pgno;
-      i[1].npages = i->npages;
+    i[1].ptr = i->ptr;
+    i[1].pgno = i->pgno;
+    i[1].npages = i->npages;
 #endif
       --i;
     }
@@ -7526,10 +7530,13 @@ __cold const char *mdbx_strerror_r(int errnum, char *buf, size_t buflen) {
   const char *msg = mdbx_liberr2str(errnum);
   if (!msg && buflen > 0 && buflen < INT_MAX) {
 #if defined(_WIN32) || defined(_WIN64)
-    const DWORD size = FormatMessageA(
+    DWORD size = FormatMessageA(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
         errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, (DWORD)buflen,
         NULL);
+    while (size && buf[size - 1] <= ' ')
+      --size;
+    buf[size] = 0;
     return size ? buf : "FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM) failed";
 #elif defined(_GNU_SOURCE) && defined(__GLIBC__)
     /* GNU-specific */
@@ -7580,10 +7587,13 @@ __cold const char *mdbx_strerror(int errnum) {
 const char *mdbx_strerror_r_ANSI2OEM(int errnum, char *buf, size_t buflen) {
   const char *msg = mdbx_liberr2str(errnum);
   if (!msg && buflen > 0 && buflen < INT_MAX) {
-    const DWORD size = FormatMessageA(
+    DWORD size = FormatMessageA(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
         errnum, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), buf, (DWORD)buflen,
         NULL);
+    while (size && buf[size - 1] <= ' ')
+      --size;
+    buf[size] = 0;
     if (!size)
       msg = "FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM) failed";
     else if (!CharToOemBuffA(buf, buf, size))
@@ -7647,19 +7657,26 @@ __cold void debug_log(int level, const char *function, int line,
   va_end(args);
 }
 
-/* Dump a key in ascii or hexadecimal. */
-const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
+/* Dump a val in ascii or hexadecimal. */
+const char *mdbx_dump_val(const MDBX_val *val, char *const buf,
                           const size_t bufsize) {
-  if (!key)
+  if (!val)
     return "<null>";
-  if (!key->iov_len)
+  if (!val->iov_len)
     return "<empty>";
   if (!buf || bufsize < 4)
     return nullptr;
 
+  if (!val->iov_base) {
+    int len = snprintf(buf, bufsize, "<nullptr.%zu>", val->iov_len);
+    assert(len > 0 && (size_t)len < bufsize);
+    (void)len;
+    return buf;
+  }
+
   bool is_ascii = true;
-  const uint8_t *const data = key->iov_base;
-  for (size_t i = 0; i < key->iov_len; i++)
+  const uint8_t *const data = val->iov_base;
+  for (size_t i = 0; i < val->iov_len; i++)
     if (data[i] < ' ' || data[i] > '~') {
       is_ascii = false;
       break;
@@ -7668,14 +7685,14 @@ const char *mdbx_dump_val(const MDBX_val *key, char *const buf,
   if (is_ascii) {
     int len =
         snprintf(buf, bufsize, "%.*s",
-                 (key->iov_len > INT_MAX) ? INT_MAX : (int)key->iov_len, data);
+                 (val->iov_len > INT_MAX) ? INT_MAX : (int)val->iov_len, data);
     assert(len > 0 && (size_t)len < bufsize);
     (void)len;
   } else {
     char *const detent = buf + bufsize - 2;
     char *ptr = buf;
     *ptr++ = '<';
-    for (size_t i = 0; i < key->iov_len && ptr < detent; i++) {
+    for (size_t i = 0; i < val->iov_len && ptr < detent; i++) {
       const char hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7',
                             '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
       *ptr++ = hex[data[i] >> 4];
@@ -7815,7 +7832,9 @@ MDBX_MAYBE_UNUSED static bool cursor_is_tracked(const MDBX_cursor *mc) {
     }                                                                          \
     tracked->mc_next = *tracking_head;                                         \
     *tracking_head = tracked;                                                  \
-    { act; }                                                                   \
+    {                                                                          \
+      act;                                                                     \
+    }                                                                          \
     *tracking_head = tracked->mc_next;                                         \
   } while (0)
 
@@ -12315,7 +12334,7 @@ static __inline int check_env(const MDBX_env *env, const bool wanna_active) {
 
   if (wanna_active) {
 #if MDBX_ENV_CHECKPID
-    if (unlikely(env->me_pid != osal_getpid())) {
+    if (unlikely(env->me_pid != osal_getpid()) && env->me_pid) {
       ((MDBX_env *)env)->me_flags |= MDBX_FATAL_ERROR;
       return MDBX_PANIC;
     }
@@ -12368,7 +12387,8 @@ static int cursor_shadow(MDBX_txn *parent, MDBX_txn *nested) {
         MDBX_xcursor *mx = mc->mc_xcursor;
         if (mx != NULL) {
           *(MDBX_xcursor *)(bk + 1) = *mx;
-          mx->mx_cursor.mc_txn = nested;
+          mx->mx_cursor.mc_txn = mc->mc_txn;
+          mx->mx_cursor.mc_dbistate = mc->mc_dbistate;
         }
         mc->mc_next = nested->mt_cursors[i];
         nested->mt_cursors[i] = mc;
@@ -12405,9 +12425,7 @@ static void cursors_eot(MDBX_txn *txn, const bool merge) {
         MDBX_SUPPRESS_GOOFY_MSVC_ANALYZER(6001);
         ENSURE(txn->mt_env, bk->mc_signature == MDBX_MC_LIVE);
         tASSERT(txn, mx == bk->mc_xcursor);
-        if (stage == MDBX_MC_WAIT4EOT /* Cursor was closed by user */)
-          mc->mc_signature = stage /* Promote closed state to parent txn */;
-        else if (merge) {
+        if (merge) {
           /* Restore pointers to parent txn */
           mc->mc_next = bk->mc_next;
           mc->mc_backup = bk->mc_backup;
@@ -12415,11 +12433,8 @@ static void cursors_eot(MDBX_txn *txn, const bool merge) {
           mc->mc_db = bk->mc_db;
           mc->mc_dbistate = bk->mc_dbistate;
           if (mx) {
-            if (mx != bk->mc_xcursor) {
-              *bk->mc_xcursor = *mx;
-              mx = bk->mc_xcursor;
-            }
-            mx->mx_cursor.mc_txn = bk->mc_txn;
+            mx->mx_cursor.mc_txn = mc->mc_txn;
+            mx->mx_cursor.mc_dbistate = mc->mc_dbistate;
           }
         } else {
           /* Restore from backup, i.e. rollback/abort nested txn */
@@ -12429,6 +12444,8 @@ static void cursors_eot(MDBX_txn *txn, const bool merge) {
         }
         bk->mc_signature = 0;
         osal_free(bk);
+        if (stage == MDBX_MC_WAIT4EOT /* Cursor was closed by user */)
+          mc->mc_signature = stage /* Promote closed state to parent txn */;
       } else {
         ENSURE(txn->mt_env, stage == MDBX_MC_LIVE);
         mc->mc_signature = MDBX_MC_READY4CLOSE /* Cursor may be reused */;
@@ -12731,7 +12748,9 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
               : "(wagering meta)");
     ok = false;
   }
-  if (likely(freedb_root && freedb_mod_txnid)) {
+  if (likely(freedb_root && freedb_mod_txnid &&
+             (size_t)ptr_dist(env->me_dxb_mmap.base, freedb_root) <
+                 env->me_dxb_mmap.limit)) {
     VALGRIND_MAKE_MEM_DEFINED(freedb_root, sizeof(freedb_root->mp_txnid));
     MDBX_ASAN_UNPOISON_MEMORY_REGION(freedb_root,
                                      sizeof(freedb_root->mp_txnid));
@@ -12747,7 +12766,9 @@ static bool coherency_check(const MDBX_env *env, const txnid_t txnid,
       ok = false;
     }
   }
-  if (likely(maindb_root && maindb_mod_txnid)) {
+  if (likely(maindb_root && maindb_mod_txnid &&
+             (size_t)ptr_dist(env->me_dxb_mmap.base, maindb_root) <
+                 env->me_dxb_mmap.limit)) {
     VALGRIND_MAKE_MEM_DEFINED(maindb_root, sizeof(maindb_root->mp_txnid));
     MDBX_ASAN_UNPOISON_MEMORY_REGION(maindb_root,
                                      sizeof(maindb_root->mp_txnid));
@@ -13194,9 +13215,10 @@ static int txn_renew(MDBX_txn *txn, const unsigned flags) {
       }
 #endif /* Windows */
     } else {
-      if (unlikely(txn->mt_dbs[FREE_DBI].md_flags != MDBX_INTEGERKEY)) {
-        ERROR("unexpected/invalid db-flags 0x%u for GC/FreeDB",
-              txn->mt_dbs[FREE_DBI].md_flags);
+      if (unlikely((txn->mt_dbs[FREE_DBI].md_flags & DB_PERSISTENT_FLAGS) !=
+                   MDBX_INTEGERKEY)) {
+        ERROR("unexpected/invalid db-flags 0x%x for %s",
+              txn->mt_dbs[FREE_DBI].md_flags, "GC/FreeDB");
         rc = MDBX_INCOMPATIBLE;
         goto bailout;
       }
@@ -13215,7 +13237,7 @@ static int txn_renew(MDBX_txn *txn, const unsigned flags) {
   }
 bailout:
   tASSERT(txn, rc != MDBX_SUCCESS);
-  txn_end(txn, MDBX_END_SLOT | MDBX_END_FAIL_BEGIN);
+  txn_end(txn, MDBX_END_SLOT | MDBX_END_EOTDONE | MDBX_END_FAIL_BEGIN);
   return rc;
 }
 
@@ -14609,7 +14631,7 @@ retry:
       if (unlikely(!ctx->retired_stored)) {
         /* Make sure last page of GC is touched and on retired-list */
         rc = cursor_last(&ctx->cursor, nullptr, nullptr);
-        if (likely(rc != MDBX_SUCCESS))
+        if (likely(rc == MDBX_SUCCESS))
           rc = gcu_touch(ctx);
         if (unlikely(rc != MDBX_SUCCESS) && rc != MDBX_NOTFOUND)
           goto bailout;
@@ -15514,7 +15536,7 @@ static __inline void txn_merge(MDBX_txn *const parent, MDBX_txn *const txn,
             }
             ++w;
           }
-        NOTICE("squash to begin for extending-merge %zu -> %zu", d, w - 1);
+        VERBOSE("squash to begin for extending-merge %zu -> %zu", d, w - 1);
         d = w - 1;
         continue;
       }
@@ -15556,7 +15578,7 @@ static __inline void txn_merge(MDBX_txn *const parent, MDBX_txn *const txn,
             }
             --w;
           }
-        NOTICE("squash to end for shrinking-merge %zu -> %zu", d, w + 1);
+        VERBOSE("squash to end for shrinking-merge %zu -> %zu", d, w + 1);
         d = w + 1;
         continue;
       }
@@ -16273,6 +16295,22 @@ static int validate_meta(MDBX_env *env, MDBX_meta *const meta,
     return MDBX_RESULT_TRUE;
   }
 
+  if (unlikely(meta->mm_extra_flags != 0)) {
+    WARNING("meta[%u] has unsupported %s 0x%x, skip it", meta_number,
+            "extra-flags", meta->mm_extra_flags);
+    return MDBX_RESULT_TRUE;
+  }
+  if (unlikely(meta->mm_validator_id != 0)) {
+    WARNING("meta[%u] has unsupported %s 0x%x, skip it", meta_number,
+            "validator-id", meta->mm_validator_id);
+    return MDBX_RESULT_TRUE;
+  }
+  if (unlikely(meta->mm_extra_pagehdr != 0)) {
+    WARNING("meta[%u] has unsupported %s 0x%x, skip it", meta_number,
+            "extra-pageheader", meta->mm_extra_pagehdr);
+    return MDBX_RESULT_TRUE;
+  }
+
   /* LY: check signature as a checksum */
   if (META_IS_STEADY(meta) &&
       unlikely(unaligned_peek_u64(4, &meta->mm_sign) != meta_sign(meta))) {
@@ -16438,12 +16476,12 @@ static int validate_meta(MDBX_env *env, MDBX_meta *const meta,
                  meta->mm_dbs[FREE_DBI].md_entries ||
                  meta->mm_dbs[FREE_DBI].md_leaf_pages ||
                  meta->mm_dbs[FREE_DBI].md_overflow_pages)) {
-      WARNING("meta[%u] has false-empty %s, skip it", meta_number, "GC");
+      WARNING("meta[%u] has false-empty %s, skip it", meta_number, "GC/FreeDB");
       return MDBX_CORRUPTED;
     }
   } else if (unlikely(meta->mm_dbs[FREE_DBI].md_root >= meta->mm_geo.next)) {
     WARNING("meta[%u] has invalid %s-root %" PRIaPGNO ", skip it", meta_number,
-            "GC", meta->mm_dbs[FREE_DBI].md_root);
+            "GC/FreeDB", meta->mm_dbs[FREE_DBI].md_root);
     return MDBX_CORRUPTED;
   }
 
@@ -16465,7 +16503,7 @@ static int validate_meta(MDBX_env *env, MDBX_meta *const meta,
 
   if (unlikely(meta->mm_dbs[FREE_DBI].md_mod_txnid > txnid)) {
     WARNING("meta[%u] has wrong md_mod_txnid %" PRIaTXN " for %s, skip it",
-            meta_number, meta->mm_dbs[FREE_DBI].md_mod_txnid, "GC");
+            meta_number, meta->mm_dbs[FREE_DBI].md_mod_txnid, "GC/FreeDB");
     return MDBX_CORRUPTED;
   }
 
@@ -16473,6 +16511,13 @@ static int validate_meta(MDBX_env *env, MDBX_meta *const meta,
     WARNING("meta[%u] has wrong md_mod_txnid %" PRIaTXN " for %s, skip it",
             meta_number, meta->mm_dbs[MAIN_DBI].md_mod_txnid, "MainDB");
     return MDBX_CORRUPTED;
+  }
+
+  if (unlikely((meta->mm_dbs[FREE_DBI].md_flags & DB_PERSISTENT_FLAGS) !=
+               MDBX_INTEGERKEY)) {
+    WARNING("meta[%u] has unexpected/invalid db-flags 0x%x for %s", meta_number,
+            meta->mm_dbs[FREE_DBI].md_flags, "GC/FreeDB");
+    return MDBX_INCOMPATIBLE;
   }
 
   return MDBX_SUCCESS;
@@ -18906,7 +18951,10 @@ __cold int mdbx_env_deleteW(const wchar_t *pathname,
         err = MDBX_SUCCESS;
     }
 
-    if (err == MDBX_SUCCESS && !(dummy_env->me_flags & MDBX_NOSUBDIR)) {
+    if (err == MDBX_SUCCESS && !(dummy_env->me_flags & MDBX_NOSUBDIR) &&
+        (/* pathname != "." */ pathname[0] != '.' || pathname[1] != 0) &&
+        (/* pathname != ".." */ pathname[0] != '.' || pathname[1] != '.' ||
+         pathname[2] != 0)) {
       err = osal_removedirectory(pathname);
       if (err == MDBX_SUCCESS)
         rc = MDBX_SUCCESS;
@@ -21364,9 +21412,11 @@ static __hot int cursor_put_nochecklen(MDBX_cursor *mc, const MDBX_val *key,
   int err;
   DKBUF_DEBUG;
   MDBX_env *const env = mc->mc_txn->mt_env;
+  if (LOG_ENABLED(MDBX_LOG_DEBUG) && (flags & MDBX_RESERVE))
+    data->iov_base = nullptr;
   DEBUG("==> put db %d key [%s], size %" PRIuPTR ", data [%s] size %" PRIuPTR,
-        DDBI(mc), DKEY_DEBUG(key), key->iov_len,
-        DVAL_DEBUG((flags & MDBX_RESERVE) ? nullptr : data), data->iov_len);
+        DDBI(mc), DKEY_DEBUG(key), key->iov_len, DVAL_DEBUG(data),
+        data->iov_len);
 
   if ((flags & MDBX_CURRENT) != 0 && (mc->mc_flags & C_SUB) == 0) {
     if (unlikely(flags & (MDBX_APPEND | MDBX_NOOVERWRITE)))
@@ -27129,9 +27179,29 @@ int mdbx_dbi_close(MDBX_env *env, MDBX_dbi dbi) {
 
   rc = osal_fastmutex_acquire(&env->me_dbi_lock);
   if (likely(rc == MDBX_SUCCESS)) {
-    rc = (dbi < env->me_maxdbs && (env->me_dbflags[dbi] & DB_VALID))
-             ? dbi_close_locked(env, dbi)
-             : MDBX_BAD_DBI;
+  retry:
+    rc = MDBX_BAD_DBI;
+    if (dbi < env->me_maxdbs && (env->me_dbflags[dbi] & DB_VALID)) {
+      const MDBX_txn *const hazard = env->me_txn;
+      osal_compiler_barrier();
+      if (env->me_txn0 && (env->me_txn0->mt_flags & MDBX_TXN_FINISHED) == 0) {
+        if (env->me_txn0->mt_dbistate[dbi] & (DBI_DIRTY | DBI_CREAT))
+          goto bailout_dirty_dbi;
+        osal_memory_barrier();
+        if (unlikely(hazard != env->me_txn))
+          goto retry;
+        if (hazard != env->me_txn0 && hazard &&
+            (hazard->mt_flags & MDBX_TXN_FINISHED) == 0 &&
+            hazard->mt_signature == MDBX_MT_SIGNATURE &&
+            (hazard->mt_dbistate[dbi] & (DBI_DIRTY | DBI_CREAT)))
+          goto bailout_dirty_dbi;
+        osal_compiler_barrier();
+        if (unlikely(hazard != env->me_txn))
+          goto retry;
+      }
+      rc = dbi_close_locked(env, dbi);
+    }
+  bailout_dirty_dbi:
     ENSURE(env, osal_fastmutex_release(&env->me_dbi_lock) == MDBX_SUCCESS);
   }
   return rc;
@@ -30775,11 +30845,10 @@ MDBX_INTERNAL_FUNC int osal_ioring_add(osal_ioring_t *ior, const size_t offset,
     item->sgv[0].Buffer = PtrToPtr64(data);
     for (size_t i = 1; i < segments; ++i) {
       data = ptr_disp(data, ior->pagesize);
-      item->sgv[slots_used].Buffer = PtrToPtr64(data);
+      item->sgv[i].Buffer = PtrToPtr64(data);
     }
-    item->sgv[slots_used].Buffer = 0;
+    item->sgv[slots_used = segments].Buffer = 0;
     assert((item->single.iov_len & ior_WriteFile_flag) == 0);
-    slots_used = segments;
   }
   ior->last_bytes = bytes;
   ior_last_sgvcnt(ior, item) = slots_used;
@@ -33408,16 +33477,15 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
 #elif defined(HW_USERMEM) || defined(HW_PHYSMEM64) || defined(HW_MEMSIZE) ||   \
     defined(HW_PHYSMEM)
     size_t ram, len = sizeof(ram);
-    static const int mib[] = {
-      CTL_HW,
+    static const int mib[] = {CTL_HW,
 #if defined(HW_USERMEM)
-      HW_USERMEM
+                              HW_USERMEM
 #elif defined(HW_PHYSMEM64)
-      HW_PHYSMEM64
+                              HW_PHYSMEM64
 #elif defined(HW_MEMSIZE)
-      HW_MEMSIZE
+                              HW_MEMSIZE
 #else
-      HW_PHYSMEM
+                              HW_PHYSMEM
 #endif
     };
     if (sysctl(
@@ -33458,12 +33526,11 @@ __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
 #elif defined(VM_TOTAL) || defined(VM_METER)
     struct vmtotal info;
     size_t len = sizeof(info);
-    static const int mib[] = {
-      CTL_VM,
+    static const int mib[] = {CTL_VM,
 #if defined(VM_TOTAL)
-      VM_TOTAL
+                              VM_TOTAL
 #elif defined(VM_METER)
-      VM_METER
+                              VM_METER
 #endif
     };
     if (sysctl(
@@ -33558,10 +33625,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
-        10,
+        12,
         0,
-        {"2024-03-13T14:57:38+03:00", "aae6814edf6ccf95e83a8f3ddc6694c5f71649dc", "aea40fb79ff6eb54f40efeb9c46c8c51fc368a34",
-         "v0.12.10-0-gaea40fb7"},
+        {"2024-10-27T11:07:49+03:00", "2064385324e69d2a430a29f7402082aaa44b4434", "b16c2570f069134b96e6cc3eebcb3537cbc55e67",
+         "v0.12.12-0-gb16c2570"},
         sourcery};
 
 __dll_export
@@ -35178,16 +35245,16 @@ __cold MDBX_INTERNAL_FUNC int osal_lck_init(MDBX_env *env,
       if LCK already opened/used inside current process */
         ;
 
-    /* FIXME: Unfortunately, there is no other reliable way but to long testing
-     * on each platform. On the other hand, behavior like FreeBSD is incorrect
-     * and we can expect it to be rare. Moreover, even on FreeBSD without
-     * additional in-process initialization, the probability of an problem
-     * occurring is vanishingly small, and the symptom is a return of EINVAL
-     * while locking a mutex. In other words, in the worst case, the problem
-     * results in an EINVAL error at the start of the transaction, but NOT data
-     * loss, nor database corruption, nor other fatal troubles. Thus, the code
-     * below I am inclined to think the workaround for erroneous platforms (like
-     * FreeBSD), rather than a defect of libmdbx. */
+  /* FIXME: Unfortunately, there is no other reliable way but to long testing
+   * on each platform. On the other hand, behavior like FreeBSD is incorrect
+   * and we can expect it to be rare. Moreover, even on FreeBSD without
+   * additional in-process initialization, the probability of an problem
+   * occurring is vanishingly small, and the symptom is a return of EINVAL
+   * while locking a mutex. In other words, in the worst case, the problem
+   * results in an EINVAL error at the start of the transaction, but NOT data
+   * loss, nor database corruption, nor other fatal troubles. Thus, the code
+   * below I am inclined to think the workaround for erroneous platforms (like
+   * FreeBSD), rather than a defect of libmdbx. */
 #if defined(__FreeBSD__)
   /* seems that shared mutexes on FreeBSD required in-process initialization */
   (void)global_uniqueness_flag;

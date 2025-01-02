@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY 80f8d3cca95e09b6d77d31515372cc042bf47022b369a7a53abdda9f68c04519_v0_12_10_0_gaea40fb7
+#define MDBX_BUILD_SOURCERY 0e1c8e56485e54e08f8b91bd0fbcb3008c5720a53798abd90620ddbbb254e369_v0_12_12_0_gb16c2570
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -115,8 +115,8 @@
 #endif
 #if _MSC_VER > 1914
 #pragma warning(                                                               \
-        disable : 5105) /* winbase.h(9531): warning C5105: macro expansion     \
-                           producing 'defined' has undefined behavior */
+    disable : 5105) /* winbase.h(9531): warning C5105: macro expansion         \
+                       producing 'defined' has undefined behavior */
 #endif
 #if _MSC_VER > 1930
 #pragma warning(disable : 6235) /* <expression> is always a constant */
@@ -145,8 +145,8 @@
 #pragma warning(disable : 4204) /* nonstandard extension used: non-constant    \
                                    aggregate initializer */
 #pragma warning(                                                               \
-        disable : 4505) /* unreferenced local function has been removed */
-#endif                  /* _MSC_VER (warnings) */
+    disable : 4505) /* unreferenced local function has been removed */
+#endif              /* _MSC_VER (warnings) */
 
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
@@ -249,6 +249,10 @@
 
 #ifndef __has_extension
 #define __has_extension(x) (0)
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x) (0)
 #endif
 
 #if __has_feature(thread_sanitizer)
@@ -664,7 +668,7 @@ __extern_C key_t ftok(const char *, int);
 
 #ifndef container_of
 #define container_of(ptr, type, member)                                        \
-  ((type *)((char *)(ptr)-offsetof(type, member)))
+  ((type *)((char *)(ptr) - offsetof(type, member)))
 #endif /* container_of */
 
 /*----------------------------------------------------------------------------*/
@@ -675,7 +679,7 @@ __extern_C key_t ftok(const char *, int);
 #elif defined(_MSC_VER)
 #define __always_inline __forceinline
 #else
-#define __always_inline
+#define __always_inline __inline
 #endif
 #endif /* __always_inline */
 
@@ -2960,7 +2964,7 @@ typedef struct MDBX_page {
 #define P_LOOSE 0x4000u      /* page was dirtied then freed, can be reused */
 #define P_FROZEN 0x8000u     /* used for retire page with known status */
 #define P_ILL_BITS                                                             \
-  ((uint16_t) ~(P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_SPILLED))
+  ((uint16_t)~(P_BRANCH | P_LEAF | P_LEAF2 | P_OVERFLOW | P_SPILLED))
   uint16_t mp_flags;
   union {
     uint32_t mp_pages; /* number of overflow pages */
@@ -3579,8 +3583,8 @@ struct MDBX_cursor {
 #define C_SUB 0x04         /* Cursor is a sub-cursor */
 #define C_DEL 0x08         /* last op was a cursor_del */
 #define C_UNTRACK 0x10     /* Un-track cursor when closing */
-#define C_GCU                                                                                  \
-  0x20 /* Происходит подготовка к обновлению GC, поэтому \
+#define C_GCU                                                                  \
+  0x20 /* Происходит подготовка к обновлению GC, поэтому                     \
         * можно брать страницы из GC даже для FREE_DBI */
   uint8_t mc_flags;
 

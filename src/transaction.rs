@@ -266,7 +266,7 @@ pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(txn: &Mutex<Txn
     (f)(lck.0)
 }
 
-impl<'db, E> Transaction<'db, RW, E>
+impl<E> Transaction<'_, RW, E>
 where
     E: DatabaseKind,
 {
@@ -432,7 +432,7 @@ where
     }
 }
 
-impl<'db, E> Transaction<'db, RO, E>
+impl<E> Transaction<'_, RO, E>
 where
     E: DatabaseKind,
 {
@@ -447,7 +447,7 @@ where
     }
 }
 
-impl<'db> Transaction<'db, RW, NoWriteMap> {
+impl Transaction<'_, RW, NoWriteMap> {
     /// Begins a new nested transaction inside of this transaction.
     pub fn begin_nested_txn(&mut self) -> Result<Transaction<'_, RW, NoWriteMap>> {
         txn_execute(&self.txn, |txn| {
@@ -470,7 +470,7 @@ impl<'db> Transaction<'db, RW, NoWriteMap> {
     }
 }
 
-impl<'db, K, E> fmt::Debug for Transaction<'db, K, E>
+impl<K, E> fmt::Debug for Transaction<'_, K, E>
 where
     K: TransactionKind,
     E: DatabaseKind,
@@ -480,7 +480,7 @@ where
     }
 }
 
-impl<'db, K, E> Drop for Transaction<'db, K, E>
+impl<K, E> Drop for Transaction<'_, K, E>
 where
     K: TransactionKind,
     E: DatabaseKind,
