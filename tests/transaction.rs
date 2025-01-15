@@ -254,14 +254,30 @@ fn test_drop_table() {
 #[test]
 fn test_concurrent_readers_single_writer() {
     let dir = tempdir().unwrap();
-    let db: Arc<Database> = Arc::new(Database::open(&dir).unwrap());
+    let db: Arc<Database> = Arc::new(
+        Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                max_tables: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    );
 
     let n = 10usize; // Number of concurrent readers
     let barrier = Arc::new(Barrier::new(n + 1));
     let mut threads: Vec<JoinHandle<bool>> = Vec::with_capacity(n);
 
+    const TABLE: Option<&str> = Some("test");
     let key = b"key";
     let val = b"val";
+
+    {
+        let txn = db.begin_rw_txn().unwrap();
+        txn.create_table(TABLE, TableFlags::empty()).unwrap();
+        txn.commit().unwrap();
+    }
 
     for _ in 0..n {
         let reader_db = db.clone();
@@ -270,21 +286,21 @@ fn test_concurrent_readers_single_writer() {
         threads.push(thread::spawn(move || {
             {
                 let txn = reader_db.begin_ro_txn().unwrap();
-                let table = txn.open_table(None).unwrap();
+                let table = txn.open_table(TABLE).unwrap();
                 assert_eq!(txn.get::<()>(&table, key).unwrap(), None);
             }
             reader_barrier.wait();
             reader_barrier.wait();
             {
                 let txn = reader_db.begin_ro_txn().unwrap();
-                let table = txn.open_table(None).unwrap();
+                let table = txn.open_table(TABLE).unwrap();
                 txn.get::<[u8; 3]>(&table, key).unwrap().unwrap() == *val
             }
         }));
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TABLE).unwrap();
     println!("wait2");
     barrier.wait();
     txn.put(&table, key, val, WriteFlags::empty()).unwrap();

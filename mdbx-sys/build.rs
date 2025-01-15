@@ -45,6 +45,11 @@ impl ParseCallbacks for Callbacks {
             | "MDBX_TOO_LARGE"
             | "MDBX_THREAD_MISMATCH"
             | "MDBX_TXN_OVERLAPPING"
+            | "MDBX_BACKLOG_DEPLETED"
+            | "MDBX_DUPLICATED_CLK"
+            | "MDBX_DANGLING_DBI"
+            | "MDBX_OUSTED"
+            | "MDBX_MVCC_RETARDED"
             | "MDBX_LAST_ERRCODE" => Some(IntKind::Int),
             _ => Some(IntKind::UInt),
         }
@@ -82,9 +87,11 @@ fn main() {
 
     let mut cc_builder = cc::Build::new();
     cc_builder
-        .flag_if_supported("-Wno-unused-parameter")
-        .flag_if_supported("-Wbad-function-cast")
-        .flag_if_supported("-Wuninitialized");
+        .flag_if_supported("-Wall")
+        .flag_if_supported("-Werror")
+        .flag_if_supported("-ffunction-sections")
+        .flag_if_supported("-fvisibility=hidden")
+        .flag_if_supported("-Wno-error=attributes");
 
     let flags = format!(
         "\"-NDEBUG={} {}\"",
