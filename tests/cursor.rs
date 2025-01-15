@@ -424,7 +424,10 @@ fn test_put_del() {
     );
 
     cursor.del(WriteFlags::empty()).unwrap();
-    assert_eq!(cursor.get_current::<Vec<u8>, Vec<u8>>().unwrap(), None);
+    assert_eq!(
+        cursor.get_current::<Vec<u8>, Vec<u8>>().unwrap(),
+        Some((b"key2".into(), b"val2".into()))
+    );
     assert_eq!(
         cursor.last().unwrap().unwrap(),
         (
