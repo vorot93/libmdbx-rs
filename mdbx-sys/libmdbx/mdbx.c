@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 0e1c8e56485e54e08f8b91bd0fbcb3008c5720a53798abd90620ddbbb254e369_v0_12_12_0_gb16c2570
+#define MDBX_BUILD_SOURCERY e156c1a97c017ce89d6541cd9464ae5a9761d76b3fd2f1696521f5f3792904fc_v0_12_13_0_g1fff1f67
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -6806,12 +6806,11 @@ static __always_inline size_t dpl_size2bytes(ptrdiff_t size) {
 
 static __always_inline size_t dpl_bytes2size(const ptrdiff_t bytes) {
   size_t size = (bytes - sizeof(MDBX_dpl)) / sizeof(MDBX_dp);
-  assert(size > CURSOR_STACK + MDBX_DPL_RESERVE_GAP &&
-         size <= MDBX_PGL_LIMIT + MDBX_PNL_GRANULATE);
   size -= MDBX_DPL_RESERVE_GAP;
 #if MDBX_DPL_PREALLOC_FOR_RADIXSORT
   size >>= 1;
 #endif /* MDBX_DPL_PREALLOC_FOR_RADIXSORT */
+  assert(size > CURSOR_STACK && size <= MDBX_PGL_LIMIT + MDBX_PNL_GRANULATE);
   return size;
 }
 
@@ -10986,7 +10985,7 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
    * диском будет более кучным, а у страниц ближе к концу БД будет больше шансов
    * попасть под авто-компактификацию. Частично эта тактика уже реализована, но
    * для её эффективности требуется явно приоритезировать выделение страниц:
-   *   - поддерживать для relist, для ближних и для дальних страниц;
+   *   - поддерживать два relist, для ближних и для дальних страниц;
    *   - использовать страницы из дальнего списка, если первый пуст,
    *     а второй слишком большой, либо при пустой GC.
    *
@@ -10994,11 +10993,11 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
    * регионы будут линейными, что принципиально ускоряет запись на HDD.
    * Одновременно, в среднем это не повлияет на чтение, точнее говоря, если
    * порядок чтения не совпадает с порядком изменения (иначе говоря, если
-   * чтение не коррклирует с обновлениями и/или вставками) то не повлияет, иначе
+   * чтение не коррелирует с обновлениями и/или вставками) то не повлияет, иначе
    * может ускорить. Однако, последовательности в среднем достаточно редки.
    * Поэтому для эффективности требуется аккумулировать и поддерживать в ОЗУ
    * огромные списки страниц, а затем сохранять их обратно в БД. Текущий формат
-   * БД (без битовых карт) для этого крайне не удачен. Поэтому эта тактика не
+   * БД (без сжатых битовых карт) для этого крайне не удачен. Поэтому эта тактика не
    * имеет шансов быть успешной без смены формата БД (Mithril).
    *
    * 3. Стараться экономить последовательности страниц. Это позволяет избегать
@@ -11007,7 +11006,7 @@ __hot static pgno_t relist_get_single(MDBX_txn *txn) {
    * информации от приложения библиотека не может знать насколько
    * востребованными будут последовательности в ближайшей перспективе, а
    * экономия последовательностей "на всякий случай" не только затратна
-   * сама-по-себе, но и работает во вред.
+   * сама-по-себе, но и работает во вред (добавляет хаоса).
    *
    * Поэтому:
    *  - в TODO добавляется разделение relist на «ближние» и «дальние» страницы,
@@ -13330,7 +13329,7 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags,
   *ret = NULL;
 
   if (unlikely((flags & ~MDBX_TXN_RW_BEGIN_FLAGS) &&
-               (flags & ~MDBX_TXN_RO_BEGIN_FLAGS)))
+               (parent || (flags & ~MDBX_TXN_RO_BEGIN_FLAGS))))
     return MDBX_EINVAL;
 
   int rc = check_env(env, true);
@@ -13348,8 +13347,13 @@ int mdbx_txn_begin_ex(MDBX_env *env, MDBX_txn *parent, MDBX_txn_flags_t flags,
     /* Nested transactions: Max 1 child, write txns only, no writemap */
     rc = check_txn_rw(parent,
                       MDBX_TXN_RDONLY | MDBX_WRITEMAP | MDBX_TXN_BLOCKED);
-    if (unlikely(rc != MDBX_SUCCESS))
+    if (unlikely(rc != MDBX_SUCCESS)) {
+      if (rc == MDBX_BAD_TXN && (parent->mt_flags & (MDBX_TXN_RDONLY | MDBX_TXN_BLOCKED)) == 0) {
+        ERROR("%s mode is incompatible with nested transactions", "MDBX_WRITEMAP");
+        rc = MDBX_INCOMPATIBLE;
+      }
       return rc;
+    }
 
     if (env->me_options.spill_parent4child_denominator) {
       /* Spill dirty-pages of parent to provide dirtyroom for child txn */
@@ -14860,10 +14864,10 @@ retry:
           if (unlikely(ctx->rid <= MIN_TXNID)) {
             if (unlikely(MDBX_PNL_GETSIZE(txn->tw.lifo_reclaimed) <=
                          ctx->reused_slot)) {
-              NOTICE("** restart: reserve depleted (reused_gc_slot %zu >= "
-                     "lifo_reclaimed %zu" PRIaTXN,
-                     ctx->reused_slot,
-                     MDBX_PNL_GETSIZE(txn->tw.lifo_reclaimed));
+              VERBOSE("** restart: reserve depleted (reused_gc_slot %zu >= "
+                      "lifo_reclaimed %zu" PRIaTXN,
+                      ctx->reused_slot,
+                      MDBX_PNL_GETSIZE(txn->tw.lifo_reclaimed));
               goto retry;
             }
             break;
@@ -15098,7 +15102,7 @@ retry:
         tASSERT(txn, ctx->lifo == 0);
         fill_gc_id = unaligned_peek_u64(4, key.iov_base);
         if (ctx->filled_slot-- == 0 || fill_gc_id > txn->tw.last_reclaimed) {
-          NOTICE(
+          VERBOSE(
               "** restart: reserve depleted (filled_slot %zu, fill_id %" PRIaTXN
               " > last_reclaimed %" PRIaTXN,
               ctx->filled_slot, fill_gc_id, txn->tw.last_reclaimed);
@@ -15107,9 +15111,9 @@ retry:
       } else {
         tASSERT(txn, ctx->lifo != 0);
         if (++ctx->filled_slot > MDBX_PNL_GETSIZE(txn->tw.lifo_reclaimed)) {
-          NOTICE("** restart: reserve depleted (filled_gc_slot %zu > "
-                 "lifo_reclaimed %zu" PRIaTXN,
-                 ctx->filled_slot, MDBX_PNL_GETSIZE(txn->tw.lifo_reclaimed));
+          VERBOSE("** restart: reserve depleted (filled_gc_slot %zu > "
+                  "lifo_reclaimed %zu" PRIaTXN,
+                  ctx->filled_slot, MDBX_PNL_GETSIZE(txn->tw.lifo_reclaimed));
           goto retry;
         }
         fill_gc_id = txn->tw.lifo_reclaimed[ctx->filled_slot];
@@ -20566,7 +20570,8 @@ cursor_set(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data, MDBX_cursor_op op) {
   struct cursor_set_result ret;
   ret.exact = false;
   if (unlikely(key->iov_len < mc->mc_dbx->md_klen_min ||
-               key->iov_len > mc->mc_dbx->md_klen_max)) {
+               (key->iov_len > mc->mc_dbx->md_klen_max &&
+                (mc->mc_dbx->md_klen_min == mc->mc_dbx->md_klen_max || MDBX_DEBUG || MDBX_FORCE_ASSERTIONS)))) {
     cASSERT(mc, !"Invalid key-size");
     ret.err = MDBX_BAD_VALSIZE;
     return ret;
@@ -21032,10 +21037,8 @@ static __hot int cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
     }
     rc = MDBX_SUCCESS;
     if (unlikely(C_INITIALIZED != (mc->mc_xcursor->mx_cursor.mc_flags &
-                                   (C_INITIALIZED | C_EOF)))) {
-      rc = MDBX_NOTFOUND;
+                                   (C_INITIALIZED | C_EOF))))
       break;
-    }
     goto fetch_multiple;
   case MDBX_NEXT_MULTIPLE:
     if (unlikely(!data))
@@ -21051,8 +21054,6 @@ static __hot int cursor_get(MDBX_cursor *mc, MDBX_val *key, MDBX_val *data,
             page_numkeys(mx->mc_pg[mx->mc_top]) * mx->mc_db->md_xsize;
         data->iov_base = page_data(mx->mc_pg[mx->mc_top]);
         mx->mc_ki[mx->mc_top] = (indx_t)page_numkeys(mx->mc_pg[mx->mc_top]) - 1;
-      } else {
-        rc = MDBX_NOTFOUND;
       }
     }
     break;
@@ -27174,9 +27175,6 @@ int mdbx_dbi_close(MDBX_env *env, MDBX_dbi dbi) {
   if (unlikely(dbi >= env->me_maxdbs))
     return MDBX_BAD_DBI;
 
-  if (unlikely(dbi < CORE_DBS || dbi >= env->me_maxdbs))
-    return MDBX_BAD_DBI;
-
   rc = osal_fastmutex_acquire(&env->me_dbi_lock);
   if (likely(rc == MDBX_SUCCESS)) {
   retry:
@@ -33090,6 +33088,29 @@ __cold static LSTATUS mdbx_RegGetValue(HKEY hKey, LPCSTR lpSubKey,
 }
 #endif
 
+static size_t hamming_weight(size_t v) {
+  const size_t m1 = (size_t)UINT64_C(0x5555555555555555);
+  const size_t m2 = (size_t)UINT64_C(0x3333333333333333);
+  const size_t m4 = (size_t)UINT64_C(0x0f0f0f0f0f0f0f0f);
+  const size_t h01 = (size_t)UINT64_C(0x0101010101010101);
+  v -= (v >> 1) & m1;
+  v = (v & m2) + ((v >> 2) & m2);
+  v = (v + (v >> 4)) & m4;
+  return (v * h01) >> (sizeof(v) * 8 - 8);
+}
+
+static inline size_t hw64(uint64_t v) {
+  size_t r = hamming_weight((size_t)v);
+  if (sizeof(v) > sizeof(r))
+    r += hamming_weight((size_t)(v >> sizeof(r) * 4 >> sizeof(r) * 4));
+  return r;
+}
+
+static bool check_uuid(bin128_t uuid) {
+  size_t hw = hw64(uuid.x) + hw64(uuid.y) + hw64(uuid.x ^ uuid.y);
+  return (hw >> 6) == 1;
+}
+
 __cold MDBX_MAYBE_UNUSED static bool
 bootid_parse_uuid(bin128_t *s, const void *p, const size_t n) {
   if (n > 31) {
@@ -33123,7 +33144,7 @@ bootid_parse_uuid(bin128_t *s, const void *p, const size_t n) {
       s->y += aligned.y;
     } else
       bootid_collect(s, p, n);
-    return true;
+    return check_uuid(*s);
   }
 
   if (n)
@@ -33131,28 +33152,53 @@ bootid_parse_uuid(bin128_t *s, const void *p, const size_t n) {
   return false;
 }
 
-__cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
-  bin128_t bin = {{0, 0}};
+#if defined(__linux__) || defined(__gnu_linux__)
+
+__cold static bool is_inside_lxc(void) {
+  bool inside_lxc = false;
+  FILE *mounted = setmntent("/proc/mounts", "r");
+  if (mounted) {
+    const struct mntent *ent;
+    while (nullptr != (ent = getmntent(mounted))) {
+      if (strcmp(ent->mnt_fsname, "lxcfs") == 0 &&
+          strncmp(ent->mnt_dir, "/proc/", 6) == 0) {
+        inside_lxc = true;
+        break;
+      }
+    }
+    endmntent(mounted);
+  }
+  return inside_lxc;
+}
+
+__cold static bool proc_read_uuid(const char *path, bin128_t *target) {
+  const int fd = open(path, O_RDONLY | O_NOFOLLOW);
+  if (fd != -1) {
+    struct statfs fs;
+    char buf[42];
+    const ssize_t len =
+        (fstatfs(fd, &fs) == 0 &&
+         (fs.f_type == /* procfs */ 0x9FA0 ||
+          (fs.f_type == /* tmpfs */ 0x1021994 && is_inside_lxc())))
+            ? read(fd, buf, sizeof(buf))
+            : -1;
+    const int err = close(fd);
+    assert(err == 0);
+    (void)err;
+    if (len > 0)
+      return bootid_parse_uuid(target, buf, len);
+  }
+  return false;
+}
+#endif /* Linux */
+
+__cold bin128_t osal_bootid(void) {
+  bin128_t uuid = {{0, 0}};
   bool got_machineid = false, got_boottime = false, got_bootseq = false;
 
 #if defined(__linux__) || defined(__gnu_linux__)
-  {
-    const int fd =
-        open("/proc/sys/kernel/random/boot_id", O_RDONLY | O_NOFOLLOW);
-    if (fd != -1) {
-      struct statfs fs;
-      char buf[42];
-      const ssize_t len =
-          (fstatfs(fd, &fs) == 0 && fs.f_type == /* procfs */ 0x9FA0)
-              ? read(fd, buf, sizeof(buf))
-              : -1;
-      const int err = close(fd);
-      assert(err == 0);
-      (void)err;
-      if (len > 0 && bootid_parse_uuid(&bin, buf, len))
-        return bin;
-    }
-  }
+  if (proc_read_uuid("/proc/sys/kernel/random/boot_id", &uuid))
+    return uuid;
 #endif /* Linux */
 
 #if defined(__APPLE__) || defined(__MACH__)
@@ -33160,16 +33206,15 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
     char buf[42];
     size_t len = sizeof(buf);
     if (!sysctlbyname("kern.bootsessionuuid", buf, &len, nullptr, 0) &&
-        bootid_parse_uuid(&bin, buf, len))
-      return bin;
+        bootid_parse_uuid(&uuid, buf, len))
+      return uuid;
 
 #if defined(__MAC_OS_X_VERSION_MIN_REQUIRED) &&                                \
     __MAC_OS_X_VERSION_MIN_REQUIRED > 1050
-    uuid_t uuid;
+    uuid_t hostuuid;
     struct timespec wait = {0, 1000000000u / 42};
-    if (!gethostuuid(uuid, &wait) &&
-        bootid_parse_uuid(&bin, uuid, sizeof(uuid)))
-      got_machineid = true;
+    if (!gethostuuid(hostuuid, &wait))
+      got_machineid = bootid_parse_uuid(&uuid, hostuuid, sizeof(hostuuid));
 #endif /* > 10.5 */
 
     struct timeval boottime;
@@ -33207,7 +33252,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
                          "MachineGuid", &buf.MachineGuid,
                          &len) == ERROR_SUCCESS &&
         len < sizeof(buf))
-      got_machineid = bootid_parse_uuid(&bin, &buf.MachineGuid, len);
+      got_machineid = bootid_parse_uuid(&uuid, &buf.MachineGuid, len);
 
     if (!got_machineid) {
       /* again, Windows is madness */
@@ -33225,7 +33270,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
                            "DigitalProductId", &buf.DigitalProductId,
                            &len) == ERROR_SUCCESS &&
           len > 42 && len < sizeof(buf)) {
-        bootid_collect(&bin, &buf.DigitalProductId, len);
+        bootid_collect(&uuid, &buf.DigitalProductId, len);
         got_machineid = true;
       }
       len = sizeof(buf);
@@ -33233,7 +33278,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
                            "DigitalProductId", &buf.DigitalProductId,
                            &len) == ERROR_SUCCESS &&
           len > 42 && len < sizeof(buf)) {
-        bootid_collect(&bin, &buf.DigitalProductId, len);
+        bootid_collect(&uuid, &buf.DigitalProductId, len);
         got_machineid = true;
       }
       len = sizeof(buf);
@@ -33241,7 +33286,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
                            "DigitalProductId", &buf.DigitalProductId,
                            &len) == ERROR_SUCCESS &&
           len > 42 && len < sizeof(buf)) {
-        bootid_collect(&bin, &buf.DigitalProductId, len);
+        bootid_collect(&uuid, &buf.DigitalProductId, len);
         got_machineid = true;
       }
     }
@@ -33253,7 +33298,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
     if (mdbx_RegGetValue(HKEY_LOCAL_MACHINE, HKLM_PrefetcherParams, "BootId",
                          &buf.BootId, &len) == ERROR_SUCCESS &&
         len > 1 && len < sizeof(buf)) {
-      bootid_collect(&bin, &buf.BootId, len);
+      bootid_collect(&uuid, &buf.BootId, len);
       got_bootseq = true;
     }
 
@@ -33261,7 +33306,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
     if (mdbx_RegGetValue(HKEY_LOCAL_MACHINE, HKLM_PrefetcherParams, "BaseTime",
                          &buf.BaseTime, &len) == ERROR_SUCCESS &&
         len >= sizeof(buf.BaseTime) && buf.BaseTime) {
-      bootid_collect(&bin, &buf.BaseTime, len);
+      bootid_collect(&uuid, &buf.BaseTime, len);
       got_boottime = true;
     }
 
@@ -33277,7 +33322,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
           buf.SysTimeOfDayInfoHacked.BootTime.QuadPart -
           buf.SysTimeOfDayInfoHacked.BootTimeBias;
       if (UnbiasedBootTime) {
-        bootid_collect(&bin, &UnbiasedBootTime, sizeof(UnbiasedBootTime));
+        bootid_collect(&uuid, &UnbiasedBootTime, sizeof(UnbiasedBootTime));
         got_boottime = true;
       }
     }
@@ -33285,7 +33330,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
     if (!got_boottime) {
       uint64_t boottime = windows_bootime();
       if (boottime) {
-        bootid_collect(&bin, &boottime, sizeof(boottime));
+        bootid_collect(&uuid, &boottime, sizeof(boottime));
         got_boottime = true;
       }
     }
@@ -33302,8 +33347,8 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
             (int *)
 #endif
                 mib,
-            ARRAY_LENGTH(mib), &buf, &len, NULL, 0) == 0)
-      got_machineid = bootid_parse_uuid(&bin, buf, len);
+            ARRAY_LENGTH(mib), &buf, &len, nullptr, 0) == 0)
+      got_machineid = bootid_parse_uuid(&uuid, buf, len);
   }
 #endif /* CTL_HW && HW_UUID */
 
@@ -33317,8 +33362,8 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
             (int *)
 #endif
                 mib,
-            ARRAY_LENGTH(mib), &buf, &len, NULL, 0) == 0)
-      got_machineid = bootid_parse_uuid(&bin, buf, len);
+            ARRAY_LENGTH(mib), &buf, &len, nullptr, 0) == 0)
+      got_machineid = bootid_parse_uuid(&uuid, buf, len);
   }
 #endif /* CTL_KERN && KERN_HOSTUUID */
 
@@ -33326,16 +33371,33 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
   if (!got_machineid) {
     char buf[42];
     size_t len = sizeof(buf);
-    if (sysctlbyname("machdep.dmi.system-uuid", buf, &len, NULL, 0) == 0)
-      got_machineid = bootid_parse_uuid(&bin, buf, len);
+    if (sysctlbyname("machdep.dmi.system-uuid", buf, &len, nullptr, 0) == 0)
+      got_machineid = bootid_parse_uuid(&uuid, buf, len);
   }
 #endif /* __NetBSD__ */
 
+#if !(defined(_WIN32) || defined(_WIN64))
+  if (!got_machineid) {
+    int fd = open("/etc/machine-id", O_RDONLY);
+    if (fd == -1)
+      fd = open("/var/lib/dbus/machine-id", O_RDONLY);
+    if (fd != -1) {
+      char buf[42];
+      const ssize_t len = read(fd, buf, sizeof(buf));
+      const int err = close(fd);
+      assert(err == 0);
+      (void)err;
+      if (len > 0)
+        got_machineid = bootid_parse_uuid(&uuid, buf, len);
+    }
+  }
+#endif /* !Windows */
+
 #if _XOPEN_SOURCE_EXTENDED
   if (!got_machineid) {
-    const int hostid = gethostid();
-    if (hostid > 0) {
-      bootid_collect(&bin, &hostid, sizeof(hostid));
+    const long hostid = gethostid();
+    if (hostid != 0 && hostid != -1) {
+      bootid_collect(&uuid, &hostid, sizeof(hostid));
       got_machineid = true;
     }
   }
@@ -33343,8 +33405,8 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
 
   if (!got_machineid) {
   lack:
-    bin.x = bin.y = 0;
-    return bin;
+    uuid.x = uuid.y = 0;
+    return uuid;
   }
 
   /*--------------------------------------------------------------------------*/
@@ -33359,9 +33421,9 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
             (int *)
 #endif
                 mib,
-            ARRAY_LENGTH(mib), &boottime, &len, NULL, 0) == 0 &&
+            ARRAY_LENGTH(mib), &boottime, &len, nullptr, 0) == 0 &&
         len == sizeof(boottime) && boottime.tv_sec) {
-      bootid_collect(&bin, &boottime, len);
+      bootid_collect(&uuid, &boottime, len);
       got_boottime = true;
     }
   }
@@ -33378,11 +33440,11 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
           switch (kn->data_type) {
           case KSTAT_DATA_INT32:
           case KSTAT_DATA_UINT32:
-            bootid_collect(&bin, &kn->value, sizeof(int32_t));
+            bootid_collect(&uuid, &kn->value, sizeof(int32_t));
             got_boottime = true;
           case KSTAT_DATA_INT64:
           case KSTAT_DATA_UINT64:
-            bootid_collect(&bin, &kn->value, sizeof(int64_t));
+            bootid_collect(&uuid, &kn->value, sizeof(int64_t));
             got_boottime = true;
           }
         }
@@ -33398,12 +33460,12 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
     const struct utmpx id = {.ut_type = BOOT_TIME};
     const struct utmpx *entry = getutxid(&id);
     if (entry) {
-      bootid_collect(&bin, entry, sizeof(*entry));
+      bootid_collect(&uuid, entry, sizeof(*entry));
       got_boottime = true;
       while (unlikely((entry = getutxid(&id)) != nullptr)) {
         /* have multiple reboot records, assuming we can distinguish next
          * bootsession even if RTC is wrong or absent */
-        bootid_collect(&bin, entry, sizeof(*entry));
+        bootid_collect(&uuid, entry, sizeof(*entry));
         got_bootseq = true;
       }
     }
@@ -33432,7 +33494,7 @@ __cold MDBX_INTERNAL_FUNC bin128_t osal_bootid(void) {
       goto lack;
   }
 
-  return bin;
+  return uuid;
 }
 
 __cold int mdbx_get_sysraminfo(intptr_t *page_size, intptr_t *total_pages,
@@ -33625,10 +33687,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         12,
-        12,
+        13,
         0,
-        {"2024-10-27T11:07:49+03:00", "2064385324e69d2a430a29f7402082aaa44b4434", "b16c2570f069134b96e6cc3eebcb3537cbc55e67",
-         "v0.12.12-0-gb16c2570"},
+        {"2025-02-28T23:34:52+03:00", "240ba36a2661369aae042378919f1a185aac9705", "1fff1f67d5862b4f5c129b0d735913ac3ee1aaec",
+         "v0.12.13-0-g1fff1f67"},
         sourcery};
 
 __dll_export

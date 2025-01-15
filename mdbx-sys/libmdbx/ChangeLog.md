@@ -4,6 +4,65 @@ ChangeLog
 English version [by Google](https://gitflic-ru.translate.goog/project/erthink/libmdbx/blob?file=ChangeLog.md&_x_tr_sl=ru&_x_tr_tl=en)
 and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/gitflic.ru/project/erthink/libmdbx/blob?file=ChangeLog.md).
 
+## v0.12.13 от 2025-02-28
+
+Поддерживающий выпуск с исправлением обнаруженных ошибок и устранением недочетов.
+
+Это последний/консервирующий выпуск куста стабильных версий 0.12.x, спустя более двух
+лет после выпуска 0.12.1.
+
+```
+git diff' stat: 14 commits, 7 files changed, 256 insertions(+), 103 deletions(-)
+Signed-off-by: Леонид Юрьев (Leonid Yuriev) <leo@yuriev.ru>
+```
+
+Значимые исправления:
+
+ - Исправлена обработка `MDBX_GET_MULTIPLE` в специальных случаях и одного значения у ключа в позиции курсора.
+
+ - Устранена ошибка неверной обработки попытки запуска вложенной читающей транзакции.
+   Теперь в таких ситуациях возвращается ошибка `MDBX_EINVAL`, так как вложенность
+   поддерживается только для транзакций чтения-записи.
+
+   Ошибка была внесена при рефакторинге, коммитом `2f2df1ee76ab137ee66d00af69a82a30dc0d6deb`
+   чуть более 5 лет назад и долго оставалось не замеченной.
+
+ - Поддержка получения boot_id при работе внутри LXC-контейнера.
+
+   Из LXC-контейнера не доступен файл хостовой системы `/proc/sys/kernel/random/boot_id`.
+   Вместо него, при каждом старте контейнера, создается и заполняется
+   случайными данными собственный boot_id смонтированный через bind из `tmpfs`.
+   https://github.com/lxc/lxc/issues/3027
+
+   Ранее этот подставной/замещенный boot_id отбраковывался внутри libmdbx,
+   так как файл располагается в `tmpfs`, а не в файловой системе `/proc`.
+   В результате boot_id для проверки целостности БД не был доступен.
+   Теперь при работе внутри LXC-контейнера такой bootid будет использоваться.
+
+   Однако, полноценно работающий контроль по boot_id не возможен, так как при
+   рестарте LXC-контейнера (но не хоста) boot_id будет меняться, хотя
+   данные в unified page cache сохраняются.
+
+   Таким образом, при рестарте LXC-контейнера без рестарта хоста, libmdbx придется
+   откатить состояние БД до крайней точки устойчивой фиксации, что повлечет
+   утрату данных пользователя в случаях когда они могли быть сохранены.
+   Однако, улучшить ситуацию пока не представляется возможным, как минимум
+   до доступности boot_id хостовой системы изнутри LXC-контейнера.
+
+ - Доработан контроль длины ключа внутри `cursor_set()`.
+
+   Ранее проверка внутри `cursor_set()` не позволяла искать ключи длиннее, чем можно поместить в таблицу.
+   Однако, при поиске/позиционировании это не является ошибкой для таблиц с ключами переменного размера.
+
+ - Теперь при попытке запуска вложенных транзакций в режиме `MDBX_WRITEMAP` производится
+   логирование и возврат ошибки `MDBX_INCOMPATIBLE`.
+
+ - Доработано использование `std::experimental::filesystem` для решения проблем со сборкой в старых компиляторах.
+
+
+--------------------------------------------------------------------------------
+
+
 ## v0.12.12 "Доллежаль" от 2024-10-27
 
 Поддерживающий выпуск с исправлением обнаруженных ошибок и устранением недочетов,
@@ -16,7 +75,7 @@ and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/gitflic
 рекомендуется использовать ветку `master`.
 
 ```
-git diff' stat: x commits, y files changed, z insertions(+), zz deletions(-)
+git diff' stat: 6 commits, 5 files changed, 239 insertions(+), 6 deletions(-)
 Signed-off-by: Леонид Юрьев (Leonid Yuriev) <leo@yuriev.ru>
 ```
 
@@ -41,7 +100,6 @@ Signed-off-by: Леонид Юрьев (Leonid Yuriev) <leo@yuriev.ru>
    созданию таблицы с пустым именем, утечки страниц БД и/или нарушению
    структуры b-tree (неверной ссылкой на корень таблицы).
    Добавлен соответствующий тест `extra/early_close_dbi`.
-
 
 
 --------------------------------------------------------------------------------
@@ -1940,7 +1998,7 @@ Deprecated functions and flags:
  - Rework `MADV_DONTNEED` threshold.
  - Fix `mdbx_chk` utility for don't checking some numbers if walking on the B-tree was disabled.
  - Use page's mp_txnid for basic integrity checking.
- - Add `MDBX_FORCE_ASSERTIONS` built-time option.
+ - Add `MDBX_FORCE_ASSERTIONS` build-time option.
  - Rework `MDBX_DBG_DUMP` to avoid performance degradation.
  - Rename `MDBX_NOSYNC` to `MDBX_SAFE_NOSYNC` for clarity.
  - Interpret `ERROR_ACCESS_DENIED` from `OpenProcess()` as 'process exists'.
