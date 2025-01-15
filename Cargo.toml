@@ -2,7 +2,6 @@
 name = "libmdbx"
 version = "0.5.3"
 edition = "2021"
-rust-version = "1.79"
 license = "MPL-2.0"
 description = "Idiomatic and safe MDBX wrapper."
 documentation = "https://docs.rs/libmdbx"
