@@ -1,5 +1,6 @@
 use crate::{
     error::{mdbx_result, Error, Result},
+    latency::CommitLatency,
     table::Table,
     transaction::{RO, RW},
     Mode, ReadWriteOptions, SyncMode, Transaction, TransactionKind,
@@ -77,7 +78,7 @@ pub(crate) enum TxnManagerMessage {
     },
     Commit {
         tx: TxnPtr,
-        sender: SyncSender<Result<bool>>,
+        sender: SyncSender<Result<(bool, CommitLatency)>>,
     },
 }
 
@@ -284,10 +285,14 @@ where
                                 .unwrap();
                         }
                         TxnManagerMessage::Commit { tx, sender } => {
+                            let mut latency = CommitLatency::new();
                             sender
-                                .send(mdbx_result(unsafe {
-                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                }))
+                                .send(
+                                    mdbx_result(unsafe {
+                                        ffi::mdbx_txn_commit_ex(tx.0, &mut latency.0)
+                                    })
+                                    .map(|v| (v, latency)),
+                                )
                                 .unwrap();
                         }
                     },
@@ -494,7 +499,8 @@ impl GeometryInfo {
 ///
 /// Contains database information about the map size, readers, last txn id etc.
 #[repr(transparent)]
-pub struct Info(ffi::MDBX_envinfo);
+pub struct Info(pub(crate) ffi::MDBX_envinfo);
+pub type PgOpStat = ffi::MDBX_envinfo__bindgen_ty_3;
 
 impl Info {
     pub fn geometry(&self) -> GeometryInfo {
@@ -529,6 +535,12 @@ impl Info {
     #[inline]
     pub fn num_readers(&self) -> usize {
         self.0.mi_numreaders as usize
+    }
+
+    /// Max reader slots used in the database
+    #[inline]
+    pub fn pg_op_stat(&self) -> PgOpStat {
+        self.0.mi_pgop_stat
     }
 }
 
