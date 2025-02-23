@@ -8,27 +8,31 @@ fn test_open() {
     let dir = tempdir().unwrap();
 
     // opening non-existent database with read-only should fail
-    assert!(Database::open_with_options(
-        &dir,
-        DatabaseOptions {
-            mode: Mode::ReadOnly,
-            ..Default::default()
-        }
-    )
-    .is_err());
+    assert!(
+        Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                mode: Mode::ReadOnly,
+                ..Default::default()
+            }
+        )
+        .is_err()
+    );
 
     // opening non-existent database should succeed
     assert!(Database::open(&dir).is_ok());
 
     // opening database with read-only should succeed
-    assert!(Database::open_with_options(
-        &dir,
-        DatabaseOptions {
-            mode: Mode::ReadOnly,
-            ..Default::default()
-        }
-    )
-    .is_ok());
+    assert!(
+        Database::open_with_options(
+            &dir,
+            DatabaseOptions {
+                mode: Mode::ReadOnly,
+                ..Default::default()
+            }
+        )
+        .is_ok()
+    );
 }
 
 #[test]

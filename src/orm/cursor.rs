@@ -1,5 +1,5 @@
 use super::traits::*;
-use crate::{TransactionKind, WriteFlags, RW};
+use crate::{RW, TransactionKind, WriteFlags};
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]

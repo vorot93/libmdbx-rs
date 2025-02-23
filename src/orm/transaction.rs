@@ -1,5 +1,5 @@
 use super::{cursor::*, traits::*};
-use crate::{Stat, TransactionKind, WriteFlags, WriteMap, RO, RW};
+use crate::{RO, RW, Stat, TransactionKind, WriteFlags, WriteMap};
 use anyhow::Context;
 use std::{collections::HashMap, marker::PhantomData};
 

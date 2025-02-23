@@ -1,5 +1,5 @@
 use libmdbx::{Database, NoWriteMap, WriteFlags};
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 
 pub fn get_key(n: u32) -> String {
     format!("key{n}")

@@ -1,4 +1,4 @@
-use crate::{error::mdbx_result, Error, TransactionKind};
+use crate::{Error, TransactionKind, error::mdbx_result};
 use derive_more::{Deref, DerefMut, Display};
 use std::{borrow::Cow, slice};
 use thiserror::Error;
@@ -17,7 +17,7 @@ pub trait Decodable<'tx> {
     where
         Self: Sized,
     {
-        let s = slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len);
+        let s = unsafe { slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len) };
 
         Decodable::decode(s)
     }
@@ -33,9 +33,10 @@ impl<'tx> Decodable<'tx> for Cow<'tx, [u8]> {
         txn: *const ffi::MDBX_txn,
         data_val: &ffi::MDBX_val,
     ) -> Result<Self, Error> {
-        let is_dirty = (!K::ONLY_CLEAN) && mdbx_result(ffi::mdbx_is_dirty(txn, data_val.iov_base))?;
+        let is_dirty =
+            (!K::ONLY_CLEAN) && mdbx_result(unsafe { ffi::mdbx_is_dirty(txn, data_val.iov_base) })?;
 
-        let s = slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len);
+        let s = unsafe { slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len) };
 
         Ok(if is_dirty {
             Cow::Owned(s.to_vec())
@@ -56,7 +57,7 @@ impl<'tx> Decodable<'tx> for lifetimed_bytes::Bytes<'tx> {
         txn: *const ffi::MDBX_txn,
         data_val: &ffi::MDBX_val,
     ) -> Result<Self, Error> {
-        Cow::<'tx, [u8]>::decode_val::<K>(txn, data_val).map(From::from)
+        unsafe { Cow::<'tx, [u8]>::decode_val::<K>(txn, data_val).map(From::from) }
     }
 }
 

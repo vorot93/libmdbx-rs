@@ -1,7 +1,7 @@
 [package]
 name = "mdbx-sys"
 version = "12.12.0"
-edition = "2021"
+edition = "2024"
 license = "MPL-2.0"
 description = "Rust bindings for libmdbx."
 documentation = "https://docs.rs/mdbx-sys"

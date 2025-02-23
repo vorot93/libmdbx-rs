@@ -11,7 +11,7 @@ pub use crate::{
     error::{Error, Result},
     flags::*,
     table::Table,
-    transaction::{Transaction, TransactionKind, RO, RW},
+    transaction::{RO, RW, Transaction, TransactionKind},
 };
 
 mod codec;

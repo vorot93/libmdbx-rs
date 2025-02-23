@@ -1,11 +1,11 @@
 use crate::{
-    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
-    error::{mdbx_result, Result},
-    flags::{c_enum, TableFlags, WriteFlags},
-    table::Table,
     Cursor, Decodable, Error, Stat,
+    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
+    error::{Result, mdbx_result},
+    flags::{TableFlags, WriteFlags, c_enum},
+    table::Table,
 };
-use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
+use ffi::{MDBX_TXN_RDONLY, MDBX_TXN_READWRITE, MDBX_txn_flags_t};
 use indexmap::IndexSet;
 use libc::{c_uint, c_void};
 use parking_lot::Mutex;
@@ -16,7 +16,7 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ptr, result, slice,
-    sync::{mpsc::sync_channel, Arc},
+    sync::{Arc, mpsc::sync_channel},
 };
 
 #[sealed]
@@ -389,7 +389,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_table<'txn>(&'txn self, table: Table<'txn>) -> Result<()> {
-        mdbx_result(txn_execute(&self.txn, |txn| {
+        mdbx_result(txn_execute(&self.txn, |txn| unsafe {
             ffi::mdbx_drop(txn, table.dbi(), true)
         }))?;
 
@@ -406,7 +406,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn close_table(&self, table: Table<'_>) -> Result<()> {
-        mdbx_result(ffi::mdbx_dbi_close(self.db.ptr().0, table.dbi()))?;
+        mdbx_result(unsafe { ffi::mdbx_dbi_close(self.db.ptr().0, table.dbi()) })?;
 
         Ok(())
     }
