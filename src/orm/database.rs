@@ -181,8 +181,8 @@ where
 
 #[macro_export]
 macro_rules! table {
-    ($(#[$docs:meta])+ ( $name:ident ) $key:ty [ $seek_key:ty ] => $value:ty) => {
-        $(#[$docs])+
+    ($(#[$docs:meta])* ( $name:ident ) $key:ty [ $seek_key:ty ] => $value:ty) => {
+        $(#[$docs])*
         ///
         #[doc = concat!("Takes [`", stringify!($key), "`] as a key and returns [`", stringify!($value), "`]")]
         #[derive(Clone, Copy, Debug, Default)]
@@ -208,9 +208,9 @@ macro_rules! table {
             }
         }
     };
-    ($(#[$docs:meta])+ ( $name:ident ) $key:ty => $value:ty) => {
+    ($(#[$docs:meta])* ( $name:ident ) $key:ty => $value:ty) => {
         table!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $name ) $key [ $key ] => $value
         );
     };
@@ -218,9 +218,9 @@ macro_rules! table {
 
 #[macro_export]
 macro_rules! dupsort {
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty [$seek_value:ty] ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty [$seek_value:ty] ) => {
         table!(
-            $(#[$docs])+
+            $(#[$docs])*
             ///
             #[doc = concat!("`DUPSORT` table with seek value type being: [`", stringify!($seek_value), "`].")]
             ( $table_name ) $key [$seek_key] => $value
@@ -230,23 +230,23 @@ macro_rules! dupsort {
         }
     };
 
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty ) => {
         dupsort!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $table_name ) $key [$seek_key] => $value [$value]
         );
     };
 
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty => $value:ty [$seek_value:ty] ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty => $value:ty [$seek_value:ty] ) => {
         dupsort!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $table_name ) $key [$key] => $value [$seek_value]
         );
     };
 
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty => $value:ty ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty => $value:ty ) => {
         dupsort!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $table_name ) $key [$key] => $value [$value]
         );
     };
