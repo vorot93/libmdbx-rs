@@ -503,7 +503,7 @@ typedef mode_t mdbx_mode_t;
 #define MDBX_NORETURN _Noreturn
 #elif defined(DOXYGEN) || (defined(__cplusplus) && __cplusplus >= 201103L) ||  \
     (!defined(__cplusplus) && defined(__STDC_VERSION__) &&                     \
-     __STDC_VERSION__ > 202005L)
+     __STDC_VERSION__ > 202005L && false)
 #define MDBX_NORETURN [[noreturn]]
 #elif defined(__GNUC__) || __has_attribute(__noreturn__)
 #define MDBX_NORETURN __attribute__((__noreturn__))
