@@ -1,12 +1,12 @@
 mod utils;
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use ffi::*;
 use libc::size_t;
 use libmdbx::{ObjectLength, WriteFlags};
 use rand::{SeedableRng, prelude::SliceRandom};
 use rand_xorshift::XorShiftRng;
-use std::ptr;
+use std::{hint::black_box, ptr};
 use utils::*;
 
 fn bench_get_rand(c: &mut Criterion) {
