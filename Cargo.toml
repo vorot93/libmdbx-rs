@@ -38,7 +38,7 @@ sealed = "0.6"
 tempfile = { version = "3", optional = true }
 thiserror = "2"
 
-ffi = { package = "mdbx-sys", version = "=12.13.2", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "=13.6.0", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
