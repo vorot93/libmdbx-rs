@@ -2,6 +2,7 @@ use libmdbx::*;
 use std::{
     borrow::Cow,
     io::Write,
+    path::Path,
     sync::{Arc, Barrier},
     thread::{self, JoinHandle},
 };
@@ -9,13 +10,28 @@ use tempfile::tempdir;
 
 type Database = libmdbx::Database<NoWriteMap>;
 
+pub const TEST_TABLE: Option<&str> = Some("test");
+
+pub fn test_db(path: impl AsRef<Path>) -> Database {
+    test_db_with_options(path, |_| {})
+}
+
+pub fn test_db_with_options(
+    path: impl AsRef<Path>,
+    f: impl FnOnce(&mut DatabaseOptions),
+) -> Database {
+    let mut options = DatabaseOptions::default();
+    f(&mut options);
+    Database::open_with_options(path, options).unwrap()
+}
+
 #[test]
 fn test_put_get_del() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.create_table(TEST_TABLE, Default::default()).unwrap();
 
     let data = [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")];
 
@@ -25,7 +41,7 @@ fn test_put_get_del() {
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
 
     for (k, v) in data {
         assert_eq!(txn.get(&table, k).unwrap(), Some(*v));
@@ -41,10 +57,10 @@ fn test_put_get_del() {
 #[test]
 fn test_put_get_del_multi() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    let table = txn.create_table(TEST_TABLE, TableFlags::DUP_SORT).unwrap();
     for (k, v) in [
         (b"key1", b"val1"),
         (b"key1", b"val2"),
