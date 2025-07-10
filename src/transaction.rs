@@ -194,7 +194,11 @@ where
     /// The returned table handle may be shared among any transaction in the database.
     ///
     /// The table name may not contain the null character.
-    pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
+    pub fn open_table<'txn>(&'txn self, name: &str) -> Result<Table<'txn>> {
+        self.open_table_priv(Some(name))
+    }
+
+    pub(crate) fn open_table_priv<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
         Table::new(self, name, ffi::MDBX_DB_ACCEDE as c_uint)
     }
 
@@ -247,12 +251,8 @@ where
     ///
     /// This function will fail with [Error::BadRslot](crate::error::Error::BadRslot) if called by a thread with an open
     /// transaction.
-    pub fn create_table<'txn>(
-        &'txn self,
-        name: Option<&str>,
-        flags: TableFlags,
-    ) -> Result<Table<'txn>> {
-        Table::new(self, name, flags.bits() | ffi::MDBX_CREATE as c_uint)
+    pub fn create_table<'txn>(&'txn self, name: &str, flags: TableFlags) -> Result<Table<'txn>> {
+        Table::new(self, Some(name), flags.bits() | ffi::MDBX_CREATE as c_uint)
     }
 
     /// Stores an item into a table.

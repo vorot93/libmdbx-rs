@@ -91,7 +91,7 @@ where
     _marker: PhantomData<E>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct DatabaseOptions {
     pub permissions: Option<ffi::mdbx_mode_t>,
     pub max_readers: Option<c_uint>,
@@ -554,7 +554,7 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PageSize {
     MinimalAcceptable,
     Set(usize),

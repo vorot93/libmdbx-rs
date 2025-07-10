@@ -1,16 +1,17 @@
+mod utils;
+
 use libmdbx::*;
 use std::borrow::Cow;
 use tempfile::tempdir;
-
-type Database = libmdbx::Database<NoWriteMap>;
+use utils::*;
 
 #[test]
 fn test_get() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
 
     assert_eq!(None, txn.cursor(&table).unwrap().first::<(), ()>().unwrap());
 
@@ -35,10 +36,10 @@ fn test_get() {
 #[test]
 fn test_get_dup() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [
         (b"key1", b"val1"),
         (b"key1", b"val2"),
@@ -91,12 +92,10 @@ fn test_get_dup() {
 #[test]
 fn test_get_dupfixed() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT | TableFlags::DUP_FIXED);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn
-        .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
-        .unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [
         (b"key1", b"val1"),
         (b"key1", b"val2"),
@@ -117,7 +116,7 @@ fn test_get_dupfixed() {
 #[test]
 fn test_iter() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let items = vec![
         (*b"key1", *b"val1"),
@@ -128,7 +127,7 @@ fn test_iter() {
 
     {
         let txn = db.begin_rw_txn().unwrap();
-        let table = txn.open_table(None).unwrap();
+        let table = txn.open_table(TEST_TABLE).unwrap();
         for (key, data) in &items {
             txn.put(&table, key, data, WriteFlags::empty()).unwrap();
         }
@@ -136,7 +135,7 @@ fn test_iter() {
     }
 
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
 
     // Because Result implements FromIterator, we can collect the iterator
@@ -187,9 +186,9 @@ fn test_iter() {
 #[test]
 fn test_iter_empty_database() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
 
     assert!(cursor.iter::<(), ()>().next().is_none());
@@ -200,14 +199,10 @@ fn test_iter_empty_database() {
 #[test]
 fn test_iter_empty_dup_database() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
-
-    let txn = db.begin_rw_txn().unwrap();
-    txn.create_table(None, TableFlags::DUP_SORT).unwrap();
-    txn.commit().unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
 
     assert!(cursor.iter::<(), ()>().next().is_none());
@@ -229,11 +224,7 @@ fn test_iter_empty_dup_database() {
 #[test]
 fn test_iter_dup() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
-
-    let txn = db.begin_rw_txn().unwrap();
-    txn.create_table(None, TableFlags::DUP_SORT).unwrap();
-    txn.commit().unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let items = [
         (b"a", b"1"),
@@ -256,14 +247,14 @@ fn test_iter_dup() {
     {
         let txn = db.begin_rw_txn().unwrap();
         for (key, data) in items.clone() {
-            let table = txn.open_table(None).unwrap();
+            let table = txn.open_table(TEST_TABLE).unwrap();
             txn.put(&table, key, data, WriteFlags::empty()).unwrap();
         }
         txn.commit().unwrap();
     }
 
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(
         items,
@@ -343,12 +334,12 @@ fn test_iter_dup() {
 #[test]
 fn test_iter_del_get() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let items = vec![(*b"a", *b"1"), (*b"b", *b"2")];
     {
         let txn = db.begin_rw_txn().unwrap();
-        let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+        let table = txn.open_table(TEST_TABLE).unwrap();
         assert_eq!(
             txn.cursor(&table)
                 .unwrap()
@@ -363,7 +354,7 @@ fn test_iter_del_get() {
 
     {
         let txn = db.begin_rw_txn().unwrap();
-        let table = txn.open_table(None).unwrap();
+        let table = txn.open_table(TEST_TABLE).unwrap();
         for (key, data) in &items {
             txn.put(&table, key, data, WriteFlags::empty()).unwrap();
         }
@@ -371,7 +362,7 @@ fn test_iter_del_get() {
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
     assert_eq!(
         items,
@@ -407,10 +398,10 @@ fn test_iter_del_get() {
 #[test]
 fn test_put_del() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     let mut cursor = txn.cursor(&table).unwrap();
 
     for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {

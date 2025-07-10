@@ -61,7 +61,7 @@ impl Database {
             let tx = this.inner.begin_rw_txn()?;
             for (table, settings) in chart {
                 tx.create_table(
-                    Some(table),
+                    table,
                     if settings.dup_sort {
                         TableFlags::DUP_SORT
                     } else {

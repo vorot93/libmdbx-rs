@@ -1,7 +1,8 @@
+mod utils;
+
 use libmdbx::*;
 use tempfile::tempdir;
-
-type Database = libmdbx::Database<NoWriteMap>;
+use utils::{Database, *};
 
 #[test]
 fn test_open() {
@@ -66,6 +67,19 @@ fn test_begin_txn() {
 #[test]
 fn test_open_table() {
     let dir = tempdir().unwrap();
+    let db = test_db(&dir);
+
+    let txn = db.begin_ro_txn().unwrap();
+    assert!(txn.open_table(TEST_TABLE).is_ok());
+    assert!(
+        txn.open_table(&TEST_TABLE.chars().chain("_abc".chars()).collect::<String>())
+            .is_err()
+    );
+}
+
+#[test]
+fn test_create_table() {
+    let dir = tempdir().unwrap();
     let db = Database::open_with_options(
         &dir,
         DatabaseOptions {
@@ -75,27 +89,10 @@ fn test_open_table() {
     )
     .unwrap();
 
-    let txn = db.begin_ro_txn().unwrap();
-    assert!(txn.open_table(None).is_ok());
-    assert!(txn.open_table(Some("test")).is_err());
-}
-
-#[test]
-fn test_create_table() {
-    let dir = tempdir().unwrap();
-    let db = Database::open_with_options(
-        &dir,
-        DatabaseOptions {
-            max_tables: Some(11),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
     let txn = db.begin_rw_txn().unwrap();
-    assert!(txn.open_table(Some("test")).is_err());
-    assert!(txn.create_table(Some("test"), TableFlags::empty()).is_ok());
-    assert!(txn.open_table(Some("test")).is_ok())
+    assert!(txn.open_table(TEST_TABLE).is_err());
+    assert!(txn.create_table(TEST_TABLE, TableFlags::empty()).is_ok());
+    assert!(txn.open_table(TEST_TABLE).is_ok())
 }
 
 #[test]
@@ -104,15 +101,15 @@ fn test_close_table() {
     let db = Database::open_with_options(
         &dir,
         DatabaseOptions {
-            max_tables: Some(10),
+            max_tables: Some(1),
             ..Default::default()
         },
     )
     .unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    txn.create_table(Some("test"), TableFlags::empty()).unwrap();
-    txn.open_table(Some("test")).unwrap();
+    txn.create_table(TEST_TABLE, TableFlags::empty()).unwrap();
+    txn.open_table(TEST_TABLE).unwrap();
 }
 
 #[test]
@@ -138,22 +135,22 @@ fn test_sync() {
 #[test]
 fn test_stat() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     // Stats should be empty initially.
     let stat = db.stat().unwrap();
-    assert_eq!(stat.depth(), 0);
+    assert_eq!(stat.depth(), 1);
     assert_eq!(stat.branch_pages(), 0);
-    assert_eq!(stat.leaf_pages(), 0);
+    assert_eq!(stat.leaf_pages(), 1);
     assert_eq!(stat.overflow_pages(), 0);
-    assert_eq!(stat.entries(), 0);
+    assert_eq!(stat.entries(), 1);
 
     // Write a few small values.
     for i in 0..64_u64 {
         let value = i.to_le_bytes();
         let tx = db.begin_rw_txn().unwrap();
         tx.put(
-            &tx.open_table(None).unwrap(),
+            &tx.open_table(TEST_TABLE).unwrap(),
             value,
             value,
             WriteFlags::default(),
@@ -164,11 +161,11 @@ fn test_stat() {
 
     // Stats should now reflect inserted values.
     let stat = db.stat().unwrap();
-    assert_eq!(stat.depth(), 1);
+    assert_eq!(stat.depth(), 2);
     assert_eq!(stat.branch_pages(), 0);
-    assert_eq!(stat.leaf_pages(), 1);
+    assert_eq!(stat.leaf_pages(), 2);
     assert_eq!(stat.overflow_pages(), 0);
-    assert_eq!(stat.entries(), 64);
+    assert_eq!(stat.entries(), 65);
 }
 
 #[test]
@@ -186,7 +183,7 @@ fn test_info() {
 #[test]
 fn test_freelist() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let mut freelist = db.freelist().unwrap();
     assert_eq!(freelist, 0);
@@ -196,7 +193,7 @@ fn test_freelist() {
         let value = i.to_le_bytes();
         let tx = db.begin_rw_txn().unwrap();
         tx.put(
-            &tx.open_table(None).unwrap(),
+            &tx.open_table(TEST_TABLE).unwrap(),
             value,
             value,
             WriteFlags::default(),
@@ -205,7 +202,7 @@ fn test_freelist() {
         tx.commit().unwrap();
     }
     let tx = db.begin_rw_txn().unwrap();
-    tx.clear_table(&tx.open_table(None).unwrap()).unwrap();
+    tx.clear_table(&tx.open_table(TEST_TABLE).unwrap()).unwrap();
     tx.commit().unwrap();
 
     // Freelist should not be empty after clear_table.

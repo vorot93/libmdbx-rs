@@ -1,3 +1,5 @@
+mod utils;
+
 use libmdbx::*;
 use std::{
     borrow::Cow,
@@ -6,16 +8,17 @@ use std::{
     thread::{self, JoinHandle},
 };
 use tempfile::tempdir;
+use utils::*;
 
 type Database = libmdbx::Database<NoWriteMap>;
 
 #[test]
 fn test_put_get_del() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
 
     let data = [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")];
 
@@ -25,7 +28,7 @@ fn test_put_get_del() {
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
 
     for (k, v) in data {
         assert_eq!(txn.get(&table, k).unwrap(), Some(*v));
@@ -41,10 +44,10 @@ fn test_put_get_del() {
 #[test]
 fn test_put_get_del_multi() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [
         (b"key1", b"val1"),
         (b"key1", b"val2"),
@@ -61,7 +64,7 @@ fn test_put_get_del_multi() {
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     {
         let mut cur = txn.cursor(&table).unwrap();
         let iter = cur.iter_dup_of::<(), [u8; 4]>(b"key1");
@@ -71,14 +74,14 @@ fn test_put_get_del_multi() {
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [(b"key1", Some(b"val2" as &[u8])), (b"key2", None)] {
         txn.del(&table, k, v).unwrap();
     }
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     {
         let mut cur = txn.cursor(&table).unwrap();
         let iter = cur.iter_dup_of::<(), [u8; 4]>(b"key1");
@@ -94,16 +97,16 @@ fn test_put_get_del_multi() {
 #[test]
 fn test_put_get_del_empty_key() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, Default::default()).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     txn.put(&table, b"", b"hello", WriteFlags::empty()).unwrap();
     assert_eq!(txn.get(&table, b"").unwrap(), Some(*b"hello"));
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     assert_eq!(txn.get(&table, b"").unwrap(), Some(*b"hello"));
     txn.put(&table, b"", b"", WriteFlags::empty()).unwrap();
     assert_eq!(txn.get(&table, b"").unwrap(), Some(*b""));
@@ -112,10 +115,10 @@ fn test_put_get_del_empty_key() {
 #[test]
 fn test_reserve() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     {
         let mut writer = txn
             .reserve(&table, b"key1", 4, WriteFlags::empty())
@@ -125,7 +128,7 @@ fn test_reserve() {
     txn.commit().unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     assert_eq!(txn.get(&table, b"key1").unwrap(), Some(*b"val1"));
     assert_eq!(txn.get::<()>(&table, b"key").unwrap(), None);
 
@@ -136,11 +139,11 @@ fn test_reserve() {
 #[test]
 fn test_nested_txn() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let mut txn = db.begin_rw_txn().unwrap();
     txn.put(
-        &txn.open_table(None).unwrap(),
+        &txn.open_table(TEST_TABLE).unwrap(),
         b"key1",
         b"val1",
         WriteFlags::empty(),
@@ -149,7 +152,7 @@ fn test_nested_txn() {
 
     {
         let nested = txn.begin_nested_txn().unwrap();
-        let table = nested.open_table(None).unwrap();
+        let table = nested.open_table(TEST_TABLE).unwrap();
         nested
             .put(&table, b"key2", b"val2", WriteFlags::empty())
             .unwrap();
@@ -157,7 +160,7 @@ fn test_nested_txn() {
         assert_eq!(nested.get(&table, b"key2").unwrap(), Some(*b"val2"));
     }
 
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     assert_eq!(txn.get(&table, b"key1").unwrap(), Some(*b"val1"));
     assert_eq!(txn.get::<()>(&table, b"key2").unwrap(), None);
 }
@@ -165,12 +168,12 @@ fn test_nested_txn() {
 #[test]
 fn test_clear_table() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     {
         let txn = db.begin_rw_txn().unwrap();
         txn.put(
-            &txn.open_table(None).unwrap(),
+            &txn.open_table(TEST_TABLE).unwrap(),
             b"key",
             b"val",
             WriteFlags::empty(),
@@ -181,13 +184,14 @@ fn test_clear_table() {
 
     {
         let txn = db.begin_rw_txn().unwrap();
-        txn.clear_table(&txn.open_table(None).unwrap()).unwrap();
+        txn.clear_table(&txn.open_table(TEST_TABLE).unwrap())
+            .unwrap();
         assert!(!txn.commit().unwrap());
     }
 
     let txn = db.begin_ro_txn().unwrap();
     assert_eq!(
-        txn.get::<()>(&txn.open_table(None).unwrap(), b"key")
+        txn.get::<()>(&txn.open_table(TEST_TABLE).unwrap(), b"key")
             .unwrap(),
         None
     );
@@ -197,37 +201,31 @@ fn test_clear_table() {
 fn test_drop_table() {
     let dir = tempdir().unwrap();
     {
-        let db = Database::open_with_options(
-            &dir,
-            DatabaseOptions {
-                max_tables: Some(2),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let db = test_db_with_db_options(&dir, |options| {
+            options.max_tables = Some(2);
+        });
 
         {
             let txn = db.begin_rw_txn().unwrap();
             txn.put(
-                &txn.create_table(Some("test"), TableFlags::empty()).unwrap(),
+                &txn.open_table(TEST_TABLE).unwrap(),
                 b"key",
                 b"val",
                 WriteFlags::empty(),
             )
             .unwrap();
             // Workaround for MDBX dbi drop issue
-            txn.create_table(Some("canary"), TableFlags::empty())
-                .unwrap();
+            txn.create_table("canary", TableFlags::empty()).unwrap();
             assert!(!txn.commit().unwrap());
         }
         {
             let txn = db.begin_rw_txn().unwrap();
-            let table = txn.open_table(Some("test")).unwrap();
+            let table = txn.open_table(TEST_TABLE).unwrap();
             unsafe {
                 txn.drop_table(table).unwrap();
             }
             assert!(matches!(
-                txn.open_table(Some("test")).unwrap_err(),
+                txn.open_table(TEST_TABLE).unwrap_err(),
                 Error::NotFound
             ));
             assert!(!txn.commit().unwrap());
@@ -244,9 +242,9 @@ fn test_drop_table() {
     .unwrap();
 
     let txn = db.begin_ro_txn().unwrap();
-    txn.open_table(Some("canary")).unwrap();
+    txn.open_table("canary").unwrap();
     assert!(matches!(
-        txn.open_table(Some("test")).unwrap_err(),
+        txn.open_table(TEST_TABLE).unwrap_err(),
         Error::NotFound
     ));
 }
@@ -254,30 +252,14 @@ fn test_drop_table() {
 #[test]
 fn test_concurrent_readers_single_writer() {
     let dir = tempdir().unwrap();
-    let db: Arc<Database> = Arc::new(
-        Database::open_with_options(
-            &dir,
-            DatabaseOptions {
-                max_tables: Some(1),
-                ..Default::default()
-            },
-        )
-        .unwrap(),
-    );
+    let db: Arc<Database> = Arc::new(test_db(&dir));
 
     let n = 10usize; // Number of concurrent readers
     let barrier = Arc::new(Barrier::new(n + 1));
     let mut threads: Vec<JoinHandle<bool>> = Vec::with_capacity(n);
 
-    const TABLE: Option<&str> = Some("test");
     let key = b"key";
     let val = b"val";
-
-    {
-        let txn = db.begin_rw_txn().unwrap();
-        txn.create_table(TABLE, TableFlags::empty()).unwrap();
-        txn.commit().unwrap();
-    }
 
     for _ in 0..n {
         let reader_db = db.clone();
@@ -286,21 +268,21 @@ fn test_concurrent_readers_single_writer() {
         threads.push(thread::spawn(move || {
             {
                 let txn = reader_db.begin_ro_txn().unwrap();
-                let table = txn.open_table(TABLE).unwrap();
+                let table = txn.open_table(TEST_TABLE).unwrap();
                 assert_eq!(txn.get::<()>(&table, key).unwrap(), None);
             }
             reader_barrier.wait();
             reader_barrier.wait();
             {
                 let txn = reader_db.begin_ro_txn().unwrap();
-                let table = txn.open_table(TABLE).unwrap();
+                let table = txn.open_table(TEST_TABLE).unwrap();
                 txn.get::<[u8; 3]>(&table, key).unwrap().unwrap() == *val
             }
         }));
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(TABLE).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     println!("wait2");
     barrier.wait();
     txn.put(&table, key, val, WriteFlags::empty()).unwrap();
@@ -315,7 +297,7 @@ fn test_concurrent_readers_single_writer() {
 #[test]
 fn test_concurrent_writers() {
     let dir = tempdir().unwrap();
-    let db = Arc::new(Database::open(&dir).unwrap());
+    let db = Arc::new(test_db(&dir));
 
     let n = 10usize; // Number of concurrent writers
     let mut threads: Vec<JoinHandle<bool>> = Vec::with_capacity(n);
@@ -328,7 +310,7 @@ fn test_concurrent_writers() {
 
         threads.push(thread::spawn(move || {
             let txn = writer_db.begin_rw_txn().unwrap();
-            let table = txn.open_table(None).unwrap();
+            let table = txn.open_table(TEST_TABLE).unwrap();
             txn.put(
                 &table,
                 format!("{key}{i}"),
@@ -342,7 +324,7 @@ fn test_concurrent_writers() {
     assert!(threads.into_iter().all(|b| b.join().unwrap()));
 
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
 
     for i in 0..n {
         assert_eq!(
@@ -357,10 +339,10 @@ fn test_concurrent_writers() {
 #[test]
 fn test_stat() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db(&dir);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, TableFlags::empty()).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {
         txn.put(&table, k, v, WriteFlags::empty()).unwrap();
     }
@@ -368,13 +350,13 @@ fn test_stat() {
 
     {
         let txn = db.begin_ro_txn().unwrap();
-        let table = txn.open_table(None).unwrap();
+        let table = txn.open_table(TEST_TABLE).unwrap();
         let stat = txn.table_stat(&table).unwrap();
         assert_eq!(stat.entries(), 3);
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for k in [b"key1", b"key2"] {
         txn.del(&table, k, None).unwrap();
     }
@@ -382,13 +364,13 @@ fn test_stat() {
 
     {
         let txn = db.begin_ro_txn().unwrap();
-        let table = txn.open_table(None).unwrap();
+        let table = txn.open_table(TEST_TABLE).unwrap();
         let stat = txn.table_stat(&table).unwrap();
         assert_eq!(stat.entries(), 1);
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [(b"key4", b"val4"), (b"key5", b"val5"), (b"key6", b"val6")] {
         txn.put(&table, k, v, WriteFlags::empty()).unwrap();
     }
@@ -396,7 +378,7 @@ fn test_stat() {
 
     {
         let txn = db.begin_ro_txn().unwrap();
-        let table = txn.open_table(None).unwrap();
+        let table = txn.open_table(TEST_TABLE).unwrap();
         let stat = txn.table_stat(&table).unwrap();
         assert_eq!(stat.entries(), 4);
     }
@@ -405,10 +387,10 @@ fn test_stat() {
 #[test]
 fn test_stat_dupsort() {
     let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let db = test_db_with_table_options(&dir, TableFlags::DUP_SORT);
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [
         (b"key1", b"val1"),
         (b"key1", b"val2"),
@@ -426,12 +408,14 @@ fn test_stat_dupsort() {
 
     {
         let txn = db.begin_ro_txn().unwrap();
-        let stat = txn.table_stat(&txn.open_table(None).unwrap()).unwrap();
+        let stat = txn
+            .table_stat(&txn.open_table(TEST_TABLE).unwrap())
+            .unwrap();
         assert_eq!(stat.entries(), 9);
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [(b"key1", Some(b"val2" as &[u8])), (b"key2", None)] {
         txn.del(&table, k, v).unwrap();
     }
@@ -439,12 +423,14 @@ fn test_stat_dupsort() {
 
     {
         let txn = db.begin_ro_txn().unwrap();
-        let stat = txn.table_stat(&txn.open_table(None).unwrap()).unwrap();
+        let stat = txn
+            .table_stat(&txn.open_table(TEST_TABLE).unwrap())
+            .unwrap();
         assert_eq!(stat.entries(), 5);
     }
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
     for (k, v) in [(b"key4", b"val1"), (b"key4", b"val2"), (b"key4", b"val3")] {
         txn.put(&table, k, v, WriteFlags::empty()).unwrap();
     }
@@ -452,7 +438,9 @@ fn test_stat_dupsort() {
 
     {
         let txn = db.begin_ro_txn().unwrap();
-        let stat = txn.table_stat(&txn.open_table(None).unwrap()).unwrap();
+        let stat = txn
+            .table_stat(&txn.open_table(TEST_TABLE).unwrap())
+            .unwrap();
         assert_eq!(stat.entries(), 8);
     }
 }
