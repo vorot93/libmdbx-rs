@@ -26,7 +26,7 @@ pub fn test_db_with_options(
     table_options: TableFlags,
 ) -> Database {
     let mut options = DatabaseOptions {
-        max_tables: Some(2),
+        max_tables: Some(1),
         ..DatabaseOptions::default()
     };
     db_options(&mut options);
