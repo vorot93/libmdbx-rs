@@ -13,7 +13,7 @@ fn bench_get_rand(c: &mut Criterion) {
     let n = 100u32;
     let (_dir, db) = setup_bench_db(n);
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(BENCH_TABLE).unwrap();
 
     let mut keys: Vec<String> = (0..n).map(get_key).collect();
     keys.shuffle(&mut XorShiftRng::from_seed(Default::default()));
@@ -36,7 +36,7 @@ fn bench_get_rand_raw(c: &mut Criterion) {
     let n = 100u32;
     let (_dir, db) = setup_bench_db(n);
     let _txn = db.begin_ro_txn().unwrap();
-    let table = _txn.open_table(None).unwrap();
+    let table = _txn.open_table(BENCH_TABLE).unwrap();
 
     let mut keys: Vec<String> = (0..n).map(get_key).collect();
     keys.shuffle(&mut XorShiftRng::from_seed(Default::default()));
@@ -74,7 +74,7 @@ fn bench_put_rand(c: &mut Criterion) {
     let (_dir, db) = setup_bench_db(0);
 
     let txn = db.begin_ro_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(BENCH_TABLE).unwrap();
     txn.prime_for_permaopen(table);
     let table = txn.commit_and_rebind_open_dbs().unwrap().1.remove(0);
 
@@ -98,7 +98,12 @@ fn bench_put_rand_raw(c: &mut Criterion) {
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();
     items.shuffle(&mut XorShiftRng::from_seed(Default::default()));
 
-    let dbi = _db.begin_ro_txn().unwrap().open_table(None).unwrap().dbi();
+    let dbi = _db
+        .begin_ro_txn()
+        .unwrap()
+        .open_table(BENCH_TABLE)
+        .unwrap()
+        .dbi();
     let env = _db.ptr();
 
     let mut key_val: MDBX_val = MDBX_val {

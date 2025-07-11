@@ -1,29 +1,13 @@
-use libmdbx::*;
+use libmdbx::{test_utils::*, *};
 use std::{
     borrow::Cow,
     io::Write,
-    path::Path,
     sync::{Arc, Barrier},
     thread::{self, JoinHandle},
 };
 use tempfile::tempdir;
 
 type Database = libmdbx::Database<NoWriteMap>;
-
-pub const TEST_TABLE: Option<&str> = Some("test");
-
-pub fn test_db(path: impl AsRef<Path>) -> Database {
-    test_db_with_options(path, |_| {})
-}
-
-pub fn test_db_with_options(
-    path: impl AsRef<Path>,
-    f: impl FnOnce(&mut DatabaseOptions),
-) -> Database {
-    let mut options = DatabaseOptions::default();
-    f(&mut options);
-    Database::open_with_options(path, options).unwrap()
-}
 
 #[test]
 fn test_put_get_del() {

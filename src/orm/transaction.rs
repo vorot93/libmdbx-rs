@@ -14,13 +14,13 @@ where
 impl Transaction<'_, RO> {
     pub fn table_sizes(&self) -> anyhow::Result<HashMap<String, u64>> {
         let mut out = HashMap::new();
-        let main_table = self.inner.open_table(None)?;
+        let main_table = self.inner.open_table_priv(None)?;
         let mut cursor = self.inner.cursor(&main_table)?;
         while let Some((table, _)) = cursor.next_nodup::<Vec<u8>, ()>()? {
             let table = String::from_utf8(table)?;
             let db = self
                 .inner
-                .open_table(Some(&table))
+                .open_table(&table)
                 .with_context(|| format!("failed to open table: {table}"))?;
             let stats = self
                 .inner
@@ -46,8 +46,7 @@ where
     where
         T: Table,
     {
-        self.inner
-            .table_stat(&self.inner.open_table(Some(T::NAME))?)
+        self.inner.table_stat(&self.inner.open_table(T::NAME)?)
     }
 
     pub fn cursor<'tx, T>(&'tx self) -> anyhow::Result<Cursor<'tx, K, T>>
@@ -56,7 +55,7 @@ where
         T: Table,
     {
         Ok(Cursor {
-            inner: self.inner.cursor(&self.inner.open_table(Some(T::NAME))?)?,
+            inner: self.inner.cursor(&self.inner.open_table(T::NAME)?)?,
             _marker: PhantomData,
         })
     }
@@ -67,10 +66,7 @@ where
     {
         Ok(self
             .inner
-            .get::<DecodableWrapper<_>>(
-                &self.inner.open_table(Some(T::NAME))?,
-                key.encode().as_ref(),
-            )?
+            .get::<DecodableWrapper<_>>(&self.inner.open_table(T::NAME)?, key.encode().as_ref())?
             .map(|v| v.0))
     }
 }
@@ -81,7 +77,7 @@ impl Transaction<'_, RW> {
         T: Table,
     {
         Ok(self.inner.put(
-            &self.inner.open_table(Some(T::NAME))?,
+            &self.inner.open_table(T::NAME)?,
             key.encode(),
             value.encode(),
             WriteFlags::UPSERT,
@@ -100,15 +96,14 @@ impl Transaction<'_, RW> {
         };
         Ok(self
             .inner
-            .del(&self.inner.open_table(Some(T::NAME))?, key.encode(), vref)?)
+            .del(&self.inner.open_table(T::NAME)?, key.encode(), vref)?)
     }
 
     pub fn clear_table<T>(&self) -> anyhow::Result<()>
     where
         T: Table,
     {
-        self.inner
-            .clear_table(&self.inner.open_table(Some(T::NAME))?)?;
+        self.inner.clear_table(&self.inner.open_table(T::NAME)?)?;
 
         Ok(())
     }

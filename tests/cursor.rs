@@ -1,4 +1,4 @@
-use libmdbx::*;
+use libmdbx::{test_utils::*, *};
 use std::borrow::Cow;
 use tempfile::tempdir;
 
@@ -10,7 +10,7 @@ fn test_get() {
     let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
+    let table = txn.open_table(TEST_TABLE).unwrap();
 
     assert_eq!(None, txn.cursor(&table).unwrap().first::<(), ()>().unwrap());
 
@@ -38,7 +38,7 @@ fn test_get_dup() {
     let db = Database::open(&dir).unwrap();
 
     let txn = db.begin_rw_txn().unwrap();
-    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    let table = txn.create_table(TEST_TABLE, TableFlags::DUP_SORT).unwrap();
     for (k, v) in [
         (b"key1", b"val1"),
         (b"key1", b"val2"),
@@ -95,7 +95,7 @@ fn test_get_dupfixed() {
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn
-        .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
+        .create_table(TEST_TABLE, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
         .unwrap();
     for (k, v) in [
         (b"key1", b"val1"),

@@ -43,12 +43,40 @@ mod orm_uses {
 #[cfg(feature = "orm")]
 pub use orm_uses::*;
 
-#[cfg(test)]
-mod test_utils {
+/// Utilities for testing. Not public API.
+#[doc(hidden)]
+pub mod test_utils {
     use super::*;
+    use std::path::Path;
+    #[cfg(test)]
     use tempfile::tempdir;
 
     type Database = crate::Database<NoWriteMap>;
+
+    pub const TEST_TABLE: &str = "test";
+
+    pub fn test_db(path: impl AsRef<Path>) -> Database {
+        test_db_with_options(path, |_| {}, |_| {})
+    }
+
+    pub fn test_db_with_options(
+        path: impl AsRef<Path>,
+        db_options: impl FnOnce(&mut DatabaseOptions),
+        table_options: impl FnOnce(&mut TableFlags),
+    ) -> Database {
+        let mut options = DatabaseOptions::default();
+        db_options(&mut options);
+        if options.max_tables.unwrap_or(0) == 0 {
+            options.max_tables = Some(1);
+        }
+        let db = Database::open_with_options(path, options).unwrap();
+        let txn = db.begin_rw_txn().unwrap();
+        let mut table_flags = TableFlags::empty();
+        table_options(&mut table_flags);
+        txn.create_table(TEST_TABLE, table_flags).unwrap();
+        txn.commit().unwrap();
+        db
+    }
 
     /// Regression test for https://github.com/danburkert/lmdb-rs/issues/21.
     /// This test reliably segfaults when run against lmbdb compiled with opt level -O3 and newer
@@ -71,7 +99,7 @@ mod test_utils {
         for height in 0..1000_u64 {
             let value = height.to_le_bytes();
             let tx = db.begin_rw_txn().unwrap();
-            let index = tx.create_table(None, TableFlags::DUP_SORT).unwrap();
+            let index = tx.create_table(TEST_TABLE, TableFlags::DUP_SORT).unwrap();
             tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
                 .unwrap();
             tx.commit().unwrap();
