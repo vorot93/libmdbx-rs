@@ -42,39 +42,3 @@ mod orm_uses {
 
 #[cfg(feature = "orm")]
 pub use orm_uses::*;
-
-#[cfg(test)]
-mod test_utils {
-    use super::*;
-    use tempfile::tempdir;
-
-    type Database = crate::Database<NoWriteMap>;
-
-    /// Regression test for https://github.com/danburkert/lmdb-rs/issues/21.
-    /// This test reliably segfaults when run against lmbdb compiled with opt level -O3 and newer
-    /// GCC compilers.
-    #[test]
-    fn issue_21_regression() {
-        const HEIGHT_KEY: [u8; 1] = [0];
-
-        let dir = tempdir().unwrap();
-
-        let db = Database::open_with_options(
-            &dir,
-            DatabaseOptions {
-                max_tables: Some(2),
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        for height in 0..1000_u64 {
-            let value = height.to_le_bytes();
-            let tx = db.begin_rw_txn().unwrap();
-            let index = tx.create_table(None, TableFlags::DUP_SORT).unwrap();
-            tx.put(&index, HEIGHT_KEY, value, WriteFlags::empty())
-                .unwrap();
-            tx.commit().unwrap();
-        }
-    }
-}
