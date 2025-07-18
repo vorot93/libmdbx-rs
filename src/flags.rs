@@ -105,8 +105,6 @@ bitflags! {
         const DUP_FIXED = MDBX_DUPFIXED as u32;
         const INTEGER_DUP = MDBX_INTEGERDUP as u32;
         const REVERSE_DUP = MDBX_REVERSEDUP as u32;
-        const CREATE = MDBX_CREATE as u32;
-        const ACCEDE = MDBX_DB_ACCEDE as u32;
     }
 }
 

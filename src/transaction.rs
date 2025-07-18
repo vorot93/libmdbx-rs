@@ -195,7 +195,7 @@ where
     ///
     /// The table name may not contain the null character.
     pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
-        Table::new(self, name, TableFlags::ACCEDE.bits())
+        Table::new(self, name, ffi::MDBX_DB_ACCEDE as c_uint)
     }
 
     /// Gets the option flags for the given table in the transaction.
@@ -235,14 +235,6 @@ impl<E> Transaction<'_, RW, E>
 where
     E: DatabaseKind,
 {
-    fn open_table_with_flags<'txn>(
-        &'txn self,
-        name: Option<&str>,
-        flags: TableFlags,
-    ) -> Result<Table<'txn>> {
-        Table::new(self, name, flags.bits())
-    }
-
     /// Opens a handle to an MDBX table, creating the table if necessary.
     ///
     /// If the table is already created, the given option flags will be added to it.
@@ -260,7 +252,7 @@ where
         name: Option<&str>,
         flags: TableFlags,
     ) -> Result<Table<'txn>> {
-        self.open_table_with_flags(name, flags | TableFlags::CREATE)
+        Table::new(self, name, flags.bits() | ffi::MDBX_CREATE as c_uint)
     }
 
     /// Stores an item into a table.
