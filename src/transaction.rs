@@ -195,7 +195,7 @@ where
     ///
     /// The table name may not contain the null character.
     pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
-        Table::new(self, name, 0)
+        Table::new(self, name, TableFlags::ACCEDE.bits())
     }
 
     /// Gets the option flags for the given table in the transaction.
