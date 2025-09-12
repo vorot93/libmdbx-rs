@@ -4,7 +4,7 @@
 
 #define xMDBX_ALLOY 1  /* alloyed build */
 
-#define MDBX_BUILD_SOURCERY 6b5df6869d2bf5419e3a8189d9cc849cc9911b9c8a951b9750ed0a261ce43724_v0_13_7_0_g566b0f93
+#define MDBX_BUILD_SOURCERY 54ec9a15b6edebd17fed2d22dd6218dea87ec53512d5d701d7bd54cdb980376e_v0_13_8_0_g4d58857
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1436,6 +1436,7 @@ enum osal_syncmode_bits {
 
 MDBX_INTERNAL int osal_fsync(mdbx_filehandle_t fd, const enum osal_syncmode_bits mode_bits);
 MDBX_INTERNAL int osal_ftruncate(mdbx_filehandle_t fd, uint64_t length);
+MDBX_INTERNAL int osal_fallocate(mdbx_filehandle_t fd, uint64_t length);
 MDBX_INTERNAL int osal_fseek(mdbx_filehandle_t fd, uint64_t pos);
 MDBX_INTERNAL int osal_filesize(mdbx_filehandle_t fd, uint64_t *length);
 
@@ -1471,7 +1472,7 @@ MDBX_INTERNAL int osal_removedirectory(const pathchar_t *pathname);
 MDBX_INTERNAL int osal_is_pipe(mdbx_filehandle_t fd);
 MDBX_INTERNAL int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 
-#define MMAP_OPTION_TRUNCATE 1
+#define MMAP_OPTION_SETLENGTH 1
 #define MMAP_OPTION_SEMAPHORE 2
 MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options,
                             const pathchar_t *pathname4logging);
@@ -7807,7 +7808,7 @@ __cold static int copy_with_compacting(MDBX_env *env, MDBX_txn *txn, mdbx_fileha
   if (meta->geometry.now != meta->geometry.first_unallocated) {
     const size_t whole_size = pgno2bytes(env, meta->geometry.now);
     if (!dest_is_pipe)
-      return osal_ftruncate(fd, whole_size);
+      return osal_fallocate(fd, whole_size);
 
     const size_t used_size = pgno2bytes(env, meta->geometry.first_unallocated);
     memset(data_buffer, 0, (size_t)MDBX_ENVCOPY_WRITEBUF);
@@ -7976,7 +7977,7 @@ retry_snap_meta:
   /* Extend file if required */
   if (likely(rc == MDBX_SUCCESS) && whole_size != used_size) {
     if (!dest_is_pipe)
-      rc = osal_ftruncate(fd, whole_size);
+      rc = osal_fallocate(fd, whole_size);
     else {
       memset(data_buffer, 0, (size_t)MDBX_ENVCOPY_WRITEBUF);
       for (size_t offset = used_size; rc == MDBX_SUCCESS && offset < whole_size;) {
@@ -9511,10 +9512,19 @@ __cold int mdbx_env_create(MDBX_env **penv) {
   }
 
 #if defined(__linux__) || defined(__gnu_linux__)
-  if (unlikely(globals.linux_kernel_version < 0x04000000)) {
-    /* 2022-09-01: Прошло уже более двух лет после окончания какой-либо
-     * поддержки самого "долгоиграющего" ядра 3.16.85 ветки 3.x */
-    ERROR("too old linux kernel %u.%u.%u.%u, the >= 4.0.0 is required", globals.linux_kernel_version >> 24,
+  if (unlikely(globals.linux_kernel_version < 0x03100000)) {
+    /* 2025-08-05: Ядро 3.16 выпущено 11 лет назад и было самым долго поддерживаемым из 3.x до июля 2020.
+     * Три года назад (в 2022) здесь была заблокирована работа на ядрах меньше 4.x, как устаревших и для которых
+     * крайне затруднительно обеспечить какое-либо тестирование. Теперь же я решил изменить решение и разрешить
+     * работу на старых ядрах начиная с 3.16, логика тут такая:
+     *  - поведение старых ядер уже точно не будет меняться,
+     *    а в текущем коде libmdbx есть всё необходимое для работы начиная с 3.16;
+     *  - есть широко-используемые проекты (Isar), которым требуется поддержка старых ядер;
+     *  - сейчас тестирование для 4.x также затруднено, как и для 3.16, уже не приносит какого-либо облегчения
+     *    с тестированием и мне приходится полагаться на гарантии совместимости API ядра и glibc/musl;
+     *  - использование возможностей из новых ядер всё равно требует проверок/ветвлений;
+     *  = поэтому сейчас нет причин отказываться от работы на 3.16 поддерживая ядра 4.0 */
+    ERROR("too old linux kernel %u.%u.%u.%u, the >= 3.16 is required", globals.linux_kernel_version >> 24,
           (globals.linux_kernel_version >> 16) & 255, (globals.linux_kernel_version >> 8) & 255,
           globals.linux_kernel_version & 255);
     return LOG_IFERR(MDBX_INCOMPATIBLE);
@@ -20185,7 +20195,7 @@ __cold int dxb_setup(MDBX_env *env, const int lck_rc, const mdbx_mode_t mode_bit
     if (unlikely(err != MDBX_SUCCESS))
       return err;
 
-    err = osal_ftruncate(env->lazy_fd, env->dxb_mmap.filesize = env->dxb_mmap.current = env->geo_in_bytes.now);
+    err = osal_fallocate(env->lazy_fd, env->dxb_mmap.filesize = env->dxb_mmap.current = env->geo_in_bytes.now);
     if (unlikely(err != MDBX_SUCCESS))
       return err;
 
@@ -20314,9 +20324,8 @@ __cold int dxb_setup(MDBX_env *env, const int lck_rc, const mdbx_mode_t mode_bit
       }
 
       if (env->flags & MDBX_RDONLY) {
-        if (filesize_before & (globals.sys_allocation_granularity - 1)) {
-          ERROR("filesize should be rounded-up to system allocation granularity %u",
-                globals.sys_allocation_granularity);
+        if (filesize_before & (globals.sys_pagesize - 1)) {
+          ERROR("filesize should be rounded-up to system page size %u", globals.sys_pagesize);
           return MDBX_WANNA_RECOVERY;
         }
         WARNING("%s", "ignore filesize mismatch in readonly-mode");
@@ -20335,7 +20344,7 @@ __cold int dxb_setup(MDBX_env *env, const int lck_rc, const mdbx_mode_t mode_bit
       !(env->flags & MDBX_NORDAHEAD) && mdbx_is_readahead_reasonable(used_bytes, 0) == MDBX_RESULT_TRUE;
 
   err = osal_mmap(env->flags, &env->dxb_mmap, env->geo_in_bytes.now, env->geo_in_bytes.upper,
-                  (lck_rc && env->stuck_meta < 0) ? MMAP_OPTION_TRUNCATE : 0, env->pathname.dxb);
+                  (lck_rc && env->stuck_meta < 0) ? MMAP_OPTION_SETLENGTH : 0, env->pathname.dxb);
   if (unlikely(err != MDBX_SUCCESS))
     return err;
 
@@ -25889,9 +25898,9 @@ __cold static int lck_setup_locked(MDBX_env *env) {
   }
   env->max_readers = (maxreaders <= MDBX_READERS_LIMIT) ? (unsigned)maxreaders : (unsigned)MDBX_READERS_LIMIT;
 
-  err =
-      osal_mmap((env->flags & MDBX_EXCLUSIVE) | MDBX_WRITEMAP, &env->lck_mmap, (size_t)size, (size_t)size,
-                lck_seize_rc ? MMAP_OPTION_TRUNCATE | MMAP_OPTION_SEMAPHORE : MMAP_OPTION_SEMAPHORE, env->pathname.lck);
+  err = osal_mmap((env->flags & MDBX_EXCLUSIVE) | MDBX_WRITEMAP, &env->lck_mmap, (size_t)size, (size_t)size,
+                  lck_seize_rc ? MMAP_OPTION_SETLENGTH | MMAP_OPTION_SEMAPHORE : MMAP_OPTION_SEMAPHORE,
+                  env->pathname.lck);
   if (unlikely(err != MDBX_SUCCESS))
     return err;
 
@@ -29268,6 +29277,7 @@ MDBX_INTERNAL int osal_is_pipe(mdbx_filehandle_t fd) {
 #endif
 }
 
+/* truncate file: just set the length of a file */
 MDBX_INTERNAL int osal_ftruncate(mdbx_filehandle_t fd, uint64_t length) {
 #if defined(_WIN32) || defined(_WIN64)
   if (imports.SetFileInformationByHandle) {
@@ -29285,6 +29295,29 @@ MDBX_INTERNAL int osal_ftruncate(mdbx_filehandle_t fd, uint64_t length) {
   STATIC_ASSERT_MSG(sizeof(off_t) >= sizeof(size_t), "libmdbx requires 64-bit file I/O on 64-bit systems");
   return ftruncate(fd, length) == 0 ? MDBX_SUCCESS : errno;
 #endif
+}
+
+/* extend file: set the length of a file AND ensure the space has been allocated */
+MDBX_INTERNAL int osal_fallocate(mdbx_filehandle_t fd, uint64_t length) {
+  assert(length > 0);
+  int err = MDBX_RESULT_TRUE;
+#if (defined(__linux__) || defined(__gnu_linux__)) &&                                                                  \
+    ((defined(_GNU_SOURCE) && __GLIBC_PREREQ(2, 10)) || (defined(__ANDROID_API__) && __ANDROID_API__ >= 21))
+  err = fallocate(fd, 0, 0, length) ? ignore_enosys_and_eremote(errno) : MDBX_SUCCESS;
+#elif defined(_POSIX_C_SOURCE) && _POSIX_C_SOURCE >= 200112L && !defined(__APPLE__)
+  err = posix_fallocate(fd, 0, length) ? ignore_enosys_and_eremote(errno) : MDBX_SUCCESS;
+#elif defined(__APPLE__)
+  fstore_t store = {F_ALLOCATEALL, F_PEOFPOSMODE, 0, length, 0};
+  if (fcntl(fd, F_PREALLOCATE, &store))
+    err = ignore_enosys_and_eremote(errno);
+#endif /* Apple */
+#if !defined(_WIN32) && !defined(_WIN64)
+  /* Workaround for testing: ignore ENOSPC for TMPFS/RAMFS.
+   * This is insignificant for production, but it helps in some tests using /dev/shm inside docker/containers. */
+  if (err == ENOSPC && osal_check_fs_incore(fd) == MDBX_RESULT_TRUE)
+    err = MDBX_RESULT_TRUE;
+#endif /* !Windows */
+  return (err == MDBX_RESULT_TRUE) ? osal_ftruncate(fd, length) : err;
 }
 
 MDBX_INTERNAL int osal_fseek(mdbx_filehandle_t fd, uint64_t pos) {
@@ -29737,8 +29770,8 @@ MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, cons
   if (unlikely(err != MDBX_SUCCESS))
     return err;
 
-  if ((flags & MDBX_RDONLY) == 0 && (options & MMAP_OPTION_TRUNCATE) != 0) {
-    err = osal_ftruncate(map->fd, size);
+  if ((flags & MDBX_RDONLY) == 0 && (options & MMAP_OPTION_SETLENGTH) != 0) {
+    err = osal_fallocate(map->fd, size);
     VERBOSE("ftruncate %zu, err %d", size, err);
     if (err != MDBX_SUCCESS)
       return err;
@@ -29984,7 +30017,7 @@ retry_file_and_section:
   }
 
   if ((flags & MDBX_RDONLY) == 0 && map->filesize != size) {
-    err = osal_ftruncate(map->fd, size);
+    err = osal_fallocate(map->fd, size);
     if (err == MDBX_SUCCESS)
       map->filesize = size;
     /* ignore error, because Windows unable shrink file
@@ -30062,10 +30095,15 @@ retry_mapview:;
       rc = MDBX_EPERM;
     map->current = (map->filesize > limit) ? limit : (size_t)map->filesize;
   } else {
-    if (size > map->filesize || (size < map->filesize && (flags & txn_shrink_allowed))) {
-      rc = osal_ftruncate(map->fd, size);
-      VERBOSE("ftruncate %zu, err %d", size, rc);
-      if (rc != MDBX_SUCCESS)
+    if (map->filesize != size) {
+      if (size > map->filesize) {
+        rc = osal_fallocate(map->fd, size);
+        VERBOSE("f%s-%s %zu, err %d", "allocate", "extend", size, rc);
+      } else if (flags & txn_shrink_allowed) {
+        rc = osal_ftruncate(map->fd, size);
+        VERBOSE("f%s-%s %zu, err %d", "truncate", "shrink", size, rc);
+      }
+      if (unlikely(rc != MDBX_SUCCESS))
         return rc;
       map->filesize = size;
     }
@@ -37451,11 +37489,11 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         13,
-        7,
+        8,
         0,
         "", /* pre-release suffix of SemVer
-                                        0.13.7 */
-        {"2025-07-30T11:44:04+03:00", "7777cbdf5aa4c1ce85ff902a4c3e6170edd42495", "566b0f93c7c9a3bdffb8fb3dc0ce8ca42641bd72", "v0.13.7-0-g566b0f93"},
+                                        0.13.8 */
+        {"2025-08-31T14:56:32+03:00", "ecce9823410762bee1bfec5e72f15b7fa19713cb", "4d58857f8fd0aba400706610ba05ba4dd869f04e", "v0.13.8-0-g4d58857"},
         sourcery};
 
 __dll_export

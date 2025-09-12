@@ -1,1 +1,1 @@
-{ "git_describe": "v0.13.7-0-g566b0f93", "git_timestamp": "2025-07-30T11:44:04+03:00", "git_tree": "7777cbdf5aa4c1ce85ff902a4c3e6170edd42495", "git_commit": "566b0f93c7c9a3bdffb8fb3dc0ce8ca42641bd72", "semver": "0.13.7" }
+{ "git_describe": "v0.13.8-0-g4d58857", "git_timestamp": "2025-08-31T14:56:32+03:00", "git_tree": "ecce9823410762bee1bfec5e72f15b7fa19713cb", "git_commit": "4d58857f8fd0aba400706610ba05ba4dd869f04e", "semver": "0.13.8" }

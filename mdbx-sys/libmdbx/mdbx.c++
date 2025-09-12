@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 /* clang-format off */
 
-#define MDBX_BUILD_SOURCERY 6b5df6869d2bf5419e3a8189d9cc849cc9911b9c8a951b9750ed0a261ce43724_v0_13_7_0_g566b0f93
+#define MDBX_BUILD_SOURCERY 54ec9a15b6edebd17fed2d22dd6218dea87ec53512d5d701d7bd54cdb980376e_v0_13_8_0_g4d58857
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1434,6 +1434,7 @@ enum osal_syncmode_bits {
 
 MDBX_INTERNAL int osal_fsync(mdbx_filehandle_t fd, const enum osal_syncmode_bits mode_bits);
 MDBX_INTERNAL int osal_ftruncate(mdbx_filehandle_t fd, uint64_t length);
+MDBX_INTERNAL int osal_fallocate(mdbx_filehandle_t fd, uint64_t length);
 MDBX_INTERNAL int osal_fseek(mdbx_filehandle_t fd, uint64_t pos);
 MDBX_INTERNAL int osal_filesize(mdbx_filehandle_t fd, uint64_t *length);
 
@@ -1469,7 +1470,7 @@ MDBX_INTERNAL int osal_removedirectory(const pathchar_t *pathname);
 MDBX_INTERNAL int osal_is_pipe(mdbx_filehandle_t fd);
 MDBX_INTERNAL int osal_lockfile(mdbx_filehandle_t fd, bool wait);
 
-#define MMAP_OPTION_TRUNCATE 1
+#define MMAP_OPTION_SETLENGTH 1
 #define MMAP_OPTION_SEMAPHORE 2
 MDBX_INTERNAL int osal_mmap(const int flags, osal_mmap_t *map, size_t size, const size_t limit, const unsigned options,
                             const pathchar_t *pathname4logging);
