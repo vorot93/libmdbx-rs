@@ -93,6 +93,12 @@ fn main() {
         .flag_if_supported("-fvisibility=hidden")
         .flag_if_supported("-Wno-error=attributes");
 
+    if cfg!(debug_assertions) {
+        cc_builder.define("MDBX_FORCE_ASSERTIONS", "1");
+    } else {
+        cc_builder.define("NDEBUG", "1");
+    }
+
     let flags = format!(
         "\"-NDEBUG={} {}\"",
         u8::from(!cfg!(debug_assertions)),
