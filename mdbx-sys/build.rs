@@ -93,25 +93,21 @@ fn main() {
         .flag_if_supported("-fvisibility=hidden")
         .flag_if_supported("-Wno-error=attributes");
 
-    let flags = format!(
-        "\"-NDEBUG={} {}\"",
-        u8::from(!cfg!(debug_assertions)),
-        cc_builder
-            .get_compiler()
-            .cflags_env()
-            .to_str()
-            .unwrap()
-            .trim()
-    );
+    if cfg!(debug_assertions) {
+        cc_builder.define("MDBX_FORCE_ASSERTIONS", "1");
+    } else {
+        cc_builder.define("NDEBUG", "1");
+    }
 
-    cc_builder
-        .define("MDBX_BUILD_FLAGS", flags.as_str())
-        .define("MDBX_TXN_CHECKOWNER", "0");
+    cc_builder.define("MDBX_TXN_CHECKOWNER", "0");
 
     // __cpu_model is not available in musl
     if env::var("TARGET").unwrap().ends_with("-musl") {
         cc_builder.define("MDBX_HAVE_BUILTIN_CPU_SUPPORTS", "0");
     }
+
+    let cflags = cc_builder.get_compiler().cflags_env();
+    cc_builder.define("MDBX_BUILD_FLAGS", format!("{:?}", cflags).as_str());
 
     if cfg!(windows) {
         println!(r"cargo:rustc-link-lib=dylib=ntdll");
