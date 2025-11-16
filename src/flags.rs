@@ -3,10 +3,11 @@ use ffi::*;
 use libc::c_uint;
 
 /// MDBX sync mode
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum SyncMode {
     /// Default robust and durable sync mode.
     /// Metadata is written and flushed to disk after a data is written and flushed, which guarantees the integrity of the database in the event of a crash at any time.
+    #[default]
     Durable,
 
     /// Don't sync the meta-page after commit.
@@ -66,12 +67,6 @@ pub enum SyncMode {
     /// Nevertheless, [SyncMode::UtterlyNoSync] provides "weak" durability in case of an application crash (but no durability on system failure),
     /// and therefore may be very useful in scenarios where data durability is not required over a system failure (e.g for short-lived data), or if you can take such risk.
     UtterlyNoSync,
-}
-
-impl Default for SyncMode {
-    fn default() -> Self {
-        Self::Durable
-    }
 }
 
 #[derive(Clone, Copy, Debug)]
