@@ -112,6 +112,9 @@ fn main() {
     if cfg!(windows) {
         println!(r"cargo:rustc-link-lib=dylib=ntdll");
         println!(r"cargo:rustc-link-lib=dylib=user32");
+        println!(r"cargo:rustc-link-lib=dylib=kernel32");
+        println!(r"cargo:rustc-link-lib=dylib=advapi32");
+        println!(r"cargo:rustc-link-lib=dylib=ole32");
     }
 
     cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");
