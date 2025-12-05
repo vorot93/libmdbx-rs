@@ -1,9 +1,9 @@
 mod utils;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use ffi::*;
 use libmdbx::*;
-use std::ptr;
+use std::{hint::black_box, ptr};
 use utils::*;
 
 /// Benchmark of iterator sequential read performance.

@@ -216,11 +216,13 @@ fn test_iter_empty_dup_database() {
     assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
     assert!(cursor.iter_dup::<(), ()>().flatten().next().is_none());
     assert!(cursor.iter_dup_start::<(), ()>().flatten().next().is_none());
-    assert!(cursor
-        .iter_dup_from::<(), ()>(b"foo")
-        .flatten()
-        .next()
-        .is_none());
+    assert!(
+        cursor
+            .iter_dup_from::<(), ()>(b"foo")
+            .flatten()
+            .next()
+            .is_none()
+    );
     assert!(cursor.iter_dup_of::<(), ()>(b"foo").next().is_none());
 }
 
@@ -424,7 +426,7 @@ fn test_put_del() {
     );
 
     cursor.del(WriteFlags::empty()).unwrap();
-    assert_eq!(cursor.get_current::<Vec<u8>, Vec<u8>>().unwrap(), None);
+    assert_eq!(cursor.next::<Vec<u8>, Vec<u8>>().unwrap(), None);
     assert_eq!(
         cursor.last().unwrap().unwrap(),
         (

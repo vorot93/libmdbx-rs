@@ -1,5 +1,5 @@
 use super::{traits::*, transaction::Transaction};
-use crate::{DatabaseOptions, Mode, TableFlags, WriteMap, RO, RW};
+use crate::{DatabaseOptions, Mode, RO, RW, TableFlags, WriteMap};
 use anyhow::Context;
 use std::{
     collections::BTreeMap,

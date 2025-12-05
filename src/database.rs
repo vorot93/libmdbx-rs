@@ -1,8 +1,8 @@
 use crate::{
-    error::{mdbx_result, Error, Result},
+    Mode, ReadWriteOptions, SyncMode, Transaction, TransactionKind,
+    error::{Error, Result, mdbx_result},
     table::Table,
     transaction::{RO, RW},
-    Mode, ReadWriteOptions, SyncMode, Transaction, TransactionKind,
 };
 use libc::c_uint;
 use mem::size_of;
@@ -20,7 +20,7 @@ use std::{
     ops::Deref,
     path::Path,
     ptr, result,
-    sync::mpsc::{sync_channel, SyncSender},
+    sync::mpsc::{SyncSender, sync_channel},
     thread::sleep,
     time::Duration,
 };
@@ -253,45 +253,47 @@ where
         if let Mode::ReadWrite { .. } = options.mode {
             let (tx, rx) = std::sync::mpsc::sync_channel(0);
             let e = db.inner;
-            std::thread::spawn(move || loop {
-                match rx.recv() {
-                    Ok(msg) => match msg {
-                        TxnManagerMessage::Begin {
-                            parent,
-                            flags,
-                            sender,
-                        } => {
-                            let e = e;
-                            let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-                            sender
-                                .send(
-                                    mdbx_result(unsafe {
-                                        ffi::mdbx_txn_begin_ex(
-                                            e.0,
-                                            parent.0,
-                                            flags,
-                                            &mut txn,
-                                            ptr::null_mut(),
-                                        )
-                                    })
-                                    .map(|_| TxnPtr(txn)),
-                                )
-                                .unwrap()
-                        }
-                        TxnManagerMessage::Abort { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
-                                .unwrap();
-                        }
-                        TxnManagerMessage::Commit { tx, sender } => {
-                            sender
-                                .send(mdbx_result(unsafe {
-                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                }))
-                                .unwrap();
-                        }
-                    },
-                    Err(_) => return,
+            std::thread::spawn(move || {
+                loop {
+                    match rx.recv() {
+                        Ok(msg) => match msg {
+                            TxnManagerMessage::Begin {
+                                parent,
+                                flags,
+                                sender,
+                            } => {
+                                let e = e;
+                                let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
+                                sender
+                                    .send(
+                                        mdbx_result(unsafe {
+                                            ffi::mdbx_txn_begin_ex(
+                                                e.0,
+                                                parent.0,
+                                                flags,
+                                                &mut txn,
+                                                ptr::null_mut(),
+                                            )
+                                        })
+                                        .map(|_| TxnPtr(txn)),
+                                    )
+                                    .unwrap()
+                            }
+                            TxnManagerMessage::Abort { tx, sender } => {
+                                sender
+                                    .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
+                                    .unwrap();
+                            }
+                            TxnManagerMessage::Commit { tx, sender } => {
+                                sender
+                                    .send(mdbx_result(unsafe {
+                                        ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
+                                    }))
+                                    .unwrap();
+                            }
+                        },
+                        Err(_) => return,
+                    }
                 }
             });
 

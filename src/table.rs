@@ -1,9 +1,9 @@
 use crate::{
-    database::DatabaseKind,
-    error::{mdbx_result, Result},
-    flags::c_enum,
-    transaction::{txn_execute, TransactionKind},
     Transaction,
+    database::DatabaseKind,
+    error::{Result, mdbx_result},
+    flags::c_enum,
+    transaction::{TransactionKind, txn_execute},
 };
 use libc::c_uint;
 use std::{ffi::CString, marker::PhantomData, ptr};

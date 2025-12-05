@@ -3,10 +3,11 @@ use ffi::*;
 use libc::c_uint;
 
 /// MDBX sync mode
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub enum SyncMode {
     /// Default robust and durable sync mode.
     /// Metadata is written and flushed to disk after a data is written and flushed, which guarantees the integrity of the database in the event of a crash at any time.
+    #[default]
     Durable,
 
     /// Don't sync the meta-page after commit.
@@ -68,12 +69,6 @@ pub enum SyncMode {
     UtterlyNoSync,
 }
 
-impl Default for SyncMode {
-    fn default() -> Self {
-        Self::Durable
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
     ReadOnly,
@@ -105,8 +100,6 @@ bitflags! {
         const DUP_FIXED = MDBX_DUPFIXED as u32;
         const INTEGER_DUP = MDBX_INTEGERDUP as u32;
         const REVERSE_DUP = MDBX_REVERSEDUP as u32;
-        const CREATE = MDBX_CREATE as u32;
-        const ACCEDE = MDBX_DB_ACCEDE as u32;
     }
 }
 

@@ -1,8 +1,7 @@
 [package]
 name = "libmdbx"
-version = "0.5.3"
-edition = "2021"
-rust-version = "1.79"
+version = "0.6.4"
+edition = "2024"
 license = "MPL-2.0"
 description = "Idiomatic and safe MDBX wrapper."
 documentation = "https://docs.rs/libmdbx"
@@ -25,7 +24,7 @@ arrayvec = { version = "0.7", optional = true }
 bytes = { version = "1", optional = true }
 bitflags = "2"
 ciborium = { version = "0.2", optional = true }
-derive_more = { version = "1", features = [
+derive_more = { version = "2", features = [
     "deref",
     "deref_mut",
     "display",
@@ -39,15 +38,15 @@ sealed = "0.6"
 tempfile = { version = "3", optional = true }
 thiserror = "2"
 
-ffi = { package = "mdbx-sys", version = "=12.12.0", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "=13.9.0", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.7"
 once_cell = "1"
-rand = "0.8"
-rand_xorshift = "0.3"
+rand = "0.9"
+rand_xorshift = "0.4"
 serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 

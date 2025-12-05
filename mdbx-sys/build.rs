@@ -1,6 +1,6 @@
 use bindgen::{
-    callbacks::{IntKind, ParseCallbacks},
     Formatter,
+    callbacks::{IntKind, ParseCallbacks},
 };
 use std::{env, path::PathBuf};
 
@@ -45,6 +45,11 @@ impl ParseCallbacks for Callbacks {
             | "MDBX_TOO_LARGE"
             | "MDBX_THREAD_MISMATCH"
             | "MDBX_TXN_OVERLAPPING"
+            | "MDBX_BACKLOG_DEPLETED"
+            | "MDBX_DUPLICATED_CLK"
+            | "MDBX_DANGLING_DBI"
+            | "MDBX_OUSTED"
+            | "MDBX_MVCC_RETARDED"
             | "MDBX_LAST_ERRCODE" => Some(IntKind::Int),
             _ => Some(IntKind::UInt),
         }
@@ -82,33 +87,34 @@ fn main() {
 
     let mut cc_builder = cc::Build::new();
     cc_builder
-        .flag_if_supported("-Wno-unused-parameter")
-        .flag_if_supported("-Wbad-function-cast")
-        .flag_if_supported("-Wuninitialized");
+        .flag_if_supported("-Wall")
+        .flag_if_supported("-Werror")
+        .flag_if_supported("-ffunction-sections")
+        .flag_if_supported("-fvisibility=hidden")
+        .flag_if_supported("-Wno-error=attributes");
 
-    let flags = format!(
-        "\"-NDEBUG={} {}\"",
-        u8::from(!cfg!(debug_assertions)),
-        cc_builder
-            .get_compiler()
-            .cflags_env()
-            .to_str()
-            .unwrap()
-            .trim()
-    );
+    if cfg!(debug_assertions) {
+        cc_builder.define("MDBX_FORCE_ASSERTIONS", "1");
+    } else {
+        cc_builder.define("NDEBUG", "1");
+    }
 
-    cc_builder
-        .define("MDBX_BUILD_FLAGS", flags.as_str())
-        .define("MDBX_TXN_CHECKOWNER", "0");
+    cc_builder.define("MDBX_TXN_CHECKOWNER", "0");
 
     // __cpu_model is not available in musl
     if env::var("TARGET").unwrap().ends_with("-musl") {
         cc_builder.define("MDBX_HAVE_BUILTIN_CPU_SUPPORTS", "0");
     }
 
+    let cflags = cc_builder.get_compiler().cflags_env();
+    cc_builder.define("MDBX_BUILD_FLAGS", format!("{:?}", cflags).as_str());
+
     if cfg!(windows) {
         println!(r"cargo:rustc-link-lib=dylib=ntdll");
         println!(r"cargo:rustc-link-lib=dylib=user32");
+        println!(r"cargo:rustc-link-lib=dylib=kernel32");
+        println!(r"cargo:rustc-link-lib=dylib=advapi32");
+        println!(r"cargo:rustc-link-lib=dylib=ole32");
     }
 
     cc_builder.file(mdbx.join("mdbx.c")).compile("libmdbx.a");

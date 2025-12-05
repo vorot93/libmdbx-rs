@@ -1,11 +1,11 @@
 use crate::{
-    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
-    error::{mdbx_result, Result},
-    flags::{c_enum, TableFlags, WriteFlags},
-    table::Table,
     Cursor, Decodable, Error, Stat,
+    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
+    error::{Result, mdbx_result},
+    flags::{TableFlags, WriteFlags, c_enum},
+    table::Table,
 };
-use ffi::{MDBX_txn_flags_t, MDBX_TXN_RDONLY, MDBX_TXN_READWRITE};
+use ffi::{MDBX_TXN_RDONLY, MDBX_TXN_READWRITE, MDBX_txn_flags_t};
 use indexmap::IndexSet;
 use libc::{c_uint, c_void};
 use parking_lot::Mutex;
@@ -16,7 +16,7 @@ use std::{
     marker::PhantomData,
     mem::size_of,
     ptr, result, slice,
-    sync::{mpsc::sync_channel, Arc},
+    sync::{Arc, mpsc::sync_channel},
 };
 
 #[sealed]
@@ -195,7 +195,7 @@ where
     ///
     /// The table name may not contain the null character.
     pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
-        Table::new(self, name, 0)
+        Table::new(self, name, ffi::MDBX_DB_ACCEDE as c_uint)
     }
 
     /// Gets the option flags for the given table in the transaction.
@@ -235,14 +235,6 @@ impl<E> Transaction<'_, RW, E>
 where
     E: DatabaseKind,
 {
-    fn open_table_with_flags<'txn>(
-        &'txn self,
-        name: Option<&str>,
-        flags: TableFlags,
-    ) -> Result<Table<'txn>> {
-        Table::new(self, name, flags.bits())
-    }
-
     /// Opens a handle to an MDBX table, creating the table if necessary.
     ///
     /// If the table is already created, the given option flags will be added to it.
@@ -260,7 +252,7 @@ where
         name: Option<&str>,
         flags: TableFlags,
     ) -> Result<Table<'txn>> {
-        self.open_table_with_flags(name, flags | TableFlags::CREATE)
+        Table::new(self, name, flags.bits() | ffi::MDBX_CREATE as c_uint)
     }
 
     /// Stores an item into a table.
@@ -389,7 +381,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn drop_table<'txn>(&'txn self, table: Table<'txn>) -> Result<()> {
-        mdbx_result(txn_execute(&self.txn, |txn| {
+        mdbx_result(txn_execute(&self.txn, |txn| unsafe {
             ffi::mdbx_drop(txn, table.dbi(), true)
         }))?;
 
@@ -406,7 +398,7 @@ where
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
     pub unsafe fn close_table(&self, table: Table<'_>) -> Result<()> {
-        mdbx_result(ffi::mdbx_dbi_close(self.db.ptr().0, table.dbi()))?;
+        mdbx_result(unsafe { ffi::mdbx_dbi_close(self.db.ptr().0, table.dbi()) })?;
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 [package]
 name = "mdbx-sys"
-version = "12.12.0"
-edition = "2021"
+version = "13.9.0"
+edition = "2024"
 license = "MPL-2.0"
 description = "Rust bindings for libmdbx."
 documentation = "https://docs.rs/mdbx-sys"
@@ -18,4 +18,4 @@ libc = "0.2"
 
 [build-dependencies]
 cc = "1.0"
-bindgen = { version = "0.71", default-features = false, features = ["runtime"] }
+bindgen = { version = "0.72", default-features = false, features = ["runtime"] }

@@ -87,6 +87,6 @@ mod transaction;
 
 pub use self::{cursor::*, database::*, impls::*, traits::*, transaction::*};
 pub use crate::{
-    dupsort, table, table_info, DatabaseKind, DatabaseOptions, Mode, NoWriteMap, ReadWriteOptions,
-    SyncMode, TransactionKind, WriteMap, RO, RW,
+    DatabaseKind, DatabaseOptions, Mode, NoWriteMap, RO, RW, ReadWriteOptions, SyncMode,
+    TransactionKind, WriteMap, dupsort, table, table_info,
 };
