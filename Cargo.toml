@@ -43,7 +43,7 @@ ffi = { package = "mdbx-sys", version = "=13.9.0", path = "./mdbx-sys" }
 lifetimed-bytes = { version = "0.1", optional = true }
 
 [dev-dependencies]
-criterion = "0.7"
+criterion = "0.8"
 once_cell = "1"
 rand = "0.9"
 rand_xorshift = "0.4"
