@@ -9,7 +9,7 @@ focused on creating unique lightweight solutions with extraordinary performance.
 _libmdbx_ is superior to [LMDB](https://bit.ly/26ts7tL) in terms of features
 and reliability, not inferior in performance. In comparison to LMDB, _libmdbx_
 makes many things just work perfectly, not silently and catastrophically
-break down. _libmdbx_ supports Linux, Windows, MacOS, OSX, iOS, Android,
+break down. _libmdbx_ supports Linux, Windows, MacOS, OSX, Harmony, iOS, Android,
 FreeBSD, DragonFly, Solaris, OpenSolaris, OpenIndiana, NetBSD, OpenBSD and other
 systems compliant with POSIX.1-2008.
 
@@ -21,16 +21,12 @@ https://t.me/libmdbx.
 Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
 Всё будет хорошо!
 
-\note The origin has been migrated to
-[GitFlic](https://gitflic.ru/project/erthink/libmdbx) since on 2022-04-15 the
-Github administration, without any warning nor explanation, deleted libmdbx
-along with a lot of other projects, simultaneously blocking access for many
-developers. For the same reason ~~Github~~ is blacklisted forever.
+\note The libmdbx project has been completely relocated to the jurisdiction of the Russian Federation.
+Please refer to https://libmdbx.dqdkfa.ru for documentation and https://sourcecraft.dev/dqdkfa/libmdbx for the source code (it is still open and provided with first-class free support).
 
 \section copyright LICENSE & COPYRIGHT
 \copyright SPDX-License-Identifier: Apache-2.0
-\note Please refer to the COPYRIGHT file for explanations license change,
-credits and acknowledgments.
+\note Please refer to the COPYRIGHT file for explanations license change, credits and acknowledgments.
 \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
 *******************************************************************************/

@@ -2,7 +2,7 @@
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 /* clang-format off */
 
-#define MDBX_BUILD_SOURCERY 4e9ca82f6852b2f02cf56d0eb82de32d248436c855aa9854f322f26734e57518_v0_13_9_0_g926e90a
+#define MDBX_BUILD_SOURCERY 8916c04a1d0598afd3f4e15336ada8cc6684b27d706e5f1ddb4a870da3d86f91_v0_13_10_0_gcc5debac
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1171,7 +1171,7 @@ typedef char pathchar_t;
 #define MDBX_PRIsPATH "s"
 #endif
 
-static inline bool osal_yield(void) {
+MDBX_MAYBE_UNUSED static inline bool osal_yield(void) {
 #if defined(_WIN32) || defined(_WIN64)
   return SleepEx(0, true) == WAIT_IO_COMPLETION;
 #else
@@ -4549,12 +4549,12 @@ __cold env &env::copy(const MDBX_STD_FILESYSTEM_PATH &destination, bool compacti
 
 __cold path env::get_path() const {
 #if defined(_WIN32) || defined(_WIN64)
-  const wchar_t *c_wstr;
+  const wchar_t *c_wstr = nullptr;
   error::success_or_throw(::mdbx_env_get_pathW(handle_, &c_wstr));
   static_assert(sizeof(path::value_type) == sizeof(wchar_t), "Oops");
   return path(c_wstr);
 #else
-  const char *c_str;
+  const char *c_str = nullptr;
   error::success_or_throw(::mdbx_env_get_path(handle_, &c_str));
   static_assert(sizeof(path::value_type) == sizeof(char), "Oops");
   return path(c_str);

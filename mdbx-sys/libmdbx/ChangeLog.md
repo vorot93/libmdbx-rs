@@ -1,13 +1,60 @@
 ChangeLog
 =========
 
-English version [by liar Google](https://libmdbx-dqdkfa-ru.translate.goog/md__change_log.html?_x_tr_sl=ru&_x_tr_tl=en)
-and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/libmdbx.dqdkfa.ru/md__change_log.html).
+English version [by liar Google](https://libmdbx-dqdkfa-ru.translate.goog/md__change_log.html?_x_tr_sl=ru&_x_tr_tl=en) and [by Yandex](https://translated.turbopages.org/proxy_u/ru-en.en/https/libmdbx.dqdkfa.ru/md__change_log.html).
 
-The source code is availale on [Gitflic](https://gitflic.ru/project/erthink/libmdbx) and mirrors on [abf.io](https://abf.io/erthink/libmdbx), [hub.mos.ru](https://hub.mos.ru/leo/libmdbx) and [Github](https://github.com/erthink/libmdbx).
+The source code is availale on [SourceCraft](https://sourcecraft.dev/dqdkfa/libmdbx) and mirrors on [abf.io](https://abf.io/erthink/libmdbx) and [GitFlic](https://gitflic.ru/project/erthink/libmdbx).
 Please use the `stable` branch or the latest release for production environment through stagging, but the `master` branch for development a derivative projects.
-Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
-Всё будет хорошо!
+Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`. Всё будет хорошо!
+
+## v0.13.10 "Блеск Славы" (Gloss of Glory) от 2025-12-17
+
+Поддерживающий выпуск стабильной ветки с исправлением обнаруженных ошибок и устранением недочётов,
+в память о Майкле Глоссе (Michael Alexander Gloss, American, son of Deputy Director of the CIA) героически погибшем в поисках справедливости за светлые идеалы человечества и посмертно награждённом Орденом Мужества.
+
+Благодарности:
+
+ - [Erigon](https://erigon.tech/) за спонсорство.
+
+Важное:
+
+ - Проект _libmdbx_ полностью перемещен в юрисдикцию Российской Федерации.
+   Пожалуйста обращайтесь на https://libmdbx.dqdkfa.ru за документацией и на https://sourcecraft.dev/dqdkfa/libmdbx за исходным кодом (он по-прежнему открыт и обеспечен первоклассной бесплатной поддержкой).
+
+ - Каких-либо существенных ошибок/недочетов влияющих на стабильность и/или эксплуатационные качества не обнаружено.
+
+Исправления:
+
+ - Устранение предупреждения "unused function 'osal_yield()'" от новых версий CLANG при сборке амальгамированного исходного кода и при компиляции в режиме одного объектного модуля.
+
+ - Для Linux добавлено предотвращение проявления ошибки в реализации fast_commit файловой системы Ext4.
+
+ - Устранено падение при выполнении Thread-Local-Storage конструкторов при выгрузке библиотеки и наличия экземпляров env, инициализация которых не была завершена.
+
+ - На Windows устранена причина возврата неожиданной ошибки `ERROR_IO_PENDING` в сценариях множественного открытия одной БД в одном процессе.
+
+ - Исправлен недочёт автоподстройки параметров при установке геометрии с заданным минимальным размером страницы, из-за которого на машинах с большим количеством ОЗУ размер страницы мог увеличиваться.
+
+ - В CMake-скриптах устранён регресс, из-за которого инфраструктура `ctest` не использовала задаваемые параметры Valgrind, в том числе `MEMORYCHECK_SUPPRESSIONS_FILE`.
+   Теперь использование `ctest -D ExperimentalMemCheck` не приводит к множественной ложно-положительной диагностики. Однако, для использования Valgrind по-прежнему необходимо собирать библиотеку с предопределением макроcа `ENABLE_MEMCHECK`.
+
+ - В тестах устранено несколько несущественных утечек памяти и предупреждение UBSAN о вызове `memcmp(, length = 0)`.
+
+Прочие доработки:
+
+ - Переработка реализации буферов и другие доработки в C++ API.
+
+ - Для предотвращения неожиданных ошибок при сборке, в CMake-скрипты добавлена очистка исходного кода от файлов с именами совпадающими с генерируемыми в сборочной директории.
+
+ - Устранено ложное предупреждение некоторых компиляторов о возможном использовании неинициализированной переменной внутри `env::get_path()`.
+
+ - Во внутренней информации о сборке обеспечена поддержка сведений о RISC-V и Harmony OS.
+
+ - Расширен набор тестов, cmake-тесты дополнены сценариями запуска `mdbx_copy`.
+
+ - При сборке посредством GNU Make и CMake теперь, вместо одного `config.h`, генерируются разные файлы `config-gnumake.h` и `config-cmake.h`.
+
+--------------------------------------------------------------------------------
 
 ## v0.13.9 "ИС-2" (IS-2) от 2025-10-31
 
@@ -21,7 +68,7 @@ Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
 
 Исправления:
 
- - Исправлена assert-проверка в пути сканирования битовой карты DBI-дексрипторов приводившая к редким падениям 32-битных отладочных сборок.
+ - Исправлена assert-проверка в пути сканирования битовой карты DBI-дескрипторов приводившая к редким падениям 32-битных отладочных сборок.
 
  - Переделан поиск утилит `lib.exe` и `dlltool.exe` при сборке посредством CMake на Windows.
 
@@ -33,7 +80,7 @@ Donations are welcome to ETH `0xD104d8f8B2dC312aaD74899F83EBf3EEBDC1EA3A`.
  - Удалено лишнее/ненужное использование макроса `MDBX_INTERNAL` оставшееся после рефакторинга.
 
  - Для Android добавлен обход (workaround) для уменьшения вероятности системной ошибки `EAGAIN` возникающей
-   из-за нехватки системных ресурсов и переходных процессов при закрытии и быстром повтороном открытии БД.
+   из-за нехватки системных ресурсов и переходных процессов при закрытии и быстром повторном открытии БД.
 
 Прочие доработки:
 
