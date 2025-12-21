@@ -30,10 +30,13 @@ As a result of what has happened, I will never, under any circumstances,
 post the primary sources (aka origins) of my projects on Github, or rely
 in any way on the Github infrastructure.
 
-Nevertheless, realizing that it is more convenient for users of
-_libmdbx_ and other my projects to access ones on Github, I do not want
-to restrict their freedom or create inconvenience, and therefore I place
-mirrors (aka mirrors) of such repositories on Github since 2025. At the
-same time, I would like to emphasize once again that these are only
-mirrors that can be frozen, blocked or deleted at any time, as was the
-case in 2022.
+Nonetheless, taking into account that it is more convenient for users of
+my projects to access them on Github, I did not want to restrict their
+freedom or create inconvenience, and therefore I posted mirrors on
+Github. However, it was noticed that despite the development of
+_libmdbx_, free support and consultations, many projects and users
+deviated from the rules of a fair deal and instead of helping and
+building relationships, they began to adjust links and delete references
+in violation of the license. Therefore, in protest against such unworthy
+actions, on December 10, 2025, I decided to abandon the placement of
+mirrors on Github.

@@ -18,7 +18,7 @@
 /// \copyright SPDX-License-Identifier: Apache-2.0
 /// \author Леонид Юрьев aka Leonid Yuriev <leo@yuriev.ru> \date 2015-2025
 
-#define MDBX_BUILD_SOURCERY 4e9ca82f6852b2f02cf56d0eb82de32d248436c855aa9854f322f26734e57518_v0_13_9_0_g926e90a
+#define MDBX_BUILD_SOURCERY 8916c04a1d0598afd3f4e15336ada8cc6684b27d706e5f1ddb4a870da3d86f91_v0_13_10_0_gcc5debac
 
 #define LIBMDBX_INTERNALS
 #define MDBX_DEPRECATED
@@ -1187,7 +1187,7 @@ typedef char pathchar_t;
 #define MDBX_PRIsPATH "s"
 #endif
 
-static inline bool osal_yield(void) {
+MDBX_MAYBE_UNUSED static inline bool osal_yield(void) {
 #if defined(_WIN32) || defined(_WIN64)
   return SleepEx(0, true) == WAIT_IO_COMPLETION;
 #else
