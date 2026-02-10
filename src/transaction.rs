@@ -189,7 +189,8 @@ where
     ///
     /// If `name` is not [None], then the returned handle will be for a named table. In this
     /// case the database must be configured to allow named tables through
-    /// [DatabaseBuilder::set_max_tables()](crate::DatabaseBuilder::set_max_tables).
+    /// [DatabaseOptions::max_tables](crate::DatabaseOptions::max_tables) when opening the database
+    /// with [Database::open_with_options](crate::Database::open_with_options).
     ///
     /// The returned table handle may be shared among any transaction in the database.
     ///
