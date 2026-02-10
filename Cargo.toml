@@ -45,8 +45,8 @@ lifetimed-bytes = { version = "0.1", optional = true }
 [dev-dependencies]
 criterion = "0.8"
 once_cell = "1"
-rand = "0.9"
-rand_xorshift = "0.4"
+rand = "0.10"
+rand_xorshift = "0.5"
 serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 
