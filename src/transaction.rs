@@ -195,7 +195,6 @@ where
     /// The returned table handle may be shared among any transaction in the database.
     ///
     /// The table name may not contain the null character.
-
     pub fn open_table<'txn>(&'txn self, name: Option<&str>) -> Result<Table<'txn>> {
         Table::new(self, name, ffi::MDBX_DB_ACCEDE as c_uint)
     }
