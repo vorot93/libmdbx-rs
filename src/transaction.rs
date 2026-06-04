@@ -448,7 +448,7 @@ where
             if !self.committed {
                 if K::ONLY_CLEAN {
                     unsafe {
-                        ffi::mdbx_txn_abort(txn);
+                        ffi::mdbx_txn_abort_ex(txn, ptr::null_mut());
                     }
                 } else {
                     let (sender, rx) = sync_channel(0);
