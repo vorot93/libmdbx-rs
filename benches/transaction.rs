@@ -125,7 +125,7 @@ fn bench_put_rand_raw(c: &mut Criterion) {
                 i += mdbx_put(txn, dbi, &key_val, &mut data_val, 0);
             }
             assert_eq!(0, i);
-            mdbx_txn_abort(txn);
+            mdbx_txn_abort_ex(txn, ptr::null_mut());
         })
     });
 }

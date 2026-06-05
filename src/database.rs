@@ -281,7 +281,9 @@ where
                             }
                             TxnManagerMessage::Abort { tx, sender } => {
                                 sender
-                                    .send(mdbx_result(unsafe { ffi::mdbx_txn_abort(tx.0) }))
+                                    .send(mdbx_result(unsafe {
+                                        ffi::mdbx_txn_abort_ex(tx.0, ptr::null_mut())
+                                    }))
                                     .unwrap();
                             }
                             TxnManagerMessage::Commit { tx, sender } => {
