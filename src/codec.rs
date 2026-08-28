@@ -1,9 +1,23 @@
-use crate::{Error, TransactionKind, error::mdbx_result};
+use crate::{Error, TransactionKind};
 use derive_more::{Deref, DerefMut, Display};
 use std::{borrow::Cow, slice};
 use thiserror::Error;
 
-/// Implement this to be able to decode data values
+/// Implement this to be able to decode data values.
+///
+/// # Zero-copy contract
+///
+/// The default [`Decodable::decode_val`] receives a slice pointing directly
+/// into the database's memory map. That memory is owned by MDBX:
+///
+/// * It must never be written through.
+/// * In a read-only transaction the bytes are stable for the duration of the
+///   transaction (MVCC snapshot). Returning borrowed views (e.g.
+///   [`Cow::Borrowed`]) is sound there.
+/// * In a read-write transaction MDBX may relocate or overwrite pages on any
+///   subsequent write operation. Implementations MUST copy (like this crate's
+///   [`Cow`] impl does) unless they override `decode_val` and take full
+///   responsibility for invalidation.
 pub trait Decodable<'tx> {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
@@ -17,39 +31,49 @@ pub trait Decodable<'tx> {
     where
         Self: Sized,
     {
-        let s = unsafe { slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len) };
+        let s: &[u8] = unsafe {
+            if data_val.iov_len == 0 {
+                &[]
+            } else {
+                slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len)
+            }
+        };
 
         Decodable::decode(s)
     }
 }
 
 impl<'tx> Decodable<'tx> for Cow<'tx, [u8]> {
-    fn decode(_: &[u8]) -> Result<Self, Error> {
-        unreachable!()
+    fn decode(data_val: &[u8]) -> Result<Self, Error> {
+        Ok(Cow::Owned(data_val.to_vec()))
     }
 
     #[doc(hidden)]
     unsafe fn decode_val<K: TransactionKind>(
-        txn: *const ffi::MDBX_txn,
+        _: *const ffi::MDBX_txn,
         data_val: &ffi::MDBX_val,
     ) -> Result<Self, Error> {
-        let is_dirty =
-            (!K::ONLY_CLEAN) && mdbx_result(unsafe { ffi::mdbx_is_dirty(txn, data_val.iov_base) })?;
+        let s: &[u8] = unsafe {
+            if data_val.iov_len == 0 {
+                &[]
+            } else {
+                slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len)
+            }
+        };
 
-        let s = unsafe { slice::from_raw_parts(data_val.iov_base as *const u8, data_val.iov_len) };
-
-        Ok(if is_dirty {
-            Cow::Owned(s.to_vec())
-        } else {
+        // RW transactions may relocate pages on subsequent writes; copy for safety.
+        Ok(if K::ONLY_CLEAN {
             Cow::Borrowed(s)
+        } else {
+            Cow::Owned(s.to_vec())
         })
     }
 }
 
 #[cfg(feature = "lifetimed-bytes")]
 impl<'tx> Decodable<'tx> for lifetimed_bytes::Bytes<'tx> {
-    fn decode(_: &[u8]) -> Result<Self, Error> {
-        unreachable!()
+    fn decode(data_val: &[u8]) -> Result<Self, Error> {
+        Ok(Self::from(data_val.to_vec()))
     }
 
     #[doc(hidden)]

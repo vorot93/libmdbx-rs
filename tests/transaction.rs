@@ -470,6 +470,65 @@ fn test_stat() {
 }
 
 #[test]
+fn test_rw_reads_are_copied() {
+    let dir = tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.create_table(Some("test"), Default::default()).unwrap();
+    tx.put(&table, "key", "value", WriteFlags::UPSERT).unwrap();
+    tx.commit().unwrap();
+    // fresh RW txn: page is clean, so old code returned Borrowed (unsound);
+    // safe contract now requires an owned copy in RW txns.
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.open_table(Some("test")).unwrap();
+    let v = tx.get::<Cow<[u8]>>(&table, b"key").unwrap().unwrap();
+    assert!(matches!(v, Cow::Owned(_)));
+    tx.commit().unwrap();
+    // RO txns keep zero-copy.
+    let tx = db.begin_ro_txn().unwrap();
+    let table = tx.open_table(Some("test")).unwrap();
+    let v = tx.get::<Cow<[u8]>>(&table, b"key").unwrap().unwrap();
+    assert!(matches!(v, Cow::Borrowed(_)));
+}
+
+#[test]
+fn test_empty_values_roundtrip() {
+    // put/get/iterate empty values without panic
+    // (regression lock for the NULL-base guard; cannot force NULL from here)
+    let dir = tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.create_table(Some("test"), Default::default()).unwrap();
+    tx.put(&table, "key", "", WriteFlags::UPSERT).unwrap();
+    tx.commit().unwrap();
+    let tx = db.begin_ro_txn().unwrap();
+    let table = tx.open_table(Some("test")).unwrap();
+    let v = tx.get::<Cow<[u8]>>(&table, b"key").unwrap().unwrap();
+    assert_eq!(&*v, b"");
+    let mut cursor = tx.cursor(&table).unwrap();
+    let (k, v) = cursor
+        .set_range::<Cow<[u8]>, Cow<[u8]>>(b"key")
+        .unwrap()
+        .unwrap();
+    assert_eq!(&*k, b"key");
+    assert_eq!(&*v, b"");
+}
+
+#[test]
 fn test_stat_dupsort() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir).unwrap();

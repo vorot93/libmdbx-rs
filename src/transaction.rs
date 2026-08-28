@@ -118,6 +118,11 @@ where
     /// returned. Retrieval of other items requires the use of
     /// [Cursor]. If the item is not in the table, then
     /// [None] will be returned.
+    ///
+    /// In a read-write transaction, zero-copy decoders such as
+    /// [Cow](std::borrow::Cow) copy the returned bytes for safety (MDBX may
+    /// relocate pages on subsequent writes). For zero-copy reads prefer a
+    /// read-only transaction.
     pub fn get<'txn, Key>(&'txn self, table: &Table<'txn>, key: &[u8]) -> Result<Option<Key>>
     where
         Key: Decodable<'txn>,
