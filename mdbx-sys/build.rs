@@ -46,7 +46,7 @@ impl ParseCallbacks for Callbacks {
             | "MDBX_THREAD_MISMATCH"
             | "MDBX_TXN_OVERLAPPING"
             | "MDBX_BACKLOG_DEPLETED"
-            | "MDBX_DUPLICATED_CLK"
+            | "MDBX_DUPLICATED_LCK"
             | "MDBX_DANGLING_DBI"
             | "MDBX_OUSTED"
             | "MDBX_MVCC_RETARDED"
@@ -59,6 +59,9 @@ impl ParseCallbacks for Callbacks {
 fn main() {
     let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
     mdbx.push("libmdbx");
+
+    println!("cargo:rerun-if-changed={}", mdbx.join("mdbx.c").display());
+    println!("cargo:rerun-if-changed={}", mdbx.join("mdbx.h").display());
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
 
@@ -82,18 +85,19 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 
-    let mut mdbx = PathBuf::from(&env::var("CARGO_MANIFEST_DIR").unwrap());
-    mdbx.push("libmdbx");
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let debug = env::var("DEBUG")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
 
     let mut cc_builder = cc::Build::new();
     cc_builder
         .flag_if_supported("-Wall")
-        .flag_if_supported("-Werror")
         .flag_if_supported("-ffunction-sections")
         .flag_if_supported("-fvisibility=hidden")
         .flag_if_supported("-Wno-error=attributes");
 
-    if cfg!(debug_assertions) {
+    if debug {
         cc_builder.define("MDBX_FORCE_ASSERTIONS", "1");
     } else {
         cc_builder.define("NDEBUG", "1");
@@ -109,7 +113,7 @@ fn main() {
     let cflags = cc_builder.get_compiler().cflags_env();
     cc_builder.define("MDBX_BUILD_FLAGS", format!("{:?}", cflags).as_str());
 
-    if cfg!(windows) {
+    if target_os == "windows" {
         println!(r"cargo:rustc-link-lib=dylib=ntdll");
         println!(r"cargo:rustc-link-lib=dylib=user32");
         println!(r"cargo:rustc-link-lib=dylib=kernel32");

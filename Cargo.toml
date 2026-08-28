@@ -1,6 +1,6 @@
 [package]
 name = "libmdbx"
-version = "0.6.6"
+version = "0.7.0"
 edition = "2024"
 license = "MPL-2.0"
 description = "Idiomatic and safe MDBX wrapper."
@@ -37,7 +37,7 @@ sealed = "0.7"
 tempfile = { version = "3", optional = true }
 thiserror = "2"
 
-ffi = { package = "mdbx-sys", version = "=14.3.0", path = "./mdbx-sys" }
+ffi = { package = "mdbx-sys", version = "=14.3.1", path = "./mdbx-sys" }
 
 lifetimed-bytes = { version = "0.1", optional = true }
 
@@ -50,7 +50,9 @@ serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 
 [features]
+bytes = ["dep:bytes"]
 cbor = ["orm", "ciborium"]
+lifetimed-bytes = ["dep:lifetimed-bytes"]
 orm = ["arrayref", "arrayvec", "impls", "tempfile"]
 
 [[bench]]
