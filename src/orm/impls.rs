@@ -205,12 +205,15 @@ where
 {
     type Encoded = ArrayVec<u8, LEN>;
 
+    /// Encodes the value with trailing zero bytes removed. The result is a
+    /// byte-wise prefix lower bound: it compares `<=` the full big-endian
+    /// encoding, so `SET_RANGE`/`seek_closest` with it never skips the value.
     fn encode(self) -> Result<Self::Encoded, crate::Error> {
         let arr = self.0.encode()?;
 
         let mut out = <Self::Encoded as Default>::default();
-        let zeros = arr.iter().take_while(|b| **b == 0).count();
-        out.try_extend_from_slice(&arr[zeros..])
+        let zeros = arr.iter().rev().take_while(|b| **b == 0).count();
+        out.try_extend_from_slice(&arr[..LEN - zeros])
             .map_err(|e| crate::Error::EncodeError(Box::new(e)))?;
         Ok(out)
     }
@@ -226,7 +229,7 @@ where
         }
 
         let mut array = [0; LEN];
-        array[LEN - b.len()..].copy_from_slice(b);
+        array[..b.len()].copy_from_slice(b);
         T::decode(&array).map(Self)
     }
 }

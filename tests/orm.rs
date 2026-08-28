@@ -1,9 +1,9 @@
 #![cfg(feature = "orm")]
 
-use libmdbx::orm::{DatabaseChart, Decodable, Encodable, table, table_info};
+use libmdbx::orm::{CutStart, DatabaseChart, Decodable, Encodable, table, table_info};
 use std::sync::Arc;
 
-table! { ( Numbers ) u64 => u64 }
+table! { ( Numbers ) u64 [ CutStart<u64> ] => u64 }
 
 fn chart() -> Arc<DatabaseChart> {
     Arc::new([table_info!(Numbers)].into_iter().collect())
@@ -67,6 +67,52 @@ fn test_orm_error_type_is_typed() {
         tx.get::<FailingTable>(1).unwrap_err(),
         libmdbx::Error::DecodeError(_)
     ));
+}
+
+#[test]
+fn test_cutstart_encode_cuts_trailing_zeros() {
+    let enc = CutStart(0x0100u64).encode().unwrap();
+    assert_eq!(enc.as_ref(), &[0, 0, 0, 0, 0, 0, 1][..]);
+    let enc = CutStart(5u64).encode().unwrap();
+    assert_eq!(enc.as_ref(), &[0, 0, 0, 0, 0, 0, 0, 5][..]);
+    let enc = CutStart(0u64).encode().unwrap();
+    assert_eq!(enc.as_ref(), &[][..]);
+}
+
+#[test]
+fn test_cutstart_roundtrip() {
+    for v in [0u64, 1, 5, 0x100, u64::MAX - 1] {
+        let enc = CutStart(v).encode().unwrap();
+        let back = <CutStart<u64> as Decodable>::decode(enc.as_ref()).unwrap();
+        assert_eq!(back.0, v);
+    }
+}
+
+#[test]
+fn test_cutstart_seek_finds_value() {
+    let db = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let tx = db.begin_readwrite().unwrap();
+    for i in 1..=1000u64 {
+        tx.upsert::<Numbers>(i, i).unwrap();
+    }
+    tx.commit().unwrap();
+
+    let tx = db.begin_read().unwrap();
+    let mut cursor = tx.cursor::<Numbers>().unwrap();
+    let (k, _) = cursor
+        .seek_closest(CutStart(5u64))
+        .unwrap()
+        .expect("5 must be found");
+    assert_eq!(k, 5);
+
+    let first = tx
+        .cursor::<Numbers>()
+        .unwrap()
+        .walk(Some(CutStart(7u64)))
+        .next()
+        .unwrap()
+        .unwrap();
+    assert_eq!(first, (7, 7));
 }
 
 #[cfg(feature = "cbor")]
