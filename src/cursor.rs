@@ -57,17 +57,15 @@ where
     fn new_at_position(other: &Self) -> Result<Self> {
         unsafe {
             let cursor = ffi::mdbx_cursor_create(ptr::null_mut());
-
-            let res = ffi::mdbx_cursor_copy(other.cursor().0, cursor);
-
+            if cursor.is_null() {
+                return Err(Error::Other(libc::ENOMEM));
+            }
             let s = Self {
                 txn: other.txn.clone(),
                 cursor: CursorPtr(cursor),
                 _marker: PhantomData,
             };
-
-            mdbx_result(res)?;
-
+            mdbx_result(ffi::mdbx_cursor_copy(other.cursor().0, cursor))?;
             Ok(s)
         }
     }
@@ -574,14 +572,12 @@ where
     Key: Decodable<'txn>,
     Value: Decodable<'txn>,
 {
-    /// An iterator that returns an error on every call to [Iter::next()].
-    /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
-    /// on retrieval of a cursor.  Using this variant instead of returning
-    /// an error makes Cursor.iter()* methods infallible, so consumers only
-    /// need to check the result of Iter.next().
+    /// An iterator that yields a single error item on the first call to
+    /// [IntoIter::next()], then ends. Created when the initial seek (e.g.
+    /// `into_iter_from`) failed; yields the error once.
     Err(Option<Error>),
 
-    /// An iterator that returns an Item on calls to [Iter::next()].
+    /// An iterator that returns an Item on calls to [IntoIter::next()].
     /// The Item is a [Result], so this variant
     /// might still return an error, if retrieval of the key/value pair
     /// fails for some reason.
@@ -676,11 +672,9 @@ where
     Key: Decodable<'txn>,
     Value: Decodable<'txn>,
 {
-    /// An iterator that returns an error on every call to [Iter::next()].
-    /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
-    /// on retrieval of a cursor.  Using this variant instead of returning
-    /// an error makes Cursor.iter()* methods infallible, so consumers only
-    /// need to check the result of Iter.next().
+    /// An iterator that yields a single error item on the first call to
+    /// [Iter::next()], then ends. Created when the initial seek (e.g.
+    /// `iter_from`) failed; yields the error once.
     Err(Option<Error>),
 
     /// An iterator that returns an Item on calls to [Iter::next()].
@@ -784,17 +778,14 @@ where
     Key: Decodable<'txn>,
     Value: Decodable<'txn>,
 {
-    /// An iterator that returns an error on every call to Iter.next().
-    /// Cursor.iter*() creates an Iter of this type when MDBX returns an error
-    /// on retrieval of a cursor.  Using this variant instead of returning
-    /// an error makes Cursor.iter()* methods infallible, so consumers only
-    /// need to check the result of Iter.next().
+    /// An iterator that yields a single error item on the first call to
+    /// Iter.next(), then ends. Created when the initial seek (e.g.
+    /// `iter_dup_from`) failed; yields the error once.
     Err(Option<Error>),
 
-    /// An iterator that returns an Item on calls to Iter.next().
-    /// The Item is a Result<(&'txn [u8], &'txn [u8])>, so this variant
-    /// might still return an error, if retrieval of the key/value pair
-    /// fails for some reason.
+    /// An iterator that yields a [Result] on each call to Iter.next(): an
+    /// [IntoIter] over the duplicates of the next key, or an error if the
+    /// retrieval failed.
     Ok {
         /// The MDBX cursor with which to iterate.
         cursor: &'cur mut Cursor<'txn, K>,
@@ -839,7 +830,7 @@ where
     Key: Decodable<'txn>,
     Value: Decodable<'txn>,
 {
-    type Item = IntoIter<'txn, K, Key, Value>;
+    type Item = Result<IntoIter<'txn, K, Key, Value>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
@@ -853,23 +844,21 @@ where
                     iov_base: ptr::null_mut(),
                 };
                 let op = mem::replace(op, ffi::MDBX_NEXT_NODUP);
-
                 txn_execute(&cursor.txn, |_| {
                     let err_code =
                         unsafe { ffi::mdbx_cursor_get(cursor.cursor().0, &mut key, &mut data, op) };
-
-                    if err_code == ffi::MDBX_SUCCESS {
-                        Some(IntoIter::new(
-                            Cursor::new_at_position(&**cursor).unwrap(),
-                            ffi::MDBX_GET_CURRENT,
-                            ffi::MDBX_NEXT_DUP,
-                        ))
-                    } else {
-                        None
+                    match err_code {
+                        ffi::MDBX_SUCCESS => {
+                            Some(Cursor::new_at_position(&**cursor).map(|c| {
+                                IntoIter::new(c, ffi::MDBX_GET_CURRENT, ffi::MDBX_NEXT_DUP)
+                            }))
+                        }
+                        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
+                        error => Some(Err(Error::from_err_code(error))),
                     }
                 })
             }
-            IterDup::Err(err) => err.take().map(|e| IntoIter::Err(Some(e))),
+            IterDup::Err(err) => err.take().map(Err),
         }
     }
 }

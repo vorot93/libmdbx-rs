@@ -214,12 +214,24 @@ fn test_iter_empty_dup_database() {
     assert!(cursor.iter_start::<(), ()>().next().is_none());
     assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
     assert!(cursor.iter_from::<(), ()>(b"foo").next().is_none());
-    assert!(cursor.iter_dup::<(), ()>().flatten().next().is_none());
-    assert!(cursor.iter_dup_start::<(), ()>().flatten().next().is_none());
+    assert!(
+        cursor
+            .iter_dup::<(), ()>()
+            .flat_map(|nested| nested.unwrap())
+            .next()
+            .is_none()
+    );
+    assert!(
+        cursor
+            .iter_dup_start::<(), ()>()
+            .flat_map(|nested| nested.unwrap())
+            .next()
+            .is_none()
+    );
     assert!(
         cursor
             .iter_dup_from::<(), ()>(b"foo")
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .next()
             .is_none()
     );
@@ -269,7 +281,7 @@ fn test_iter_dup() {
         items,
         cursor
             .iter_dup()
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -279,7 +291,7 @@ fn test_iter_dup() {
         items.iter().copied().skip(4).collect::<Vec<_>>(),
         cursor
             .iter_dup()
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -288,7 +300,7 @@ fn test_iter_dup() {
         items,
         cursor
             .iter_dup_start()
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -297,7 +309,7 @@ fn test_iter_dup() {
         items.iter().copied().skip(3).collect::<Vec<_>>(),
         cursor
             .iter_dup_from(b"b")
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -306,7 +318,7 @@ fn test_iter_dup() {
         items.iter().copied().skip(3).collect::<Vec<_>>(),
         cursor
             .iter_dup_from(b"ab")
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -315,7 +327,7 @@ fn test_iter_dup() {
         items.iter().copied().skip(9).collect::<Vec<_>>(),
         cursor
             .iter_dup_from(b"d")
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -324,7 +336,7 @@ fn test_iter_dup() {
         Vec::<([u8; 1], [u8; 1])>::new(),
         cursor
             .iter_dup_from(b"f")
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
@@ -338,6 +350,44 @@ fn test_iter_dup() {
     );
 
     assert_eq!(0, cursor.iter_dup_of::<(), ()>(b"foo").count());
+}
+
+#[test]
+fn test_iter_dup_shape() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    {
+        let tx = db.begin_rw_txn().unwrap();
+        let table = tx.create_table(Some("test"), TableFlags::DUP_SORT).unwrap();
+        tx.put(&table, "key1", "val1", WriteFlags::UPSERT).unwrap();
+        tx.put(&table, "key1", "val2", WriteFlags::UPSERT).unwrap();
+        tx.put(&table, "key2", "val3", WriteFlags::UPSERT).unwrap();
+        tx.commit().unwrap();
+    }
+
+    let tx = db.begin_ro_txn().unwrap();
+    let table = tx.open_table(Some("test")).unwrap();
+    let mut cursor = tx.cursor(&table).unwrap();
+    let mut collected = vec![];
+    for nested in cursor.iter_dup_start::<Vec<u8>, Vec<u8>>() {
+        let nested = nested.unwrap();
+        let dups: Vec<_> = nested.map(|kv| kv.unwrap().1).collect();
+        collected.push(dups);
+    }
+    assert_eq!(
+        collected,
+        vec![
+            vec![b"val1".to_vec(), b"val2".to_vec()],
+            vec![b"val3".to_vec()]
+        ]
+    );
 }
 
 #[test]
@@ -377,7 +427,7 @@ fn test_iter_del_get() {
         items,
         cursor
             .iter_dup()
-            .flatten()
+            .flat_map(|nested| nested.unwrap())
             .collect::<Result<Vec<_>>>()
             .unwrap()
     );
