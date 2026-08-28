@@ -1,7 +1,6 @@
 use libmdbx::*;
 use std::{
     borrow::Cow,
-    io::Write,
     sync::{Arc, Barrier},
     thread::{self, JoinHandle},
 };
@@ -111,26 +110,30 @@ fn test_put_get_del_empty_key() {
 
 #[test]
 fn test_reserve() {
-    let dir = tempdir().unwrap();
-    let db = Database::open(&dir).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.create_table(Some("test"), Default::default()).unwrap();
 
-    let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
-    {
-        let mut writer = txn
-            .reserve(&table, b"key1", 4, WriteFlags::empty())
-            .unwrap();
-        writer.write_all(b"val1").unwrap();
-    }
-    txn.commit().unwrap();
+    let sum = tx
+        .reserve(&table, "key", 8, WriteFlags::UPSERT, |buf| {
+            assert_eq!(buf.len(), 8);
+            buf.copy_from_slice(b"12345678");
+            42
+        })
+        .unwrap();
+    assert_eq!(sum, 42);
 
-    let txn = db.begin_rw_txn().unwrap();
-    let table = txn.open_table(None).unwrap();
-    assert_eq!(txn.get(&table, b"key1").unwrap(), Some(*b"val1"));
-    assert_eq!(txn.get::<()>(&table, b"key").unwrap(), None);
-
-    txn.del(&table, b"key1", None).unwrap();
-    assert_eq!(txn.get::<()>(&table, b"key1").unwrap(), None);
+    let v = tx.get::<Vec<u8>>(&table, b"key").unwrap().unwrap();
+    assert_eq!(v, b"12345678");
+    tx.commit().unwrap();
 }
 
 #[test]

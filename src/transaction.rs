@@ -292,16 +292,23 @@ where
         Ok(())
     }
 
-    /// Returns a buffer which can be used to write a value into the item at the
-    /// given key and with the given length. The buffer must be completely
-    /// filled by the caller.
-    pub fn reserve<'txn>(
+    /// Reserves space for a value of `len` bytes at `key`, passes the raw
+    /// reserved buffer to `write`, and stores the bytes left in it.
+    ///
+    /// The buffer is only valid inside `write`; it aliases the transaction's
+    /// page memory and MUST NOT outlive the closure. This method therefore
+    /// cannot produce two outstanding buffers over the same memory.
+    ///
+    /// The buffer must be completely filled by `write` unless the table uses
+    /// fixed-length values.
+    pub fn reserve<'txn, R>(
         &'txn self,
         table: &Table<'txn>,
         key: impl AsRef<[u8]>,
         len: usize,
         flags: WriteFlags,
-    ) -> Result<&'txn mut [u8]> {
+        write: impl FnOnce(&mut [u8]) -> R,
+    ) -> Result<R> {
         let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
@@ -321,10 +328,12 @@ where
                     c_enum(flags.bits() | ffi::MDBX_RESERVE as u32),
                 )
             }))?;
-            Ok(slice::from_raw_parts_mut(
-                data_val.iov_base as *mut u8,
-                data_val.iov_len,
-            ))
+            let buf = if data_val.iov_len == 0 {
+                &mut []
+            } else {
+                slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len)
+            };
+            Ok(write(buf))
         }
     }
 
