@@ -1,9 +1,14 @@
 #![cfg(feature = "orm")]
 
-use libmdbx::orm::{CutStart, DatabaseChart, Decodable, Encodable, table, table_info};
+use libmdbx::orm::{
+    CutStart, DatabaseChart, DatabaseOptions, Decodable, Encodable, table, table_info,
+};
 use std::sync::Arc;
 
 table! { ( Numbers ) u64 [ CutStart<u64> ] => u64 }
+
+// Table NOT part of the chart used by most tests.
+table! { ( Extra ) String => Vec<u8> }
 
 fn chart() -> Arc<DatabaseChart> {
     Arc::new([table_info!(Numbers)].into_iter().collect())
@@ -11,7 +16,7 @@ fn chart() -> Arc<DatabaseChart> {
 
 #[test]
 fn test_orm_upsert_get_delete() {
-    let db = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(None, &chart()).unwrap();
     let tx = db.begin_readwrite().unwrap();
 
     tx.upsert::<Numbers>(1, 1).unwrap();
@@ -31,6 +36,70 @@ fn test_orm_upsert_get_delete() {
     let tx = db.begin_read().unwrap();
     assert_eq!(tx.get::<Numbers>(2).unwrap(), Some(4));
     assert_eq!(tx.get::<Numbers>(3).unwrap(), None);
+}
+
+#[test]
+fn test_user_max_tables_respected() {
+    let options = DatabaseOptions {
+        max_tables: Some(5),
+        ..Default::default()
+    };
+    let chart = Arc::new([table_info!(Numbers)].into_iter().collect());
+    let db: libmdbx::orm::Database =
+        libmdbx::orm::Database::create_with_options(None, options, &chart).unwrap();
+
+    // `Extra` is not in the chart; create it via the core API (Deref) and
+    // use it through the ORM. Requires the user-provided max_tables = 5 to
+    // survive: the chart alone only reserves one slot.
+    let tx = db.begin_rw_txn().unwrap();
+    tx.create_table(Some("Extra"), libmdbx::TableFlags::default())
+        .unwrap();
+    tx.commit().unwrap();
+
+    let tx = db.begin_readwrite().unwrap();
+    let mut cur = tx.cursor::<Extra>().unwrap();
+    cur.upsert("k".to_string(), b"v".to_vec()).unwrap();
+    tx.commit().unwrap();
+
+    let tx = db.begin_read().unwrap();
+    assert_eq!(
+        tx.get::<Extra>("k".to_string()).unwrap(),
+        Some(b"v".to_vec())
+    );
+}
+
+#[test]
+fn test_database_mode_generic() {
+    let db: libmdbx::orm::Database<libmdbx::NoWriteMap> =
+        libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let tx = db.begin_readwrite().unwrap();
+    tx.upsert::<Numbers>(1, 1).unwrap();
+    tx.commit().unwrap();
+
+    let tx = db.begin_read().unwrap();
+    assert_eq!(tx.get::<Numbers>(1).unwrap(), Some(1));
+}
+
+table! { ( Small ) u8 => u16 }
+
+#[test]
+fn test_u8_u16_keys() {
+    let chart = Arc::new([table_info!(Small)].into_iter().collect());
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(None, &chart).unwrap();
+    let tx = db.begin_readwrite().unwrap();
+    tx.upsert::<Small>(2, 700).unwrap();
+    tx.upsert::<Small>(0, 1).unwrap();
+    tx.upsert::<Small>(255, u16::MAX).unwrap();
+    tx.commit().unwrap();
+
+    let tx = db.begin_read().unwrap();
+    let items: Vec<_> = tx
+        .cursor::<Small>()
+        .unwrap()
+        .walk_back(None)
+        .map(|kv| kv.unwrap())
+        .collect();
+    assert_eq!(items, vec![(255, u16::MAX), (2, 700), (0, 1)]);
 }
 
 #[derive(Debug)]
@@ -54,7 +123,7 @@ table! { ( FailingTable ) u64 => FailingDecode }
 
 #[test]
 fn test_orm_error_type_is_typed() {
-    let db = libmdbx::orm::Database::create(
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(
         None,
         &Arc::new([table_info!(FailingTable)].into_iter().collect()),
     )
@@ -90,7 +159,7 @@ fn test_cutstart_roundtrip() {
 
 #[test]
 fn test_cutstart_seek_finds_value() {
-    let db = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(None, &chart()).unwrap();
     let tx = db.begin_readwrite().unwrap();
     for i in 1..=1000u64 {
         tx.upsert::<Numbers>(i, i).unwrap();
@@ -117,7 +186,7 @@ fn test_cutstart_seek_finds_value() {
 
 #[test]
 fn test_walk_back_bounds() {
-    let db = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(None, &chart()).unwrap();
     let tx = db.begin_readwrite().unwrap();
     for i in 1..=10u64 {
         tx.upsert::<Numbers>(i, i).unwrap();
@@ -175,7 +244,7 @@ mod cbor {
 
     #[test]
     fn test_cbor_roundtrip() {
-        let db = libmdbx::orm::Database::create(
+        let db: libmdbx::orm::Database = libmdbx::orm::Database::create(
             None,
             &Arc::new([table_info!(Users)].into_iter().collect()),
         )
@@ -194,4 +263,17 @@ mod cbor {
         );
         tx.commit().unwrap();
     }
+}
+
+#[test]
+fn test_database_defaults_to_writemap() {
+    fn expect_writemap(_: &libmdbx::orm::Database<libmdbx::WriteMap>) {}
+
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    expect_writemap(&db);
+    let tx = db.begin_readwrite().unwrap();
+    tx.upsert::<Numbers>(1, 1).unwrap();
+    tx.commit().unwrap();
+    let tx = db.begin_read().unwrap();
+    assert_eq!(tx.get::<Numbers>(1).unwrap(), Some(1));
 }

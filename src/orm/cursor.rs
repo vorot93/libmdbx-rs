@@ -175,6 +175,9 @@ where
         Ok(None)
     }
 
+    /// Returns the last duplicate of the key the cursor is currently
+    /// positioned at; requires a positioned cursor (e.g. after
+    /// [`seek_exact`](Self::seek_exact) or [`first`](Self::first)).
     pub fn last_value(&mut self) -> crate::Result<Option<T::Value>> {
         Ok(self
             .inner

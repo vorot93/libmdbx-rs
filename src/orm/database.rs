@@ -1,5 +1,5 @@
 use super::{traits::*, transaction::Transaction};
-use crate::{DatabaseOptions, Mode, RO, RW, TableFlags, WriteMap};
+use crate::{DatabaseKind, DatabaseOptions, Mode, RO, RW, TableFlags, WriteMap};
 use std::{
     collections::BTreeMap,
     fs::DirBuilder,
@@ -23,13 +23,21 @@ impl DbFolder {
     }
 }
 
+/// Typed database handle.
+///
+/// The type parameter selects the database kind (see
+/// [`DatabaseKind`](crate::DatabaseKind)); it defaults to
+/// [`WriteMap`] so writes modify the database directly in mapped memory and
+/// flush to disk with a single system call. Use `Database<NoWriteMap>` to
+/// instead stock modified pages in memory and write them to disk through file
+/// operations.
 #[derive(Debug)]
-pub struct Database {
-    inner: crate::Database<WriteMap>,
+pub struct Database<E: DatabaseKind = WriteMap> {
+    inner: crate::Database<E>,
     folder: DbFolder,
 }
 
-impl Database {
+impl<E: DatabaseKind> Database<E> {
     pub fn path(&self) -> &Path {
         self.folder.path()
     }
@@ -46,7 +54,14 @@ impl Database {
         mut options: DatabaseOptions,
         chart: &DatabaseChart,
     ) -> crate::Result<Self> {
-        options.max_tables = Some(std::cmp::max(chart.len() as u64, 1));
+        // The chart's tables must always fit; never clobber a larger
+        // user-provided value, and always allow at least one named table.
+        options.max_tables = Some(
+            chart
+                .len()
+                .max(options.max_tables.unwrap_or(0) as usize)
+                .max(1) as u64,
+        );
 
         if let Mode::ReadOnly = options.mode {
             Self::open_db(folder, options)
@@ -72,7 +87,7 @@ impl Database {
         }
     }
 
-    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> crate::Result<Database> {
+    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> crate::Result<Self> {
         Self::create_with_options(path, DatabaseOptions::default(), chart)
     }
 
@@ -80,7 +95,7 @@ impl Database {
         path: Option<PathBuf>,
         options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> crate::Result<Database> {
+    ) -> crate::Result<Self> {
         let folder = if let Some(path) = path {
             DbFolder::Persisted(path)
         } else {
@@ -91,15 +106,19 @@ impl Database {
         Self::new(folder, options, chart)
     }
 
-    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> crate::Result<Database> {
+    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> crate::Result<Self> {
         Self::open_with_options(path, DatabaseOptions::default(), chart)
     }
 
+    /// Opens an existing database for reading.
+    ///
+    /// Forces read-only mode; use `create_with_options` with
+    /// [`Mode::ReadWrite`] to open an existing database for writing.
     pub fn open_with_options(
         path: impl AsRef<Path>,
         mut options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> crate::Result<Database> {
+    ) -> crate::Result<Self> {
         options.mode = Mode::ReadOnly;
 
         Self::new(
@@ -110,22 +129,22 @@ impl Database {
     }
 }
 
-impl Deref for Database {
-    type Target = crate::Database<WriteMap>;
+impl<E: DatabaseKind> Deref for Database<E> {
+    type Target = crate::Database<E>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl Database {
-    pub fn begin_read(&self) -> crate::Result<Transaction<'_, RO>> {
+impl<E: DatabaseKind> Database<E> {
+    pub fn begin_read(&self) -> crate::Result<Transaction<'_, RO, E>> {
         Ok(Transaction {
             inner: self.inner.begin_ro_txn()?,
         })
     }
 
-    pub fn begin_readwrite(&self) -> crate::Result<Transaction<'_, RW>> {
+    pub fn begin_readwrite(&self) -> crate::Result<Transaction<'_, RW, E>> {
         Ok(Transaction {
             inner: self.inner.begin_rw_txn()?,
         })

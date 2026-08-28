@@ -195,6 +195,8 @@ macro_rules! table_integer {
     };
 }
 
+table_integer!(u8 => u8);
+table_integer!(u16 => u16);
 table_integer!(u32 => u32);
 table_integer!(u64 => u64);
 table_integer!(u128 => u128);

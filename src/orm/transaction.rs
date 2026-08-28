@@ -1,16 +1,17 @@
 use super::{cursor::*, impls::dec, traits::*};
-use crate::{RO, RW, Stat, TransactionKind, WriteFlags, WriteMap};
+use crate::{DatabaseKind, RO, RW, Stat, TransactionKind, WriteFlags, WriteMap};
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Debug)]
-pub struct Transaction<'db, K>
+pub struct Transaction<'db, K, E = WriteMap>
 where
     K: TransactionKind,
+    E: DatabaseKind,
 {
-    pub(crate) inner: crate::Transaction<'db, K, WriteMap>,
+    pub(crate) inner: crate::Transaction<'db, K, E>,
 }
 
-impl Transaction<'_, RO> {
+impl<E: DatabaseKind> Transaction<'_, RO, E> {
     pub fn table_sizes(&self) -> crate::Result<HashMap<String, u64>> {
         let mut out = HashMap::new();
         let main_table = self.inner.open_table(None)?;
@@ -31,9 +32,10 @@ impl Transaction<'_, RO> {
     }
 }
 
-impl<'db, K> Transaction<'db, K>
+impl<'db, K, E> Transaction<'db, K, E>
 where
     K: TransactionKind,
+    E: DatabaseKind,
 {
     pub fn table_stat<T>(&self) -> crate::Result<Stat>
     where
@@ -54,6 +56,10 @@ where
         })
     }
 
+    /// Returns the value stored at `key`, or `None` when the key is absent.
+    ///
+    /// On `DUP_SORT` tables this returns the first duplicate of the key; use
+    /// a [`Cursor`](crate::orm::Cursor) to walk the remaining duplicates.
     pub fn get<T>(&self, key: T::Key) -> crate::Result<Option<T::Value>>
     where
         T: Table,
@@ -66,7 +72,12 @@ where
     }
 }
 
-impl Transaction<'_, RW> {
+impl<E: DatabaseKind> Transaction<'_, RW, E> {
+    /// Upserts a value into the table.
+    ///
+    /// On `DUP_SORT` tables this adds a duplicate when the key exists; use
+    /// `WriteFlags::UPSERT | WriteFlags::ALLDUPS` via the core API to
+    /// replace all duplicates.
     pub fn upsert<T>(&self, key: T::Key, value: T::Value) -> crate::Result<()>
     where
         T: Table,
