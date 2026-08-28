@@ -405,6 +405,44 @@ fn test_iter_del_get() {
 }
 
 #[test]
+fn test_reseek_with_borrowed_key() {
+    let dir = tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.create_table(Some("test"), Default::default()).unwrap();
+    tx.put(&table, b"key1", b"val1", WriteFlags::UPSERT)
+        .unwrap();
+    tx.put(&table, b"key2", b"val2", WriteFlags::UPSERT)
+        .unwrap();
+    tx.commit().unwrap();
+
+    let tx = db.begin_ro_txn().unwrap();
+    let table = tx.open_table(Some("test")).unwrap();
+    let mut cursor = tx.cursor(&table).unwrap();
+    let (k, v) = cursor
+        .set_range::<Cow<[u8]>, Cow<[u8]>>(b"key1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(&*v, b"val1");
+    // k is `Cow::Borrowed` pointing at db memory; reseeking with it must not panic.
+    let (k2, v2) = cursor.set_key::<Cow<[u8]>, Cow<[u8]>>(&k).unwrap().unwrap();
+    assert_eq!(&*k2, b"key1");
+    assert_eq!(&*v2, b"val1");
+    let (_, _, v3) = cursor
+        .set_lowerbound::<Cow<[u8]>, Cow<[u8]>>(&k, None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(&*v3, b"val1");
+}
+
+#[test]
 fn test_put_del() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir).unwrap();

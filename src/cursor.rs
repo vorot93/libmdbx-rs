@@ -80,14 +80,14 @@ where
         self.cursor
     }
 
-    /// Retrieves a key/data pair from the cursor. Depending on the cursor op,
-    /// the current key may be returned.
+    /// Retrieves a key/data pair from the cursor, always decoding the key and
+    /// value at the cursor position after the op.
     fn get<Key, Value>(
         &self,
         key: Option<&[u8]>,
         data: Option<&[u8]>,
         op: MDBX_cursor_op,
-    ) -> Result<(Option<Key>, Value, bool)>
+    ) -> Result<(Key, Value, bool)>
     where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
@@ -95,8 +95,6 @@ where
         unsafe {
             let mut key_val = slice_to_val(key);
             let mut data_val = slice_to_val(data);
-            let key_ptr = key_val.iov_base;
-            let data_ptr = data_val.iov_base;
             txn_execute(&self.txn, |txn| {
                 let v = mdbx_result(ffi::mdbx_cursor_get(
                     self.cursor.0,
@@ -104,17 +102,9 @@ where
                     &mut data_val,
                     op,
                 ))?;
-                assert_ne!(data_ptr, data_val.iov_base);
-                let key_out = {
-                    // MDBX wrote in new key
-                    if key_ptr != key_val.iov_base {
-                        Some(Key::decode_val::<K>(txn, &key_val)?)
-                    } else {
-                        None
-                    }
-                };
-                let data_out = Value::decode_val::<K>(txn, &data_val)?;
-                Ok((key_out, data_out, v))
+                let key = Key::decode_val::<K>(txn, &key_val)?;
+                let value = Value::decode_val::<K>(txn, &data_val)?;
+                Ok((key, value, v))
             })
         }
     }
@@ -145,7 +135,7 @@ where
     {
         let (k, v, _) = mdbx_try_optional!(self.get(key, data, op));
 
-        Ok(Some((k.unwrap(), v)))
+        Ok(Some((k, v)))
     }
 
     /// Position at first key/data item.
@@ -332,7 +322,7 @@ where
     {
         let (k, v, found) = mdbx_try_optional!(self.get(Some(key), value, MDBX_SET_LOWERBOUND));
 
-        Ok(Some((found, k.unwrap(), v)))
+        Ok(Some((found, k, v)))
     }
 
     /// Iterate over table items. The iterator will begin with item next
