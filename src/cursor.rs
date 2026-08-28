@@ -685,18 +685,44 @@ unsafe fn val_to_slice(val: &ffi::MDBX_val) -> &[u8] {
     }
 }
 
+/// Outcome of one cursor fetch driving an iterator step.
+///
+/// `PastBound` is only produced when a `bound` was given and the fetched key
+/// lies beyond it: the cursor is then parked outside the iterator's domain,
+/// so the whole iterator must hard-stop rather than let either direction
+/// fetch from the parked position.
+enum Fetched<T> {
+    /// Yield this item (possibly an error item).
+    Item(T),
+    /// End of iteration (`MDBX_NOTFOUND`/`MDBX_ENODATA`).
+    Exhausted,
+    /// The fetched key is beyond the inclusive bound.
+    PastBound,
+}
+
+impl<T> Fetched<T> {
+    /// The yielded item, if this step produced one. Both end states end
+    /// iteration for the caller.
+    fn item(self) -> Option<T> {
+        match self {
+            Fetched::Item(item) => Some(item),
+            _ => None,
+        }
+    }
+}
+
 /// Runs a cursor get op and decodes the pair at the resulting position.
 ///
-/// Maps `MDBX_NOTFOUND`/`MDBX_ENODATA` to `None` (end of iteration) and any
-/// other failure to `Some(Err(..))`. When `bound` is given, a successfully
-/// fetched key strictly greater than `bound` also ends iteration, so the
-/// reversed element order of a bounded iterator stays within its domain when
-/// driven from the back.
+/// Maps `MDBX_NOTFOUND`/`MDBX_ENODATA` to [Fetched::Exhausted] (end of
+/// iteration), any other failure to an error item, and, when `bound` is
+/// given, a successfully fetched key strictly greater than `bound` to
+/// [Fetched::PastBound], so the reversed element order of a bounded
+/// iterator stays within its domain when driven from the back.
 fn fetch_op<'txn, K, Key, Value>(
     cursor: &Cursor<'txn, K>,
     op: MDBX_cursor_op,
     bound: Option<&[u8]>,
-) -> Option<Result<(Key, Value)>>
+) -> Fetched<Result<(Key, Value)>>
 where
     K: TransactionKind,
     Key: Decodable<'txn>,
@@ -715,22 +741,22 @@ where
             match ffi::mdbx_cursor_get(cursor.cursor.0, &mut key, &mut data, op) {
                 ffi::MDBX_SUCCESS => {
                     if bound.is_some_and(|b| val_to_slice(&key) > b) {
-                        return None;
+                        return Fetched::PastBound;
                     }
                     let key = match Key::decode_val::<K>(txn, &key) {
                         Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
+                        Err(e) => return Fetched::Item(Err(e)),
                     };
                     let data = match Value::decode_val::<K>(txn, &data) {
                         Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
+                        Err(e) => return Fetched::Item(Err(e)),
                     };
-                    Some(Ok((key, data)))
+                    Fetched::Item(Ok((key, data)))
                 }
                 // MDBX_ENODATA can occur when the cursor was previously seeked to a non-existent value,
                 // e.g. iter_from with a key greater than all values in the table.
-                ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
-                error => Some(Err(Error::from_err_code(error))),
+                ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => Fetched::Exhausted,
+                error => Fetched::Item(Err(Error::from_err_code(error))),
             }
         })
     }
@@ -754,7 +780,10 @@ where
 /// backed by a single MDBX cursor. Exhausting either direction is stable
 /// (MDBX cursor ops don't wrap), but interleaving [Iterator::next()] and
 /// [DoubleEndedIterator::next_back()] past the point where the two
-/// directions meet can yield the middle items twice.
+/// directions meet can yield the middle items twice. Bounded iterators
+/// (see [Cursor::into_iter_back_from()]) are the exception: once the back
+/// direction hits the bound, the whole iterator stops, so keys beyond the
+/// bound are never yielded from either direction.
 #[derive(Debug)]
 pub enum IntoIter<'txn, K, Key, Value>
 where
@@ -794,6 +823,10 @@ where
         /// direction. Only set by [Cursor::into_iter_back_from()].
         bound: Option<Vec<u8>>,
 
+        /// Set when a fetch crossed `bound`: the cursor is then parked
+        /// outside the iteration domain, so both directions stop yielding.
+        done: bool,
+
         _marker: PhantomData<fn(&'txn (), K, Key, Value)>,
     },
 }
@@ -824,6 +857,7 @@ where
             back_op,
             back_next_op,
             bound: bound.map(|b| b.to_vec()),
+            done: false,
             _marker: PhantomData,
         }
     }
@@ -843,8 +877,23 @@ where
                 cursor,
                 op,
                 next_op,
+                done,
                 ..
-            } => fetch_op(cursor, mem::replace(op, *next_op), None),
+            } => {
+                if *done {
+                    return None;
+                }
+                match fetch_op(cursor, mem::replace(op, *next_op), None) {
+                    Fetched::Item(item) => Some(item),
+                    // Unreachable in the front direction (no bound is
+                    // passed), but stop hard if it ever happens.
+                    Fetched::PastBound => {
+                        *done = true;
+                        None
+                    }
+                    Fetched::Exhausted => None,
+                }
+            }
             Self::Err(err) => err.take().map(Err),
         }
     }
@@ -863,12 +912,27 @@ where
                 back_op,
                 back_next_op,
                 bound,
+                done,
                 ..
-            } => fetch_op(
-                cursor,
-                mem::replace(back_op, *back_next_op),
-                bound.as_deref(),
-            ),
+            } => {
+                if *done {
+                    return None;
+                }
+                match fetch_op(
+                    cursor,
+                    mem::replace(back_op, *back_next_op),
+                    bound.as_deref(),
+                ) {
+                    Fetched::Item(item) => Some(item),
+                    // The cursor is parked beyond the bound; fetching from it
+                    // in either direction could leak out-of-domain keys.
+                    Fetched::PastBound => {
+                        *done = true;
+                        None
+                    }
+                    Fetched::Exhausted => None,
+                }
+            }
             Self::Err(err) => err.take().map(Err),
         }
     }
@@ -971,7 +1035,7 @@ where
                 op,
                 next_op,
                 ..
-            } => fetch_op(cursor, mem::replace(op, *next_op), None),
+            } => fetch_op(cursor, mem::replace(op, *next_op), None).item(),
             Iter::Err(err) => err.take().map(Err),
         }
     }
@@ -990,7 +1054,7 @@ where
                 back_op,
                 back_next_op,
                 ..
-            } => fetch_op(cursor, mem::replace(back_op, *back_next_op), None),
+            } => fetch_op(cursor, mem::replace(back_op, *back_next_op), None).item(),
             Iter::Err(err) => err.take().map(Err),
         }
     }

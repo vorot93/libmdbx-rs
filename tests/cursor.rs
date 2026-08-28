@@ -288,6 +288,59 @@ fn test_iter_back_from_upperbound() {
 }
 
 #[test]
+fn test_iter_back_from_bound_hard_stop() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    {
+        let txn = db.begin_rw_txn().unwrap();
+        let table = txn.open_table(None).unwrap();
+        for i in 1..=5u8 {
+            txn.put(
+                &table,
+                format!("key{i}"),
+                format!("val{i}"),
+                WriteFlags::empty(),
+            )
+            .unwrap();
+        }
+        txn.commit().unwrap();
+    }
+
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    let cursor = txn.cursor(&table).unwrap();
+
+    // Drive the back direction into the bound: key1..key3, then the 4th
+    // next_back hits the bound and parks the cursor on key4.
+    let mut iter = cursor
+        .clone()
+        .into_iter_back_from::<Vec<u8>, Vec<u8>>(b"key3");
+    assert_eq!(iter.next_back().unwrap().unwrap().0, b"key1".to_vec());
+    assert_eq!(iter.next_back().unwrap().unwrap().0, b"key2".to_vec());
+    assert_eq!(iter.next_back().unwrap().unwrap().0, b"key3".to_vec());
+    assert!(iter.next_back().is_none());
+
+    // The parked key4 is outside the "keys <= key3" domain: the front
+    // direction must not leak it, and the iterator stays exhausted.
+    assert!(iter.next().is_none());
+    assert!(iter.next().is_none());
+    assert!(iter.next_back().is_none());
+
+    // .rev() domain is unaffected: ascending keys <= bound.
+    let items: Vec<_> = cursor
+        .clone()
+        .into_iter_back_from::<Vec<u8>, Vec<u8>>(b"key3")
+        .rev()
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(
+        items,
+        vec![b"key1".to_vec(), b"key2".to_vec(), b"key3".to_vec()]
+    );
+}
+
+#[test]
 fn test_iter_back_start() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir).unwrap();
