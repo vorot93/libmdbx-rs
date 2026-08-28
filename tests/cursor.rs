@@ -259,6 +259,19 @@ fn test_iter_back_from_upperbound() {
         vec![b"key3".to_vec(), b"key2".to_vec(), b"key1".to_vec()]
     );
 
+    // .rev() on a bounded back iterator is an ascending iteration over the
+    // same domain: keys <= bound, and nothing beyond it
+    let items: Vec<_> = cursor
+        .clone()
+        .into_iter_back_from::<Vec<u8>, Vec<u8>>(b"key3")
+        .rev()
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(
+        items,
+        vec![b"key1".to_vec(), b"key2".to_vec(), b"key3".to_vec()]
+    );
+
     // back from a key before the first yields nothing
     assert_eq!(
         0,

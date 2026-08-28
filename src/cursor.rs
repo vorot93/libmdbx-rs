@@ -16,7 +16,7 @@ use ffi::{
 use libc::c_void;
 use parking_lot::Mutex;
 use std::{
-    borrow::Cow, fmt, iter::FusedIterator, marker::PhantomData, mem, ptr, result, sync::Arc,
+    borrow::Cow, fmt, iter::FusedIterator, marker::PhantomData, mem, ptr, result, slice, sync::Arc,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -384,7 +384,14 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        IntoIter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT, MDBX_LAST, MDBX_PREV)
+        IntoIter::new(
+            self,
+            ffi::MDBX_FIRST,
+            ffi::MDBX_NEXT,
+            MDBX_LAST,
+            MDBX_PREV,
+            None,
+        )
     }
 
     /// Iterate over table items starting from the given key.
@@ -430,6 +437,7 @@ where
             ffi::MDBX_NEXT,
             MDBX_LAST,
             MDBX_PREV,
+            None,
         )
     }
 
@@ -439,6 +447,10 @@ where
     /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the previous key.
+    ///
+    /// The iteration domain is bounded by the given key, so reversing the
+    /// iterator (e.g. via [.rev()](Iterator::rev)) yields an
+    /// ascending iteration over the keys less than or equal to it.
     pub fn into_iter_back_from<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
     where
         Key: Decodable<'txn>,
@@ -458,6 +470,7 @@ where
                     ffi::MDBX_NEXT,
                     ffi::MDBX_NEXT,
                     ffi::MDBX_NEXT,
+                    None,
                 );
             }
             Ok(Some(_)) => (),
@@ -468,6 +481,7 @@ where
             ffi::MDBX_PREV,
             MDBX_FIRST,
             MDBX_NEXT,
+            Some(key),
         )
     }
 
@@ -481,7 +495,7 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        IntoIter::new(self, MDBX_LAST, MDBX_PREV, MDBX_FIRST, MDBX_NEXT)
+        IntoIter::new(self, MDBX_LAST, MDBX_PREV, MDBX_FIRST, MDBX_NEXT, None)
     }
 
     /// Iterate over duplicate table items. The iterator will begin with the
@@ -566,6 +580,7 @@ where
                     ffi::MDBX_NEXT,
                     ffi::MDBX_NEXT,
                     ffi::MDBX_NEXT,
+                    None,
                 );
             }
             Err(error) => return IntoIter::Err(Some(error)),
@@ -576,6 +591,7 @@ where
             ffi::MDBX_NEXT_DUP,
             MDBX_LAST_DUP,
             ffi::MDBX_PREV_DUP,
+            None,
         )
     }
 }
@@ -660,13 +676,26 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
     }
 }
 
+/// Borrows the raw bytes of an `MDBX_val` filled in by libmdbx.
+unsafe fn val_to_slice(val: &ffi::MDBX_val) -> &[u8] {
+    if val.iov_base.is_null() {
+        &[]
+    } else {
+        unsafe { slice::from_raw_parts(val.iov_base as *const u8, val.iov_len) }
+    }
+}
+
 /// Runs a cursor get op and decodes the pair at the resulting position.
 ///
 /// Maps `MDBX_NOTFOUND`/`MDBX_ENODATA` to `None` (end of iteration) and any
-/// other failure to `Some(Err(..))`.
+/// other failure to `Some(Err(..))`. When `bound` is given, a successfully
+/// fetched key strictly greater than `bound` also ends iteration, so the
+/// reversed element order of a bounded iterator stays within its domain when
+/// driven from the back.
 fn fetch_op<'txn, K, Key, Value>(
     cursor: &Cursor<'txn, K>,
     op: MDBX_cursor_op,
+    bound: Option<&[u8]>,
 ) -> Option<Result<(Key, Value)>>
 where
     K: TransactionKind,
@@ -685,6 +714,9 @@ where
         txn_execute(&cursor.txn, |txn| {
             match ffi::mdbx_cursor_get(cursor.cursor.0, &mut key, &mut data, op) {
                 ffi::MDBX_SUCCESS => {
+                    if bound.is_some_and(|b| val_to_slice(&key) > b) {
+                        return None;
+                    }
                     let key = match Key::decode_val::<K>(txn, &key) {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),
@@ -712,11 +744,17 @@ where
     type IntoIter = IntoIter<'txn, K, Cow<'txn, [u8]>, Cow<'txn, [u8]>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IntoIter::new(self, MDBX_NEXT, MDBX_NEXT, MDBX_LAST, MDBX_PREV)
+        IntoIter::new(self, MDBX_NEXT, MDBX_NEXT, MDBX_LAST, MDBX_PREV, None)
     }
 }
 
 /// An iterator over the key/value pairs in an MDBX table.
+///
+/// This iterator implements [DoubleEndedIterator], with both directions
+/// backed by a single MDBX cursor. Exhausting either direction is stable
+/// (MDBX cursor ops don't wrap), but interleaving [Iterator::next()] and
+/// [DoubleEndedIterator::next_back()] past the point where the two
+/// directions meet can yield the middle items twice.
 #[derive(Debug)]
 pub enum IntoIter<'txn, K, Key, Value>
 where
@@ -752,6 +790,10 @@ where
         /// calls [DoubleEndedIterator::next_back()].
         back_next_op: ffi::MDBX_cursor_op,
 
+        /// Inclusive upper bound on the iterated keys, enforced in the back
+        /// direction. Only set by [Cursor::into_iter_back_from()].
+        bound: Option<Vec<u8>>,
+
         _marker: PhantomData<fn(&'txn (), K, Key, Value)>,
     },
 }
@@ -765,13 +807,15 @@ where
     /// Creates a new iterator backed by the given cursor.
     ///
     /// `op`/`next_op` drive [Iterator::next()] and `back_op`/`back_next_op`
-    /// drive [DoubleEndedIterator::next_back()].
+    /// drive [DoubleEndedIterator::next_back()]. `bound`, when set, keeps
+    /// keys fetched from the back direction within `keys <= bound`.
     fn new(
         cursor: Cursor<'txn, K>,
         op: ffi::MDBX_cursor_op,
         next_op: ffi::MDBX_cursor_op,
         back_op: ffi::MDBX_cursor_op,
         back_next_op: ffi::MDBX_cursor_op,
+        bound: Option<&[u8]>,
     ) -> Self {
         IntoIter::Ok {
             cursor,
@@ -779,6 +823,7 @@ where
             next_op,
             back_op,
             back_next_op,
+            bound: bound.map(|b| b.to_vec()),
             _marker: PhantomData,
         }
     }
@@ -799,7 +844,7 @@ where
                 op,
                 next_op,
                 ..
-            } => fetch_op(cursor, mem::replace(op, *next_op)),
+            } => fetch_op(cursor, mem::replace(op, *next_op), None),
             Self::Err(err) => err.take().map(Err),
         }
     }
@@ -817,8 +862,13 @@ where
                 cursor,
                 back_op,
                 back_next_op,
+                bound,
                 ..
-            } => fetch_op(cursor, mem::replace(back_op, *back_next_op)),
+            } => fetch_op(
+                cursor,
+                mem::replace(back_op, *back_next_op),
+                bound.as_deref(),
+            ),
             Self::Err(err) => err.take().map(Err),
         }
     }
@@ -833,6 +883,12 @@ where
 }
 
 /// An iterator over the key/value pairs in an MDBX table.
+///
+/// This iterator implements [DoubleEndedIterator], with both directions
+/// backed by a single MDBX cursor. Exhausting either direction is stable
+/// (MDBX cursor ops don't wrap), but interleaving [Iterator::next()] and
+/// [DoubleEndedIterator::next_back()] past the point where the two
+/// directions meet can yield the middle items twice.
 #[derive(Debug)]
 pub enum Iter<'txn, 'cur, K, Key, Value>
 where
@@ -915,7 +971,7 @@ where
                 op,
                 next_op,
                 ..
-            } => fetch_op(cursor, mem::replace(op, *next_op)),
+            } => fetch_op(cursor, mem::replace(op, *next_op), None),
             Iter::Err(err) => err.take().map(Err),
         }
     }
@@ -934,7 +990,7 @@ where
                 back_op,
                 back_next_op,
                 ..
-            } => fetch_op(cursor, mem::replace(back_op, *back_next_op)),
+            } => fetch_op(cursor, mem::replace(back_op, *back_next_op), None),
             Iter::Err(err) => err.take().map(Err),
         }
     }
@@ -1035,6 +1091,7 @@ where
                                 ffi::MDBX_NEXT_DUP,
                                 ffi::MDBX_LAST_DUP,
                                 ffi::MDBX_PREV_DUP,
+                                None,
                             )
                         })),
                         ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
