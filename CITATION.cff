@@ -1,0 +1,6 @@
+cff-version: 1.2.0
+title: libmdbx-rs
+authors:
+  - given-names: Artem Vorotnikov
+    orcid: "https://orcid.org/0009-0005-5106-6231"
+repository-code: "https://github.com/vorot93/libmdbx-rs"

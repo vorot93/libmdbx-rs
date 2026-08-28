@@ -54,4 +54,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## License
 
-The entire code within this repository is licensed under the [Mozilla Public License v2.0](./LICENSE)
+The entire code within this repository is licensed under the [Apache License 2.0](./LICENSE).
