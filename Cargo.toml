@@ -18,7 +18,6 @@ name = "libmdbx"
 members = ["mdbx-sys"]
 
 [dependencies]
-anyhow = { version = "1", optional = true }
 arrayref = { version = "0.3", optional = true }
 arrayvec = { version = "0.7", optional = true }
 bytes = { version = "1", optional = true }
@@ -51,8 +50,8 @@ serde = { version = "1", features = ["derive"] }
 tempfile = "3"
 
 [features]
-cbor = ["ciborium"]
-orm = ["anyhow", "arrayref", "arrayvec", "impls", "tempfile"]
+cbor = ["orm", "ciborium"]
+orm = ["arrayref", "arrayvec", "impls", "tempfile"]
 
 [[bench]]
 name = "cursor"

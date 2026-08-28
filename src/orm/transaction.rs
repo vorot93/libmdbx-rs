@@ -1,6 +1,5 @@
-use super::{cursor::*, traits::*};
+use super::{cursor::*, impls::dec, traits::*};
 use crate::{RO, RW, Stat, TransactionKind, WriteFlags, WriteMap};
-use anyhow::Context;
 use std::{collections::HashMap, marker::PhantomData};
 
 #[derive(Debug)]
@@ -12,20 +11,14 @@ where
 }
 
 impl Transaction<'_, RO> {
-    pub fn table_sizes(&self) -> anyhow::Result<HashMap<String, u64>> {
+    pub fn table_sizes(&self) -> crate::Result<HashMap<String, u64>> {
         let mut out = HashMap::new();
         let main_table = self.inner.open_table(None)?;
         let mut cursor = self.inner.cursor(&main_table)?;
         while let Some((table, _)) = cursor.next_nodup::<Vec<u8>, ()>()? {
-            let table = String::from_utf8(table)?;
-            let db = self
-                .inner
-                .open_table(Some(&table))
-                .with_context(|| format!("failed to open table: {table}"))?;
-            let stats = self
-                .inner
-                .table_stat(&db)
-                .with_context(|| format!("failed to get stats for table: {table}"))?;
+            let table = String::from_utf8(table).map_err(dec)?;
+            let db = self.inner.open_table(Some(&table))?;
+            let stats = self.inner.table_stat(&db)?;
 
             out.insert(table, stats.total_size());
 
@@ -42,7 +35,7 @@ impl<'db, K> Transaction<'db, K>
 where
     K: TransactionKind,
 {
-    pub fn table_stat<T>(&self) -> Result<Stat, crate::Error>
+    pub fn table_stat<T>(&self) -> crate::Result<Stat>
     where
         T: Table,
     {
@@ -50,7 +43,7 @@ where
             .table_stat(&self.inner.open_table(Some(T::NAME))?)
     }
 
-    pub fn cursor<'tx, T>(&'tx self) -> anyhow::Result<Cursor<'tx, K, T>>
+    pub fn cursor<'tx, T>(&'tx self) -> crate::Result<Cursor<'tx, K, T>>
     where
         'db: 'tx,
         T: Table,
@@ -61,49 +54,50 @@ where
         })
     }
 
-    pub fn get<T>(&self, key: T::Key) -> anyhow::Result<Option<T::Value>>
+    pub fn get<T>(&self, key: T::Key) -> crate::Result<Option<T::Value>>
     where
         T: Table,
     {
+        let key = key.encode()?;
         Ok(self
             .inner
             .get::<DecodableWrapper<_>>(
                 &self.inner.open_table(Some(T::NAME))?,
-                key.encode().as_ref(),
+                key.as_ref(),
             )?
             .map(|v| v.0))
     }
 }
 
 impl Transaction<'_, RW> {
-    pub fn upsert<T>(&self, key: T::Key, value: T::Value) -> anyhow::Result<()>
+    pub fn upsert<T>(&self, key: T::Key, value: T::Value) -> crate::Result<()>
     where
         T: Table,
     {
-        Ok(self.inner.put(
+        self.inner.put(
             &self.inner.open_table(Some(T::NAME))?,
-            key.encode(),
-            value.encode(),
+            key.encode()?,
+            value.encode()?,
             WriteFlags::UPSERT,
-        )?)
+        )
     }
 
-    pub fn delete<T>(&self, key: T::Key, value: Option<T::Value>) -> anyhow::Result<bool>
+    pub fn delete<T>(&self, key: T::Key, value: Option<T::Value>) -> crate::Result<bool>
     where
         T: Table,
     {
+        let value = value.map(|v| v.encode()).transpose()?;
         let mut vref = None;
-        let value = value.map(Encodable::encode);
 
         if let Some(v) = &value {
             vref = Some(v.as_ref());
         };
-        Ok(self
+        self
             .inner
-            .del(&self.inner.open_table(Some(T::NAME))?, key.encode(), vref)?)
+            .del(&self.inner.open_table(Some(T::NAME))?, key.encode()?, vref)
     }
 
-    pub fn clear_table<T>(&self) -> anyhow::Result<()>
+    pub fn clear_table<T>(&self) -> crate::Result<()>
     where
         T: Table,
     {
@@ -113,7 +107,7 @@ impl Transaction<'_, RW> {
         Ok(())
     }
 
-    pub fn commit(self) -> anyhow::Result<()> {
+    pub fn commit(self) -> crate::Result<()> {
         self.inner.commit()?;
 
         Ok(())

@@ -3,11 +3,11 @@ use std::fmt::Debug;
 pub trait Encodable: Send + Sync + Sized {
     type Encoded: AsRef<[u8]> + Send + Sync;
 
-    fn encode(self) -> Self::Encoded;
+    fn encode(self) -> Result<Self::Encoded, crate::Error>;
 }
 
 pub trait Decodable: Send + Sync + Sized {
-    fn decode(b: &[u8]) -> anyhow::Result<Self>;
+    fn decode(b: &[u8]) -> Result<Self, crate::Error>;
 }
 
 pub trait TableObject: Encodable + Decodable {}

@@ -43,7 +43,14 @@ pub enum Error {
     LaggardReader,
     DecodeError(Box<dyn std::error::Error + Send + Sync + 'static>),
     EncodeError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    IoError(std::io::Error),
     Other(c_int),
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error::IoError(e)
+    }
 }
 
 impl Error {
@@ -133,7 +140,7 @@ impl Error {
             Error::MvccRetarded => Some(ffi::MDBX_MVCC_RETARDED),
             Error::LaggardReader => Some(ffi::MDBX_LAGGARD_READER),
             Error::Other(err_code) => Some(*err_code),
-            Error::DecodeError(_) | Error::EncodeError(_) => None,
+            Error::DecodeError(_) | Error::EncodeError(_) | Error::IoError(_) => None,
         }
     }
 }
@@ -142,6 +149,7 @@ impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::DecodeError(reason) | Error::EncodeError(reason) => write!(fmt, "{reason}"),
+            Error::IoError(reason) => write!(fmt, "{reason}"),
             other => match other.mdbx_err_code() {
                 Some(code) => {
                     let mut buf = [0 as libc::c_char; 256];

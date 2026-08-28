@@ -13,9 +13,7 @@ where
     where
         Self: Sized,
     {
-        T::decode(data_val)
-            .map_err(|e| crate::Error::DecodeError(e.into()))
-            .map(Self)
+        T::decode(data_val).map(Self)
     }
 }
 
@@ -29,19 +27,13 @@ where
     pub(crate) _marker: PhantomData<T>,
 }
 
-#[allow(clippy::type_complexity)]
-fn map_res_inner<T, E>(
-    v: Result<Option<(DecodableWrapper<T::Key>, DecodableWrapper<T::Value>)>, E>,
-) -> anyhow::Result<Option<(T::Key, T::Value)>>
+fn map_res_inner<T>(
+    v: crate::Result<Option<(DecodableWrapper<T::Key>, DecodableWrapper<T::Value>)>>,
+) -> crate::Result<Option<(T::Key, T::Value)>>
 where
     T: Table<Key: Decodable>,
-    E: std::error::Error + Send + Sync + 'static,
 {
-    if let Some((k, v)) = v? {
-        return Ok(Some((k.0, v.0)));
-    }
-
-    Ok(None)
+    Ok(v?.map(|(k, v)| (k.0, v.0)))
 }
 
 impl<K, T> Cursor<'_, K, T>
@@ -49,60 +41,60 @@ where
     K: TransactionKind,
     T: Table,
 {
-    pub fn first(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn first(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.first())
+        map_res_inner::<T>(self.inner.first())
     }
 
-    pub fn seek_closest(&mut self, key: T::SeekKey) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn seek_closest(&mut self, key: T::SeekKey) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.set_range(key.encode().as_ref()))
+        map_res_inner::<T>(self.inner.set_range(key.encode()?.as_ref()))
     }
 
-    pub fn seek_exact(&mut self, key: T::Key) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn seek_exact(&mut self, key: T::Key) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.set_key(key.encode().as_ref()))
+        map_res_inner::<T>(self.inner.set_key(key.encode()?.as_ref()))
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn next(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.next())
+        map_res_inner::<T>(self.inner.next())
     }
 
-    pub fn prev(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn prev(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.prev())
+        map_res_inner::<T>(self.inner.prev())
     }
 
-    pub fn last(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn last(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.last())
+        map_res_inner::<T>(self.inner.last())
     }
 
-    pub fn current(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn current(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.get_current())
+        map_res_inner::<T>(self.inner.get_current())
     }
 
     pub fn walk(
         self,
         start: Option<T::SeekKey>,
-    ) -> impl Iterator<Item = anyhow::Result<(T::Key, T::Value)>>
+    ) -> impl Iterator<Item = crate::Result<(T::Key, T::Value)>>
     where
         T: Table<Key: Decodable>,
     {
@@ -122,7 +114,7 @@ where
             K: TransactionKind,
             T: Table<Key: Decodable>,
         {
-            type Item = anyhow::Result<(T::Key, T::Value)>;
+            type Item = crate::Result<(T::Key, T::Value)>;
 
             fn next(&mut self) -> Option<Self::Item> {
                 if self.first {
@@ -149,7 +141,7 @@ where
     pub fn walk_back(
         self,
         start: Option<T::SeekKey>,
-    ) -> impl Iterator<Item = anyhow::Result<(T::Key, T::Value)>>
+    ) -> impl Iterator<Item = crate::Result<(T::Key, T::Value)>>
     where
         T: Table<Key: Decodable>,
     {
@@ -169,7 +161,7 @@ where
             K: TransactionKind,
             T: Table<Key: Decodable>,
         {
-            type Item = anyhow::Result<(T::Key, T::Value)>;
+            type Item = crate::Result<(T::Key, T::Value)>;
 
             fn next(&mut self) -> Option<Self::Item> {
                 if self.first {
@@ -203,13 +195,13 @@ where
         &mut self,
         key: T::Key,
         seek_value: T::SeekValue,
-    ) -> anyhow::Result<Option<T::Value>>
+    ) -> crate::Result<Option<T::Value>>
     where
         T::Key: Clone,
     {
         let res = self.inner.get_both_range::<DecodableWrapper<T::Value>>(
-            key.encode().as_ref(),
-            seek_value.encode().as_ref(),
+            key.encode()?.as_ref(),
+            seek_value.encode()?.as_ref(),
         )?;
 
         if let Some(v) = res {
@@ -219,7 +211,7 @@ where
         Ok(None)
     }
 
-    pub fn last_value(&mut self) -> anyhow::Result<Option<T::Value>>
+    pub fn last_value(&mut self) -> crate::Result<Option<T::Value>>
     where
         T::Key: Decodable,
     {
@@ -229,39 +221,39 @@ where
             .map(|v| v.0))
     }
 
-    pub fn next_key(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn next_key(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.next_nodup())
+        map_res_inner::<T>(self.inner.next_nodup())
     }
 
-    pub fn next_value(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn next_value(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.next_dup())
+        map_res_inner::<T>(self.inner.next_dup())
     }
 
-    pub fn prev_key(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn prev_key(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.prev_nodup())
+        map_res_inner::<T>(self.inner.prev_nodup())
     }
 
-    pub fn prev_value(&mut self) -> anyhow::Result<Option<(T::Key, T::Value)>>
+    pub fn prev_value(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
     {
-        map_res_inner::<T, _>(self.inner.prev_dup())
+        map_res_inner::<T>(self.inner.prev_dup())
     }
 
     pub fn walk_key(
         self,
         start: T::Key,
         seek_value: Option<T::SeekValue>,
-    ) -> impl Iterator<Item = anyhow::Result<T::Value>>
+    ) -> impl Iterator<Item = crate::Result<T::Value>>
     where
         T::Key: Clone + Decodable,
     {
@@ -282,7 +274,7 @@ where
             K: TransactionKind,
             T: DupSort<Key: Clone + Decodable>,
         {
-            type Item = anyhow::Result<T::Value>;
+            type Item = crate::Result<T::Value>;
 
             fn next(&mut self) -> Option<Self::Item> {
                 if self.first {
@@ -313,23 +305,23 @@ impl<T> Cursor<'_, RW, T>
 where
     T: Table,
 {
-    pub fn upsert(&mut self, key: T::Key, value: T::Value) -> anyhow::Result<()> {
-        Ok(self.inner.put(
-            key.encode().as_ref(),
-            value.encode().as_ref(),
+    pub fn upsert(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
+        self.inner.put(
+            key.encode()?.as_ref(),
+            value.encode()?.as_ref(),
             WriteFlags::UPSERT,
-        )?)
+        )
     }
 
-    pub fn append(&mut self, key: T::Key, value: T::Value) -> anyhow::Result<()> {
-        Ok(self.inner.put(
-            key.encode().as_ref(),
-            value.encode().as_ref(),
+    pub fn append(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
+        self.inner.put(
+            key.encode()?.as_ref(),
+            value.encode()?.as_ref(),
             WriteFlags::APPEND,
-        )?)
+        )
     }
 
-    pub fn delete_current(&mut self) -> anyhow::Result<()> {
+    pub fn delete_current(&mut self) -> crate::Result<()> {
         self.inner.del(WriteFlags::CURRENT)?;
 
         Ok(())
@@ -340,14 +332,14 @@ impl<T> Cursor<'_, RW, T>
 where
     T: DupSort,
 {
-    pub fn delete_current_key(&mut self) -> anyhow::Result<()> {
-        Ok(self.inner.del(WriteFlags::NO_DUP_DATA)?)
+    pub fn delete_current_key(&mut self) -> crate::Result<()> {
+        self.inner.del(WriteFlags::NO_DUP_DATA)
     }
-    pub fn append_value(&mut self, key: T::Key, value: T::Value) -> anyhow::Result<()> {
-        Ok(self.inner.put(
-            key.encode().as_ref(),
-            value.encode().as_ref(),
+    pub fn append_value(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
+        self.inner.put(
+            key.encode()?.as_ref(),
+            value.encode()?.as_ref(),
             WriteFlags::APPEND_DUP,
-        )?)
+        )
     }
 }

@@ -1,6 +1,5 @@
 use super::{traits::*, transaction::Transaction};
 use crate::{DatabaseOptions, Mode, RO, RW, TableFlags, WriteMap};
-use anyhow::Context;
 use std::{
     collections::BTreeMap,
     fs::DirBuilder,
@@ -35,11 +34,9 @@ impl Database {
         self.folder.path()
     }
 
-    fn open_db(folder: DbFolder, options: DatabaseOptions) -> anyhow::Result<Self> {
+    fn open_db(folder: DbFolder, options: DatabaseOptions) -> crate::Result<Self> {
         Ok(Self {
-            inner: crate::Database::open_with_options(folder.path(), options).with_context(
-                || format!("failed to open database at {}", folder.path().display()),
-            )?,
+            inner: crate::Database::open_with_options(folder.path(), options)?,
             folder,
         })
     }
@@ -48,7 +45,7 @@ impl Database {
         folder: DbFolder,
         mut options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> anyhow::Result<Self> {
+    ) -> crate::Result<Self> {
         options.max_tables = Some(std::cmp::max(chart.len() as u64, 1));
 
         if let Mode::ReadOnly = options.mode {
@@ -75,7 +72,7 @@ impl Database {
         }
     }
 
-    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> anyhow::Result<Database> {
+    pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> crate::Result<Database> {
         Self::create_with_options(path, DatabaseOptions::default(), chart)
     }
 
@@ -83,7 +80,7 @@ impl Database {
         path: Option<PathBuf>,
         options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> anyhow::Result<Database> {
+    ) -> crate::Result<Database> {
         let folder = if let Some(path) = path {
             DbFolder::Persisted(path)
         } else {
@@ -94,7 +91,7 @@ impl Database {
         Self::new(folder, options, chart)
     }
 
-    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> anyhow::Result<Database> {
+    pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> crate::Result<Database> {
         Self::open_with_options(path, DatabaseOptions::default(), chart)
     }
 
@@ -102,7 +99,7 @@ impl Database {
         path: impl AsRef<Path>,
         mut options: DatabaseOptions,
         chart: &DatabaseChart,
-    ) -> anyhow::Result<Database> {
+    ) -> crate::Result<Database> {
         options.mode = Mode::ReadOnly;
 
         Self::new(
@@ -122,13 +119,13 @@ impl Deref for Database {
 }
 
 impl Database {
-    pub fn begin_read(&self) -> anyhow::Result<Transaction<'_, RO>> {
+    pub fn begin_read(&self) -> crate::Result<Transaction<'_, RO>> {
         Ok(Transaction {
             inner: self.inner.begin_ro_txn()?,
         })
     }
 
-    pub fn begin_readwrite(&self) -> anyhow::Result<Transaction<'_, RW>> {
+    pub fn begin_readwrite(&self) -> crate::Result<Transaction<'_, RW>> {
         Ok(Transaction {
             inner: self.inner.begin_rw_txn()?,
         })
@@ -155,34 +152,34 @@ impl<T> UntypedTable<T>
 where
     T: Table,
 {
-    pub fn encode_key(key: T::Key) -> <<T as Table>::Key as Encodable>::Encoded {
+    pub fn encode_key(key: T::Key) -> crate::Result<<T::Key as Encodable>::Encoded> {
         key.encode()
     }
 
-    pub fn decode_key(encoded: &[u8]) -> anyhow::Result<T::Key>
+    pub fn decode_key(encoded: &[u8]) -> crate::Result<T::Key>
     where
         T::Key: Decodable,
     {
         <T::Key as Decodable>::decode(encoded)
     }
 
-    pub fn encode_value(value: T::Value) -> <<T as Table>::Value as Encodable>::Encoded {
+    pub fn encode_value(value: T::Value) -> crate::Result<<T::Value as Encodable>::Encoded> {
         value.encode()
     }
 
-    pub fn decode_value(encoded: &[u8]) -> anyhow::Result<T::Value> {
+    pub fn decode_value(encoded: &[u8]) -> crate::Result<T::Value> {
         <T::Value as Decodable>::decode(encoded)
     }
 
-    pub fn encode_seek_key(value: T::SeekKey) -> <<T as Table>::SeekKey as Encodable>::Encoded {
+    pub fn encode_seek_key(value: T::SeekKey) -> crate::Result<<T::SeekKey as Encodable>::Encoded> {
         value.encode()
     }
 }
 
 #[macro_export]
 macro_rules! table {
-    ($(#[$docs:meta])+ ( $name:ident ) $key:ty [ $seek_key:ty ] => $value:ty) => {
-        $(#[$docs])+
+    ($(#[$docs:meta])* ( $name:ident ) $key:ty [ $seek_key:ty ] => $value:ty) => {
+        $(#[$docs])*
         ///
         #[doc = concat!("Takes [`", stringify!($key), "`] as a key and returns [`", stringify!($value), "`]")]
         #[derive(Clone, Copy, Debug, Default)]
@@ -208,9 +205,9 @@ macro_rules! table {
             }
         }
     };
-    ($(#[$docs:meta])+ ( $name:ident ) $key:ty => $value:ty) => {
+    ($(#[$docs:meta])* ( $name:ident ) $key:ty => $value:ty) => {
         table!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $name ) $key [ $key ] => $value
         );
     };
@@ -218,9 +215,9 @@ macro_rules! table {
 
 #[macro_export]
 macro_rules! dupsort {
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty [$seek_value:ty] ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty [$seek_value:ty] ) => {
         table!(
-            $(#[$docs])+
+            $(#[$docs])*
             ///
             #[doc = concat!("`DUPSORT` table with seek value type being: [`", stringify!($seek_value), "`].")]
             ( $table_name ) $key [$seek_key] => $value
@@ -230,23 +227,23 @@ macro_rules! dupsort {
         }
     };
 
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty ) => {
         dupsort!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $table_name ) $key [$seek_key] => $value [$value]
         );
     };
 
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty => $value:ty [$seek_value:ty] ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty => $value:ty [$seek_value:ty] ) => {
         dupsort!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $table_name ) $key [$key] => $value [$seek_value]
         );
     };
 
-    ($(#[$docs:meta])+ ( $table_name:ident ) $key:ty => $value:ty ) => {
+    ($(#[$docs:meta])* ( $table_name:ident ) $key:ty => $value:ty ) => {
         dupsort!(
-            $(#[$docs])+
+            $(#[$docs])*
             ( $table_name ) $key [$key] => $value [$value]
         );
     };
