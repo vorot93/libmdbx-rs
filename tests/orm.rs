@@ -115,6 +115,49 @@ fn test_cutstart_seek_finds_value() {
     assert_eq!(first, (7, 7));
 }
 
+#[test]
+fn test_walk_back_bounds() {
+    let db = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let tx = db.begin_readwrite().unwrap();
+    for i in 1..=10u64 {
+        tx.upsert::<Numbers>(i, i).unwrap();
+    }
+    tx.commit().unwrap();
+
+    let tx = db.begin_read().unwrap();
+    // present upper bound: inclusive, descending
+    let items: Vec<_> = tx
+        .cursor::<Numbers>()
+        .unwrap()
+        .walk_back(Some(CutStart(5u64)))
+        .map(|kv| kv.unwrap())
+        .collect();
+    assert_eq!(items, vec![(5, 5), (4, 4), (3, 3), (2, 2), (1, 1)]);
+
+    // absent upper bound: keys > bound must NOT appear. No u64 exists
+    // between 6 and 7, so delete key 6 and seek 6 instead.
+    let tx = db.begin_readwrite().unwrap();
+    tx.delete::<Numbers>(6, None).unwrap();
+    tx.commit().unwrap();
+    let tx = db.begin_read().unwrap();
+    let items: Vec<_> = tx
+        .cursor::<Numbers>()
+        .unwrap()
+        .walk_back(Some(CutStart(6u64)))
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(items, vec![5, 4, 3, 2, 1]); // 6 absent, 7..10 excluded
+
+    // None: whole table descending
+    let items: Vec<_> = tx
+        .cursor::<Numbers>()
+        .unwrap()
+        .walk_back(None)
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(items, vec![10, 9, 8, 7, 5, 4, 3, 2, 1]);
+}
+
 #[cfg(feature = "cbor")]
 mod cbor {
     use super::*;

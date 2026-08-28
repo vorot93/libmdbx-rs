@@ -61,10 +61,7 @@ where
         let key = key.encode()?;
         Ok(self
             .inner
-            .get::<DecodableWrapper<_>>(
-                &self.inner.open_table(Some(T::NAME))?,
-                key.as_ref(),
-            )?
+            .get::<DecodableWrapper<_>>(&self.inner.open_table(Some(T::NAME))?, key.as_ref())?
             .map(|v| v.0))
     }
 }
@@ -92,8 +89,7 @@ impl Transaction<'_, RW> {
         if let Some(v) = &value {
             vref = Some(v.as_ref());
         };
-        self
-            .inner
+        self.inner
             .del(&self.inner.open_table(Some(T::NAME))?, key.encode()?, vref)
     }
 

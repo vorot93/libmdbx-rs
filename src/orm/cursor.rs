@@ -91,6 +91,8 @@ where
         map_res_inner::<T>(self.inner.get_current())
     }
 
+    /// Walks the table ascending starting at the closest key `>= start`
+    /// (or the first key when `start` is `None`).
     pub fn walk(
         self,
         start: Option<T::SeekKey>,
@@ -98,92 +100,57 @@ where
     where
         T: Table<Key: Decodable>,
     {
-        struct I<'tx, K, T>
-        where
-            K: TransactionKind,
-            T: Table<Key: Decodable>,
-        {
-            cursor: Cursor<'tx, K, T>,
-            start: Option<T::SeekKey>,
-
-            first: bool,
-        }
-
-        impl<K, T> Iterator for I<'_, K, T>
-        where
-            K: TransactionKind,
-            T: Table<Key: Decodable>,
-        {
-            type Item = crate::Result<(T::Key, T::Value)>;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                if self.first {
-                    self.first = false;
-                    if let Some(start) = self.start.take() {
-                        self.cursor.seek_closest(start)
-                    } else {
-                        self.cursor.first()
-                    }
-                } else {
-                    self.cursor.next()
-                }
-                .transpose()
-            }
-        }
-
-        I {
-            cursor: self,
-            start,
-            first: true,
-        }
+        let inner = match start {
+            // Encode is fallible (user serialization): capture the error in
+            // the IntoIter::Err variant — NEVER unwrap user-controlled encode.
+            Some(key) => match key.encode() {
+                Ok(k) => self
+                    .inner
+                    .into_iter_from::<DecodableWrapper<T::Key>, DecodableWrapper<T::Value>>(
+                        k.as_ref(),
+                    ),
+                Err(e) => crate::IntoIter::Err(Some(e)),
+            },
+            None => self.inner.into_iter_start(),
+        };
+        inner.map(decode_pair::<T>)
     }
 
+    /// Walks the table descending starting at the closest key `<= bound`,
+    /// inclusive (or the last key when `bound` is `None`).
+    ///
+    /// For DUPSORT tables the bound is key-level: iteration starts at the
+    /// largest key `<= bound`, and that key's duplicates are yielded before
+    /// moving on to the previous key.
     pub fn walk_back(
         self,
-        start: Option<T::SeekKey>,
+        bound: Option<T::SeekKey>,
     ) -> impl Iterator<Item = crate::Result<(T::Key, T::Value)>>
     where
         T: Table<Key: Decodable>,
     {
-        struct I<'tx, K, T>
-        where
-            K: TransactionKind,
-            T: Table<Key: Decodable>,
-        {
-            cursor: Cursor<'tx, K, T>,
-            start: Option<T::SeekKey>,
-
-            first: bool,
-        }
-
-        impl<K, T> Iterator for I<'_, K, T>
-        where
-            K: TransactionKind,
-            T: Table<Key: Decodable>,
-        {
-            type Item = crate::Result<(T::Key, T::Value)>;
-
-            fn next(&mut self) -> Option<Self::Item> {
-                if self.first {
-                    self.first = false;
-                    if let Some(start_key) = self.start.take() {
-                        self.cursor.seek_closest(start_key)
-                    } else {
-                        self.cursor.last()
-                    }
-                } else {
-                    self.cursor.prev()
-                }
-                .transpose()
-            }
-        }
-
-        I {
-            cursor: self,
-            start,
-            first: true,
-        }
+        let inner = match bound {
+            Some(key) => match key.encode() {
+                Ok(k) => self
+                    .inner
+                    .into_iter_back_from::<DecodableWrapper<T::Key>, DecodableWrapper<T::Value>>(
+                        k.as_ref(),
+                    ),
+                Err(e) => crate::IntoIter::Err(Some(e)),
+            },
+            None => self.inner.into_iter_back_start(),
+        };
+        inner.map(decode_pair::<T>)
     }
+}
+
+fn decode_pair<T>(
+    kv: crate::Result<(DecodableWrapper<T::Key>, DecodableWrapper<T::Value>)>,
+) -> crate::Result<(T::Key, T::Value)>
+where
+    T: Table<Key: Decodable>,
+{
+    kv.map(|(k, v)| (k.0, v.0))
 }
 
 impl<K, T> Cursor<'_, K, T>
@@ -195,10 +162,7 @@ where
         &mut self,
         key: T::Key,
         seek_value: T::SeekValue,
-    ) -> crate::Result<Option<T::Value>>
-    where
-        T::Key: Clone,
-    {
+    ) -> crate::Result<Option<T::Value>> {
         let res = self.inner.get_both_range::<DecodableWrapper<T::Value>>(
             key.encode()?.as_ref(),
             seek_value.encode()?.as_ref(),
@@ -211,10 +175,7 @@ where
         Ok(None)
     }
 
-    pub fn last_value(&mut self) -> crate::Result<Option<T::Value>>
-    where
-        T::Key: Decodable,
-    {
+    pub fn last_value(&mut self) -> crate::Result<Option<T::Value>> {
         Ok(self
             .inner
             .last_dup::<DecodableWrapper<T::Value>>()?
