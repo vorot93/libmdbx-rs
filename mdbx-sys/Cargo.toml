@@ -3,11 +3,12 @@ name = "mdbx-sys"
 version = "14.3.1"
 edition = "2024"
 links = "mdbx"
-license = "Apache-2.0"
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
 description = "Rust bindings for libmdbx."
 documentation = "https://docs.rs/mdbx-sys"
-homepage = "https://github.com/vorot93/libmdbx-rs"
-repository = "https://github.com/vorot93/libmdbx-rs"
 keywords = ["MDBX", "database", "storage-engine", "bindings", "library"]
 categories = ["database", "external-ffi-bindings"]
 

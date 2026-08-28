@@ -2,11 +2,12 @@
 name = "libmdbx"
 version = "0.7.0"
 edition = "2024"
-license = "Apache-2.0"
+license.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
 description = "Idiomatic and safe MDBX wrapper."
 documentation = "https://docs.rs/libmdbx"
-homepage = "https://github.com/vorot93/libmdbx-rs"
-repository = "https://github.com/vorot93/libmdbx-rs"
 readme = "README.md"
 keywords = ["MDBX", "database", "storage-engine", "bindings"]
 categories = ["database"]
@@ -16,6 +17,12 @@ name = "libmdbx"
 
 [workspace]
 members = ["mdbx-sys"]
+
+[workspace.package]
+license = "Apache-2.0"
+authors = ["Artem Vorotnikov <artem@vorotnikov.me>"]
+homepage = "https://github.com/vorot93/libmdbx-rs"
+repository = "https://github.com/vorot93/libmdbx-rs"
 
 [dependencies]
 arrayref = { version = "0.3", optional = true }
