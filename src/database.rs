@@ -109,7 +109,6 @@ pub struct DatabaseOptions {
     pub mode: Mode,
     pub no_rdahead: bool,
     pub no_meminit: bool,
-    pub coalesce: bool,
     pub liforeclaim: bool,
 }
 
@@ -151,15 +150,11 @@ impl DatabaseOptions {
             flags |= ffi::MDBX_NOMEMINIT;
         }
 
-        if self.coalesce {
-            flags |= ffi::MDBX_COALESCE;
-        }
-
         if self.liforeclaim {
             flags |= ffi::MDBX_LIFORECLAIM;
         }
 
-        flags |= ffi::MDBX_NOTLS;
+        flags |= ffi::MDBX_NOSTICKYTHREADS;
 
         flags
     }
