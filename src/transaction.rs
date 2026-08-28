@@ -123,10 +123,15 @@ where
     /// [Cow](std::borrow::Cow) copy the returned bytes for safety (MDBX may
     /// relocate pages on subsequent writes). For zero-copy reads prefer a
     /// read-only transaction.
-    pub fn get<'txn, Key>(&'txn self, table: &Table<'txn>, key: &[u8]) -> Result<Option<Key>>
+    pub fn get<'txn, Key>(
+        &'txn self,
+        table: &Table<'txn>,
+        key: impl AsRef<[u8]>,
+    ) -> Result<Option<Key>>
     where
         Key: Decodable<'txn>,
     {
+        let key = key.as_ref();
         let key_val: ffi::MDBX_val = ffi::MDBX_val {
             iov_len: key.len(),
             iov_base: key.as_ptr() as *mut c_void,
@@ -148,6 +153,9 @@ where
     /// Commits the transaction.
     ///
     /// Any pending operations will be saved.
+    ///
+    /// Returns `true` if the transaction did not contain any changes to
+    /// commit, in which case no actions were performed.
     pub fn commit(self) -> Result<bool> {
         self.commit_and_rebind_open_dbs().map(|v| v.0)
     }
@@ -157,6 +165,10 @@ where
     }
 
     /// Commits the transaction and returns table handles permanently open for the lifetime of `Database`.
+    ///
+    /// The returned `bool` has the same meaning as in
+    /// [`commit`](Transaction::commit): `true` means the transaction did not
+    /// contain any changes to commit.
     pub fn commit_and_rebind_open_dbs(mut self) -> Result<(bool, Vec<Table<'db>>)> {
         let txnlck = self.txn.lock();
         let txn = txnlck.0;
@@ -172,10 +184,16 @@ where
                     tx: TxnPtr(txn),
                     sender,
                 })
-                .unwrap();
-            rx.recv().unwrap()
+                .ok();
+            rx.recv().unwrap_or_else(|_| Err(Error::Panic))
         };
-        self.committed = true;
+        // MDBX_THREAD_MISMATCH is the only commit error that does NOT free
+        // the transaction (libmdbx mdbx.h: only a result other than
+        // MDBX_THREAD_MISMATCH means the transaction is terminated). Keep
+        // `committed` false so Drop still aborts the live handle.
+        if !matches!(result, Err(Error::ThreadMismatch)) {
+            self.committed = true;
+        }
         result.map(|v| {
             (
                 v,
@@ -205,14 +223,15 @@ where
     }
 
     /// Gets the option flags for the given table in the transaction.
+    ///
+    /// Unknown bits set by newer libmdbx versions are preserved.
     pub fn table_flags<'txn>(&'txn self, table: &Table<'txn>) -> Result<TableFlags> {
         let mut flags: c_uint = 0;
-        unsafe {
-            mdbx_result(txn_execute(&self.txn, |txn| {
-                ffi::mdbx_dbi_flags_ex(txn, table.dbi(), &mut flags, ptr::null_mut())
-            }))?;
-        }
-        Ok(TableFlags::from_bits_truncate(flags))
+        let mut state: c_uint = 0;
+        mdbx_result(txn_execute(&self.txn, |txn| unsafe {
+            ffi::mdbx_dbi_flags_ex(txn, table.dbi(), &mut flags, &mut state)
+        }))?;
+        Ok(TableFlags::from_bits_retain(flags))
     }
 
     /// Retrieves table statistics.
@@ -249,7 +268,8 @@ where
     ///
     /// If `name` is not [None], then the returned handle will be for a named table. In this
     /// case the database must be configured to allow named tables through
-    /// [DatabaseBuilder::set_max_tables()](crate::DatabaseBuilder::set_max_tables).
+    /// [DatabaseOptions::max_tables](crate::DatabaseOptions::max_tables) when opening the database
+    /// with [Database::open_with_options](crate::Database::open_with_options).
     ///
     /// This function will fail with [Error::BadRslot](crate::error::Error::BadRslot) if called by a thread with an open
     /// transaction.
@@ -427,6 +447,10 @@ where
     ///
     /// # Safety
     /// Caller must close ALL other [Table] and [Cursor] instances pointing to the same dbi BEFORE calling this function.
+    ///
+    /// This call is not synchronized with transactions running in other
+    /// threads: it must not run concurrently with any transaction using this
+    /// dbi, nor while another thread commits or aborts a write transaction.
     pub unsafe fn close_table(&self, table: Table<'_>) -> Result<()> {
         mdbx_result(unsafe { ffi::mdbx_dbi_close(self.db.ptr().0, table.dbi()) })?;
 
@@ -448,10 +472,10 @@ impl Transaction<'_, RW, NoWriteMap> {
                     flags: RW::OPEN_FLAGS,
                     sender: tx,
                 })
-                .unwrap();
+                .ok();
 
             rx.recv()
-                .unwrap()
+                .unwrap_or_else(|_| Err(Error::Panic))
                 .map(|ptr| Transaction::new_from_ptr(self.db, ptr.0))
         })
     }
@@ -463,7 +487,12 @@ where
     E: DatabaseKind,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        f.debug_struct("RoTransaction").finish()
+        f.debug_struct(if K::ONLY_CLEAN {
+            "RoTransaction"
+        } else {
+            "RwTransaction"
+        })
+        .finish()
     }
 }
 
@@ -481,7 +510,8 @@ where
                     }
                 } else {
                     let (sender, rx) = sync_channel(0);
-                    self.db
+                    let sent = self
+                        .db
                         .txn_manager
                         .as_ref()
                         .unwrap()
@@ -489,8 +519,14 @@ where
                             tx: TxnPtr(txn),
                             sender,
                         })
-                        .unwrap();
-                    rx.recv().unwrap().unwrap();
+                        .is_ok();
+                    // If the manager thread is gone, the environment is
+                    // being destroyed and the transaction is leaked on
+                    // purpose: aborting through a dead channel is impossible,
+                    // and panicking in drop would be worse.
+                    if !sent || rx.recv().is_err() {
+                        self.committed = true;
+                    }
                 }
             }
         })

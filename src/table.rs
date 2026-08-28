@@ -1,5 +1,5 @@
 use crate::{
-    Transaction,
+    Error, Transaction,
     database::DatabaseKind,
     error::{Result, mdbx_result},
     flags::c_enum,
@@ -23,7 +23,9 @@ impl<'txn> Table<'txn> {
         name: Option<&str>,
         flags: c_uint,
     ) -> Result<Self> {
-        let c_name = name.map(|n| CString::new(n).unwrap());
+        let c_name = name
+            .map(|n| CString::new(n).map_err(|_| Error::Invalid))
+            .transpose()?;
         let name_ptr = if let Some(c_name) = &c_name {
             c_name.as_ptr()
         } else {

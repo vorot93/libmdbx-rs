@@ -212,3 +212,11 @@ fn test_freelist() {
     freelist = db.freelist().unwrap();
     assert!(freelist > 0);
 }
+
+#[test]
+fn test_open_interior_nul_path() {
+    assert!(matches!(
+        Database::open_with_options(std::path::Path::new("a\0b"), Default::default()),
+        Err(Error::Invalid)
+    ));
+}

@@ -582,3 +582,65 @@ fn test_stat_dupsort() {
         assert_eq!(stat.entries(), 8);
     }
 }
+
+#[test]
+fn test_table_interior_nul_name() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    assert!(matches!(
+        txn.open_table(Some("a\0b")).unwrap_err(),
+        Error::Invalid
+    ));
+    assert!(matches!(
+        txn.create_table(Some("a\0b"), TableFlags::empty())
+            .unwrap_err(),
+        Error::Invalid
+    ));
+    txn.commit().unwrap();
+}
+
+#[test]
+fn test_get_str_key() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn.create_table(None, TableFlags::empty()).unwrap();
+    txn.put(&table, "key", "value", WriteFlags::empty())
+        .unwrap();
+    assert_eq!(
+        txn.get::<Vec<u8>>(&table, "key").unwrap(),
+        Some(b"value".to_vec())
+    );
+    txn.commit().unwrap();
+}
+
+#[test]
+fn test_table_flags_preserve_known_bits() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn.create_table(None, TableFlags::DUP_SORT).unwrap();
+    assert!(
+        txn.table_flags(&table)
+            .unwrap()
+            .contains(TableFlags::DUP_SORT)
+    );
+    txn.commit().unwrap();
+}
+
+#[test]
+fn test_debug_transaction_kind() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    assert!(format!("{:?}", txn).contains("RwTransaction"));
+    txn.commit().unwrap();
+
+    let txn = db.begin_ro_txn().unwrap();
+    assert!(format!("{:?}", txn).contains("RoTransaction"));
+}

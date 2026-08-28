@@ -7,10 +7,6 @@ use crate::{
 use libc::c_uint;
 use mem::size_of;
 use sealed::sealed;
-#[cfg(windows)]
-use std::ffi::OsStr;
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 use std::{
     ffi::CString,
     fmt,
@@ -25,16 +21,18 @@ use std::{
     time::Duration,
 };
 
-#[cfg(windows)]
-/// Adding a 'missing' trait from windows OsStrExt
-trait OsStrExtLmdb {
-    fn as_bytes(&self) -> &[u8];
-}
-#[cfg(windows)]
-impl OsStrExtLmdb for OsStr {
-    fn as_bytes(&self) -> &[u8] {
-        self.to_str().unwrap().as_bytes()
-    }
+fn path_to_cstring(path: &Path) -> Result<CString> {
+    #[cfg(unix)]
+    let bytes = std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec();
+    #[cfg(windows)]
+    let bytes = {
+        use std::os::windows::ffi::OsStrExt;
+        let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+        String::from_utf16(&wide)
+            .map_err(|_| Error::Invalid)?
+            .into_bytes()
+    };
+    CString::new(bytes).map_err(|_| Error::Invalid)
 }
 
 #[sealed]
@@ -106,6 +104,9 @@ pub struct DatabaseOptions {
     pub no_sub_dir: bool,
     pub exclusive: bool,
     pub accede: bool,
+    /// Open mode. When this is [Mode::ReadOnly], the geometry settings of
+    /// [ReadWriteOptions] are ignored: MDBX only allows setting geometry for
+    /// read-write environments.
     pub mode: Mode,
     pub no_rdahead: bool,
     pub no_meminit: bool,
@@ -154,6 +155,9 @@ impl DatabaseOptions {
             flags |= ffi::MDBX_LIFORECLAIM;
         }
 
+        // MDBX_NOSTICKYTHREADS is load-bearing: this crate's soundness relies on
+        // transactions being usable from any thread (see Transaction's Sync impl
+        // and the RW-txn manager thread).
         flags |= ffi::MDBX_NOSTICKYTHREADS;
 
         flags
@@ -219,10 +223,7 @@ where
                     }
                 }
 
-                let path = match CString::new(path.as_ref().as_os_str().as_bytes()) {
-                    Ok(path) => path,
-                    Err(..) => return Err(crate::Error::Invalid),
-                };
+                let path = path_to_cstring(path.as_ref())?;
                 mdbx_result(ffi::mdbx_env_open(
                     db,
                     path.as_ptr(),
@@ -259,34 +260,28 @@ where
                             } => {
                                 let e = e;
                                 let mut txn: *mut ffi::MDBX_txn = ptr::null_mut();
-                                sender
-                                    .send(
-                                        mdbx_result(unsafe {
-                                            ffi::mdbx_txn_begin_ex(
-                                                e.0,
-                                                parent.0,
-                                                flags,
-                                                &mut txn,
-                                                ptr::null_mut(),
-                                            )
-                                        })
-                                        .map(|_| TxnPtr(txn)),
-                                    )
-                                    .unwrap()
+                                let _ = sender.send(
+                                    mdbx_result(unsafe {
+                                        ffi::mdbx_txn_begin_ex(
+                                            e.0,
+                                            parent.0,
+                                            flags,
+                                            &mut txn,
+                                            ptr::null_mut(),
+                                        )
+                                    })
+                                    .map(|_| TxnPtr(txn)),
+                                );
                             }
                             TxnManagerMessage::Abort { tx, sender } => {
-                                sender
-                                    .send(mdbx_result(unsafe {
-                                        ffi::mdbx_txn_abort_ex(tx.0, ptr::null_mut())
-                                    }))
-                                    .unwrap();
+                                let _ = sender.send(mdbx_result(unsafe {
+                                    ffi::mdbx_txn_abort_ex(tx.0, ptr::null_mut())
+                                }));
                             }
                             TxnManagerMessage::Commit { tx, sender } => {
-                                sender
-                                    .send(mdbx_result(unsafe {
-                                        ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
-                                    }))
-                                    .unwrap();
+                                let _ = sender.send(mdbx_result(unsafe {
+                                    ffi::mdbx_txn_commit_ex(tx.0, ptr::null_mut())
+                                }));
                             }
                         },
                         Err(_) => return,
@@ -317,6 +312,7 @@ where
     /// there are any other read-write transactions open on the database.
     pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW, E>> {
         let sender = self.txn_manager.as_ref().ok_or(Error::Access)?;
+        let mut delay = Duration::from_millis(25);
         let txn = loop {
             let (tx, rx) = sync_channel(0);
             sender
@@ -328,7 +324,8 @@ where
                 .unwrap();
             let res = rx.recv().unwrap();
             if let Err(Error::Busy) = &res {
-                sleep(Duration::from_millis(250));
+                sleep(delay);
+                delay = (delay * 2).min(Duration::from_millis(800));
                 continue;
             }
 
@@ -338,6 +335,8 @@ where
     }
 
     /// Flush the database data buffers to disk.
+    ///
+    /// Returns `true` if there was no data pending for flush to disk.
     pub fn sync(&self, force: bool) -> Result<bool> {
         mdbx_result(unsafe { ffi::mdbx_env_sync_ex(self.ptr().0, force, false) })
     }
