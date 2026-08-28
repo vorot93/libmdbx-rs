@@ -368,12 +368,10 @@ fn test_concurrent_readers_single_writer() {
 
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
-    println!("wait2");
     barrier.wait();
     txn.put(&table, key, val, WriteFlags::empty()).unwrap();
     txn.commit().unwrap();
 
-    println!("wait1");
     barrier.wait();
 
     assert!(threads.into_iter().all(|b| b.join().unwrap()))
@@ -643,4 +641,60 @@ fn test_debug_transaction_kind() {
 
     let txn = db.begin_ro_txn().unwrap();
     assert!(format!("{:?}", txn).contains("RoTransaction"));
+}
+
+#[test]
+fn test_map_full_error() {
+    let dir = tempdir().unwrap();
+    // Cap the geometry well below the data written below. MDBX refuses an
+    // upper bound under the default lower bound (page size * 64), so 4 MiB is
+    // the smallest portable cap.
+    let options = DatabaseOptions {
+        max_tables: Some(1),
+        mode: Mode::ReadWrite(ReadWriteOptions {
+            max_size: Some(4 * 1024 * 1024),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let db = Database::open_with_options(&dir, options).unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.create_table(Some("test"), Default::default()).unwrap();
+    let big = vec![0u8; 64 * 1024];
+    let mut got_map_full = false;
+    // 8 MiB total vs a 4 MiB cap: the loop must hit MDBX_MAP_FULL.
+    for i in 0..128u32 {
+        match tx.put(&table, i.to_be_bytes(), &big, WriteFlags::APPEND) {
+            Ok(()) => {}
+            Err(Error::MapFull) => {
+                got_map_full = true;
+                break;
+            }
+            Err(e) => panic!("{e}"),
+        }
+    }
+    assert!(got_map_full);
+}
+
+#[test]
+fn test_writemap_smoke() {
+    let dir = tempdir().unwrap();
+    let db = libmdbx::Database::<WriteMap>::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_tables: Some(1),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.create_table(Some("test"), Default::default()).unwrap();
+    tx.put(&table, "key", "value", WriteFlags::UPSERT).unwrap();
+    tx.commit().unwrap();
+    let tx = db.begin_ro_txn().unwrap();
+    let table = tx.open_table(Some("test")).unwrap();
+    assert_eq!(
+        tx.get::<Vec<u8>>(&table, b"key").unwrap().unwrap(),
+        b"value"
+    );
 }

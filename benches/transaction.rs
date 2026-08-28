@@ -10,7 +10,7 @@ use std::{hint::black_box, ptr};
 use utils::*;
 
 fn bench_get_rand(c: &mut Criterion) {
-    let n = 100u32;
+    let n = N;
     let (_dir, db) = setup_bench_db(n);
     let txn = db.begin_ro_txn().unwrap();
     let table = txn.open_table(None).unwrap();
@@ -33,7 +33,7 @@ fn bench_get_rand(c: &mut Criterion) {
 }
 
 fn bench_get_rand_raw(c: &mut Criterion) {
-    let n = 100u32;
+    let n = N;
     let (_dir, db) = setup_bench_db(n);
     let _txn = db.begin_ro_txn().unwrap();
     let table = _txn.open_table(None).unwrap();
@@ -62,7 +62,7 @@ fn bench_get_rand_raw(c: &mut Criterion) {
 
                 mdbx_get(txn.0, dbi, &key_val, &mut data_val);
 
-                i += key_val.iov_len;
+                i += data_val.iov_len;
             }
             black_box(i);
         })
@@ -70,7 +70,7 @@ fn bench_get_rand_raw(c: &mut Criterion) {
 }
 
 fn bench_put_rand(c: &mut Criterion) {
-    let n = 100u32;
+    let n = N;
     let (_dir, db) = setup_bench_db(0);
 
     let txn = db.begin_ro_txn().unwrap();
@@ -92,7 +92,7 @@ fn bench_put_rand(c: &mut Criterion) {
 }
 
 fn bench_put_rand_raw(c: &mut Criterion) {
-    let n = 100u32;
+    let n = N;
     let (_dir, _db) = setup_bench_db(0);
 
     let mut items: Vec<(String, String)> = (0..n).map(|n| (get_key(n), get_data(n))).collect();

@@ -1,6 +1,9 @@
 use libmdbx::{Database, NoWriteMap, WriteFlags};
 use tempfile::{TempDir, tempdir};
 
+/// Number of rows used by the benchmarks.
+pub const N: u32 = 10_000;
+
 pub fn get_key(n: u32) -> String {
     format!("key{n}")
 }

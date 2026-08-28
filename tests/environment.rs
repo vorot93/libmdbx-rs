@@ -177,9 +177,10 @@ fn test_info() {
     let db = Database::open(&dir).unwrap();
 
     let info = db.info().unwrap();
-    // assert_eq!(info.geometry().min(), map_size as u64);
-    // assert_eq!(info.last_pgno(), 1);
-    // assert_eq!(info.last_txnid(), 0);
+    // A freshly created env has its meta pages allocated and a map that is at
+    // least one page large.
+    assert!(info.last_pgno() > 0);
+    assert!(info.map_size() >= db.stat().unwrap().page_size() as usize);
     assert_eq!(info.num_readers(), 0);
 }
 

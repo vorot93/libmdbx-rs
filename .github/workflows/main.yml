@@ -31,5 +31,5 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo hack clippy --workspace --each-feature -- -D warnings
-      - run: cargo hack test --workspace --each-feature
+      - run: cargo hack clippy --workspace --feature-powerset --depth 2 -- -D warnings
+      - run: cargo hack test --workspace --feature-powerset --depth 2

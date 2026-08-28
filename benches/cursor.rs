@@ -8,7 +8,7 @@ use utils::*;
 
 /// Benchmark of iterator sequential read performance.
 fn bench_get_seq_iter(c: &mut Criterion) {
-    let n = 100;
+    let n = N;
     let (_dir, db) = setup_bench_db(n);
     let txn = db.begin_ro_txn().unwrap();
     let table = txn.open_table(None).unwrap();
@@ -52,7 +52,7 @@ fn bench_get_seq_iter(c: &mut Criterion) {
 
 /// Benchmark of cursor sequential read performance.
 fn bench_get_seq_cursor(c: &mut Criterion) {
-    let n = 100;
+    let n = N;
     let (_dir, db) = setup_bench_db(n);
     let txn = db.begin_ro_txn().unwrap();
     let table = txn.open_table(None).unwrap();
@@ -76,7 +76,7 @@ fn bench_get_seq_cursor(c: &mut Criterion) {
 
 /// Benchmark of raw MDBX sequential read performance (control).
 fn bench_get_seq_raw(c: &mut Criterion) {
-    let n = 100;
+    let n = N;
     let (_dir, db) = setup_bench_db(n);
 
     let dbi = db.begin_ro_txn().unwrap().open_table(None).unwrap().dbi();
