@@ -16,10 +16,16 @@ bindings, so you need:
 ## Usage
 
 ```rust,no_run
-use libmdbx::{Database, NoWriteMap, WriteFlags};
+use libmdbx::{Database, DatabaseOptions, NoWriteMap, WriteFlags};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let db = Database::<NoWriteMap>::open(".")?;
+    // Slots for named tables must be reserved when opening the database.
+    let options = DatabaseOptions {
+        max_tables: Some(1),
+        ..Default::default()
+    };
+    let path = std::env::temp_dir().join("libmdbx-demo");
+    let db = Database::<NoWriteMap>::open_with_options(&path, options)?;
 
     // Write
     let txn = db.begin_rw_txn()?;
