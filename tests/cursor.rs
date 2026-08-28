@@ -185,6 +185,172 @@ fn test_iter() {
 }
 
 #[test]
+fn test_iter_rev() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    {
+        let txn = db.begin_rw_txn().unwrap();
+        let table = txn.open_table(None).unwrap();
+        for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {
+            txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+        }
+        txn.commit().unwrap();
+    }
+
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    let cursor = txn.cursor(&table).unwrap();
+
+    let items: Vec<_> = cursor
+        .into_iter_start::<Vec<u8>, Vec<u8>>()
+        .rev()
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(
+        items,
+        vec![b"key3".to_vec(), b"key2".to_vec(), b"key1".to_vec()]
+    );
+}
+
+#[test]
+fn test_iter_back_from_upperbound() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    {
+        let txn = db.begin_rw_txn().unwrap();
+        let table = txn.open_table(None).unwrap();
+        for i in 1..=5u8 {
+            txn.put(
+                &table,
+                format!("key{i}"),
+                format!("val{i}"),
+                WriteFlags::empty(),
+            )
+            .unwrap();
+        }
+        txn.commit().unwrap();
+    }
+
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
+
+    // back from "key3" yields key3, key2, key1
+    let items: Vec<_> = cursor
+        .clone()
+        .into_iter_back_from::<Vec<u8>, Vec<u8>>(b"key3")
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(
+        items,
+        vec![b"key3".to_vec(), b"key2".to_vec(), b"key1".to_vec()]
+    );
+
+    // absent upper bound: back from "key3x" must NOT yield key3x or beyond
+    let items: Vec<_> = cursor
+        .clone()
+        .into_iter_back_from::<Vec<u8>, Vec<u8>>(b"key3x")
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(
+        items,
+        vec![b"key3".to_vec(), b"key2".to_vec(), b"key1".to_vec()]
+    );
+
+    // back from a key before the first yields nothing
+    assert_eq!(
+        0,
+        cursor
+            .clone()
+            .into_iter_back_from::<(), ()>(b"key0")
+            .count()
+    );
+
+    // mixed front/back: full table partitioned
+    let mut it = cursor.iter_start::<Vec<u8>, Vec<u8>>();
+    assert_eq!(it.next().unwrap().unwrap().0, b"key1".to_vec());
+    assert_eq!(it.next_back().unwrap().unwrap().0, b"key5".to_vec());
+}
+
+#[test]
+fn test_iter_back_start() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    {
+        let txn = db.begin_rw_txn().unwrap();
+        let table = txn.open_table(None).unwrap();
+        for (k, v) in [(b"key1", b"val1"), (b"key2", b"val2"), (b"key3", b"val3")] {
+            txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+        }
+        txn.commit().unwrap();
+    }
+
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    let cursor = txn.cursor(&table).unwrap();
+
+    let items: Vec<_> = cursor
+        .into_iter_back_start::<Vec<u8>, Vec<u8>>()
+        .map(|kv| kv.unwrap().0)
+        .collect();
+    assert_eq!(
+        items,
+        vec![b"key3".to_vec(), b"key2".to_vec(), b"key1".to_vec()]
+    );
+}
+
+#[test]
+fn test_set_upperbound() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    {
+        let txn = db.begin_rw_txn().unwrap();
+        let table = txn.open_table(None).unwrap();
+        for (k, v) in [
+            (b"key1", b"val1"),
+            (b"key2", b"val2"),
+            (b"key3", b"val3"),
+            (b"key4", b"val4"),
+            (b"key5", b"val5"),
+        ] {
+            txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+        }
+        txn.commit().unwrap();
+    }
+
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
+
+    // position at largest key <= given: absent key falls back to key3
+    assert_eq!(
+        cursor.set_upperbound::<Vec<u8>, Vec<u8>>(b"key3x").unwrap(),
+        Some((b"key3".to_vec(), b"val3".to_vec()))
+    );
+    // exact key
+    assert_eq!(
+        cursor.set_upperbound::<Vec<u8>, Vec<u8>>(b"key2").unwrap(),
+        Some((b"key2".to_vec(), b"val2".to_vec()))
+    );
+    // before the first key: nothing
+    assert_eq!(cursor.set_upperbound::<(), ()>(b"key0").unwrap(), None);
+    // at the last key: still the last key
+    assert_eq!(
+        cursor.set_upperbound::<Vec<u8>, Vec<u8>>(b"key5").unwrap(),
+        Some((b"key5".to_vec(), b"val5".to_vec()))
+    );
+    // beyond the last key: the last key
+    assert_eq!(
+        cursor.set_upperbound::<Vec<u8>, Vec<u8>>(b"key6").unwrap(),
+        Some((b"key5".to_vec(), b"val5".to_vec()))
+    );
+}
+
+#[test]
 fn test_iter_empty_database() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir).unwrap();
