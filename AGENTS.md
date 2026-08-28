@@ -18,6 +18,18 @@ Windows. Any change must hold under feature-powerset depth 2, not just
 all-features — feature-gated code paths can break in single-feature builds that
 all-features hides.
 
+## Gotchas
+
+- Named tables need slots reserved at open: `DatabaseOptions { max_tables: Some(n), .. }`.
+  The default is 0, and `open_table`/`create_table` on a named table then fails with `DbsFull`.
+- `README.md` is `include_str!`-ed as the crate-level doc (`src/lib.rs`), so its code
+  blocks are doctests: examples that touch disk must be marked `no_run`, and they must
+  compile (and ideally be run once manually) when the API changes.
+- libmdbx cursor-op naming trap: `MDBX_SET_UPPERBOUND` positions at the first key
+  *strictly greater* (it is an exclusive range-end op). For "largest key <= X" use
+  `MDBX_TO_KEY_LESSER_OR_EQUAL` (what `Cursor::set_upperbound` wraps). Verify op
+  semantics against `mdbx-sys/libmdbx/mdbx.h` before wiring new ones.
+
 ## Vendored upstream code
 
 `mdbx-sys/libmdbx/` is a vendored upstream libmdbx source subtree. **Never edit
@@ -35,4 +47,5 @@ resolve rather than silently mixing versions).
 ## API stability
 
 The crate is pre-1.0: breaking API changes are acceptable when warranted — bump
-the minor version and call them out in the changelog/release notes.
+the minor version and call them out in `CHANGELOG.md`. Cross-cutting design
+rationale lives in `DESIGN.md`.
