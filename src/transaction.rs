@@ -301,6 +301,10 @@ where
     ///
     /// The buffer must be completely filled by `write` unless the table uses
     /// fixed-length values.
+    ///
+    /// `write` runs under the transaction's lock, so it must not call
+    /// methods on the same transaction: they would block until `reserve`
+    /// returns, i.e. deadlock (this is a deadlock, not undefined behavior).
     pub fn reserve<'txn, R>(
         &'txn self,
         table: &Table<'txn>,
@@ -318,8 +322,12 @@ where
             iov_len: len,
             iov_base: ptr::null_mut::<c_void>(),
         };
-        unsafe {
-            mdbx_result(txn_execute(&self.txn, |txn| {
+        // The put and the user closure run under one lock hold: the reserved
+        // buffer aliases the transaction's page memory, which another thread
+        // sharing this transaction could otherwise reorganize (via put/del)
+        // while `write` fills it.
+        txn_execute(&self.txn, |txn| {
+            mdbx_result(unsafe {
                 ffi::mdbx_put(
                     txn,
                     table.dbi(),
@@ -327,14 +335,21 @@ where
                     &mut data_val,
                     c_enum(flags.bits() | ffi::MDBX_RESERVE as u32),
                 )
-            }))?;
-            let buf = if data_val.iov_len == 0 {
-                &mut []
-            } else {
-                slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len)
-            };
-            Ok(write(buf))
-        }
+            })
+            .map(|_| {
+                // SAFETY: on success libmdbx has filled `data_val` with the
+                // reserved buffer, valid until the transaction is touched
+                // again — we are still under its lock.
+                let buf = unsafe {
+                    if data_val.iov_len == 0 {
+                        &mut []
+                    } else {
+                        slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len)
+                    }
+                };
+                write(buf)
+            })
+        })
     }
 
     /// Delete items from a table.

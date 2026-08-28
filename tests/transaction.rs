@@ -1,8 +1,12 @@
 use libmdbx::*;
 use std::{
     borrow::Cow,
-    sync::{Arc, Barrier},
+    sync::{
+        Arc, Barrier,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 use tempfile::tempdir;
 
@@ -134,6 +138,82 @@ fn test_reserve() {
     let v = tx.get::<Vec<u8>>(&table, b"key").unwrap().unwrap();
     assert_eq!(v, b"12345678");
     tx.commit().unwrap();
+}
+
+/// The `reserve` closure must run while the transaction lock is held: a
+/// concurrent `put` on the same transaction cannot complete while the
+/// closure still holds the reserved buffer. (The race-freedom itself is
+/// verified by construction — the closure runs inside `txn_execute` — this
+/// test is the best-effort regression lock plus an API round-trip.)
+#[test]
+fn test_reserve_closure_holds_txn_lock() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let put_started = AtomicBool::new(false);
+    let put_done = AtomicBool::new(false);
+    let pattern = b"reserved-payload";
+
+    thread::scope(|s| {
+        s.spawn(|| {
+            put_started.store(true, Ordering::SeqCst);
+            txn.put(&table, b"other", b"concurrent-put", WriteFlags::empty())
+                .unwrap();
+            put_done.store(true, Ordering::SeqCst);
+        });
+
+        let put_finished_inside_closure = txn
+            .reserve(
+                &table,
+                b"reserved",
+                pattern.len(),
+                WriteFlags::UPSERT,
+                |buf| {
+                    buf.copy_from_slice(pattern);
+                    // Give the racing put every chance to (wrongly) complete
+                    // while the reserved buffer is still held.
+                    while !put_started.load(Ordering::SeqCst) {
+                        std::hint::spin_loop();
+                    }
+                    let deadline = Instant::now() + Duration::from_millis(100);
+                    while !put_done.load(Ordering::SeqCst) && Instant::now() < deadline {
+                        std::hint::spin_loop();
+                    }
+                    put_done.load(Ordering::SeqCst)
+                },
+            )
+            .unwrap();
+        assert!(
+            !put_finished_inside_closure,
+            "concurrent put completed while the reserve closure held the buffer"
+        );
+    });
+
+    assert!(put_done.load(Ordering::SeqCst));
+    assert_eq!(
+        txn.get::<Vec<u8>>(&table, b"reserved").unwrap().unwrap(),
+        pattern
+    );
+    assert_eq!(
+        txn.get::<Vec<u8>>(&table, b"other").unwrap().unwrap(),
+        *b"concurrent-put"
+    );
+    txn.commit().unwrap();
+
+    // The reserved bytes round-trip through a fresh read-only transaction.
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    assert_eq!(
+        txn.get::<Vec<u8>>(&table, b"reserved").unwrap().unwrap(),
+        pattern
+    );
+    assert_eq!(
+        txn.get::<Vec<u8>>(&table, b"other").unwrap().unwrap(),
+        *b"concurrent-put"
+    );
 }
 
 #[test]
