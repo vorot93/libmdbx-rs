@@ -113,7 +113,7 @@ fn test_put_get_del_empty_key() {
 }
 
 #[test]
-fn test_reserve() {
+fn test_put_with() {
     let dir = tempfile::tempdir().unwrap();
     let db = Database::open_with_options(
         &dir,
@@ -127,7 +127,7 @@ fn test_reserve() {
     let table = tx.create_table(Some("test"), Default::default()).unwrap();
 
     let sum = tx
-        .reserve(&table, "key", 8, WriteFlags::UPSERT, |buf| {
+        .put_with(&table, "key", 8, WriteFlags::UPSERT, |buf| {
             assert_eq!(buf.len(), 8);
             buf.copy_from_slice(b"12345678");
             42
@@ -140,13 +140,13 @@ fn test_reserve() {
     tx.commit().unwrap();
 }
 
-/// The `reserve` closure must run while the transaction lock is held: a
+/// The `put_with` closure must run while the transaction lock is held: a
 /// concurrent `put` on the same transaction cannot complete while the
 /// closure still holds the reserved buffer. (The race-freedom itself is
 /// verified by construction — the closure runs inside `txn_execute` — this
 /// test is the best-effort regression lock plus an API round-trip.)
 #[test]
-fn test_reserve_closure_holds_txn_lock() {
+fn test_put_with_closure_holds_txn_lock() {
     let dir = tempdir().unwrap();
     let db = Database::open(&dir).unwrap();
 
@@ -166,7 +166,7 @@ fn test_reserve_closure_holds_txn_lock() {
         });
 
         let put_finished_inside_closure = txn
-            .reserve(
+            .put_with(
                 &table,
                 b"reserved",
                 pattern.len(),

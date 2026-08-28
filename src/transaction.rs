@@ -292,8 +292,8 @@ where
         Ok(())
     }
 
-    /// Reserves space for a value of `len` bytes at `key`, passes the raw
-    /// reserved buffer to `write`, and stores the bytes left in it.
+    /// Puts a value of `len` bytes at `key`, filling the reserved buffer
+    /// in place via `write` (MDBX's `MDBX_RESERVE` operation).
     ///
     /// The buffer is only valid inside `write`; it aliases the transaction's
     /// page memory and MUST NOT outlive the closure. This method therefore
@@ -303,9 +303,9 @@ where
     /// fixed-length values.
     ///
     /// `write` runs under the transaction's lock, so it must not call
-    /// methods on the same transaction: they would block until `reserve`
+    /// methods on the same transaction: they would block until `put_with`
     /// returns, i.e. deadlock (this is a deadlock, not undefined behavior).
-    pub fn reserve<'txn, R>(
+    pub fn put_with<'txn, R>(
         &'txn self,
         table: &Table<'txn>,
         key: impl AsRef<[u8]>,
