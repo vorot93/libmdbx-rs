@@ -232,3 +232,17 @@ fn test_open_non_ascii_path() {
     drop(Database::open(&path).unwrap());
     assert!(path.join("mdbx.dat").is_file());
 }
+
+#[test]
+fn test_max_readers_is_applied() {
+    let dir = tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            max_readers: Some(500),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(db.info().unwrap().max_readers() >= 500);
+}

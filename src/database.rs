@@ -258,6 +258,10 @@ where
                 }
                 for (opt, v) in [
                     (ffi::MDBX_opt_max_db, options.max_tables),
+                    (
+                        ffi::MDBX_opt_max_readers,
+                        options.max_readers.map(u64::from),
+                    ),
                     (ffi::MDBX_opt_rp_augment_limit, options.rp_augment_limit),
                     (ffi::MDBX_opt_loose_limit, options.loose_limit),
                     (ffi::MDBX_opt_dp_reserve_limit, options.dp_reserve_limit),

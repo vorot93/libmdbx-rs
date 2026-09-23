@@ -13,6 +13,7 @@
 - `DecodeError`, `EncodeError` and `IoError` return their cause from `Error::source()`; their `Display` is now a short description without the cause (print the chain to see it).
 - New variants for the errno aliases libmdbx names: `OutOfMemory`, `ReadOnlyFilesystem`, `NotSupported`, `Io`, `PermissionDenied`, `Interrupted`, `AlreadyExists`, `FileNotFound`, `RemoteFilesystem`, `Deadlock` (previously `Error::Other(code)`).
 - The `bytes` feature now also lets core reads decode into `bytes::Bytes` (it previously did nothing without `orm`).
+- `DatabaseOptions::max_readers` is applied (it was silently ignored).
 - ORM operations reuse table handles opened once with the database instead of reopening each table by name per call; `orm::Database::create` reports a failure to create the directory instead of ignoring it.
 - Interior NUL bytes in table names or database paths now fail with `Error::InvalidArgument` instead of `Error::Invalid` (whose message reads "File is not an MDBX file").
 
