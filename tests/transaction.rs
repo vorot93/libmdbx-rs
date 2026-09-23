@@ -698,3 +698,36 @@ fn test_writemap_smoke() {
         b"value"
     );
 }
+
+/// The reserved buffer handed to `put_with` is zero-filled: libmdbx may
+/// return memory holding the key's previous value, a freed page's content,
+/// or (with `no_meminit`) never-initialized bytes.
+#[test]
+fn test_put_with_buffer_is_zeroed() {
+    let dir = tempdir().unwrap();
+    let db = Database::open_with_options(
+        &dir,
+        DatabaseOptions {
+            no_meminit: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let tx = db.begin_rw_txn().unwrap();
+    let table = tx.open_table(None).unwrap();
+
+    tx.put(&table, b"small", b"12345678", WriteFlags::UPSERT)
+        .unwrap();
+    tx.put(&table, b"big", vec![0xAA; 10_000], WriteFlags::UPSERT)
+        .unwrap();
+    tx.del(&table, b"big", None).unwrap();
+
+    for (key, len) in [(&b"small"[..], 8), (b"big2", 10_000)] {
+        let all_zero = tx
+            .put_with(&table, key, len, WriteFlags::UPSERT, |buf| {
+                buf.iter().all(|&b| b == 0)
+            })
+            .unwrap();
+        assert!(all_zero, "reserved buffer for {key:?} was not zeroed");
+    }
+}

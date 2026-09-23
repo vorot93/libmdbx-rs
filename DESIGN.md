@@ -34,7 +34,10 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
   the page under a live `&mut`. A `&'txn mut self` signature was rejected:
   `Table<'txn>` borrows the transaction, so `&mut self` + `&Table<'txn>`
   cannot be called (E0502). The closure must not use the same transaction —
-  deadlock, not UB.
+  deadlock, not UB. The buffer is zero-filled through the raw pointer before
+  the `&mut [u8]` is formed: libmdbx may return stale or (with `no_meminit`)
+  uninitialized memory, and a `&mut [MaybeUninit<u8>]` API was rejected as
+  unergonomic for a memset that costs far less than the write itself.
 - **Write flags**: `MDBX_RESERVE` and `MDBX_MULTIPLE` change what libmdbx
   does with the data argument (`MULTIPLE` reads *and writes* `data[1]`, i.e.
   past a single `MDBX_val`), so they are not `WriteFlags` members, and every

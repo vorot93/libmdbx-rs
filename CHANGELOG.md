@@ -13,6 +13,7 @@
 - Soundness: a cursor, a cursor iterator, or a zero-copy value decoded through them could outlive its transaction in safe code, observing freed/reused pages.
 - Soundness: `put`/`Cursor::put` with `WriteFlags::MULTIPLE` made libmdbx read and write past the single data value (stack out-of-bounds access); with `RESERVE` they stored uninitialized bytes.
 - Soundness: ORM `Transaction::table_sizes` (a safe method) closed the environment-wide table handles it opened, invalidating them under concurrent transactions; it no longer closes them.
+- Soundness: `put_with` handed its closure `&mut [u8]` over possibly uninitialized memory (e.g. with `no_meminit`). The buffer is now zero-filled first, so untouched bytes are stored as zeros.
 - ORM `Cursor::delete_current_key` uses `MDBX_ALLDUPS` (`NO_DUP_DATA` is only a compatibility alias for cursor deletes).
 
 ## 0.8.0 - 2026-09-03

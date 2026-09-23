@@ -406,8 +406,10 @@ where
     /// page memory and MUST NOT outlive the closure. This method therefore
     /// cannot produce two outstanding buffers over the same memory.
     ///
-    /// The buffer must be completely filled by `write` unless the table uses
-    /// fixed-length values.
+    /// The buffer is zero-filled before `write` runs, so bytes it leaves
+    /// untouched are stored as zeros. (libmdbx may hand out memory holding
+    /// the key's previous value, a freed page's content, or — with
+    /// `no_meminit` — never-initialized bytes, which safe code must not read.)
     ///
     /// `write` runs under the transaction's lock, so it must not call
     /// methods on the same transaction: they would block until `put_with`
@@ -446,12 +448,15 @@ where
             .map(|_| {
                 // SAFETY: on success libmdbx has filled `data_val` with the
                 // reserved buffer, valid until the transaction is touched
-                // again — we are still under its lock.
+                // again — we are still under its lock. It is zeroed through
+                // the raw pointer before any reference to it exists.
                 let buf = unsafe {
                     if data_val.iov_len == 0 {
                         &mut []
                     } else {
-                        slice::from_raw_parts_mut(data_val.iov_base as *mut u8, data_val.iov_len)
+                        let base = data_val.iov_base as *mut u8;
+                        ptr::write_bytes(base, 0, data_val.iov_len);
+                        slice::from_raw_parts_mut(base, data_val.iov_len)
                     }
                 };
                 write(buf)
