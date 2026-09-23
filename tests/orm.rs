@@ -315,3 +315,42 @@ mod qualified_macros {
         assert_eq!(QualifiedDupsSeek.to_string(), "QualifiedDupsSeek");
     }
 }
+
+/// A persisted database reopened read-only serves reads from its chart's
+/// tables, and falls back to opening off-chart tables by name.
+#[test]
+fn test_reopen_read_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let full_chart: Arc<DatabaseChart> = Arc::new(
+        [table_info!(Numbers), table_info!(Extra)]
+            .into_iter()
+            .collect(),
+    );
+    {
+        let db: libmdbx::orm::Database =
+            libmdbx::orm::Database::create(Some(path.clone()), &full_chart).unwrap();
+        let tx = db.begin_readwrite().unwrap();
+        tx.upsert::<Numbers>(7, 49).unwrap();
+        tx.upsert::<Extra>("k".to_string(), b"v".to_vec()).unwrap();
+        tx.commit().unwrap();
+    }
+
+    // The off-chart `Extra` table needs a spare table slot.
+    let options = DatabaseOptions {
+        max_tables: Some(2),
+        ..Default::default()
+    };
+    let db: libmdbx::orm::Database =
+        libmdbx::orm::Database::open_with_options(&path, options, &chart()).unwrap();
+    let tx = db.begin_read().unwrap();
+    assert_eq!(tx.get::<Numbers>(7).unwrap(), Some(49));
+    assert_eq!(
+        tx.get::<Extra>("k".to_string()).unwrap(),
+        Some(b"v".to_vec())
+    );
+    assert_eq!(
+        tx.cursor::<Numbers>().unwrap().first().unwrap(),
+        Some((7, 49))
+    );
+}

@@ -1,4 +1,4 @@
-use super::{cursor::*, impls::dec, traits::*};
+use super::{cursor::*, database::TableHandles, impls::dec, traits::*};
 use crate::{DatabaseKind, RO, RW, Stat, TransactionKind, WriteFlags, WriteMap};
 use std::{collections::HashMap, marker::PhantomData};
 
@@ -9,6 +9,7 @@ where
     E: DatabaseKind,
 {
     pub(crate) inner: crate::Transaction<'db, K, E>,
+    pub(crate) tables: &'db TableHandles,
 }
 
 impl<E: DatabaseKind> Transaction<'_, RO, E> {
@@ -36,12 +37,20 @@ where
     K: TransactionKind,
     E: DatabaseKind,
 {
+    /// The handle of `T`: the one opened with the database for chart tables,
+    /// otherwise opened by name.
+    fn table<T: Table>(&self) -> crate::Result<crate::Table<'_>> {
+        match self.tables.get(T::NAME) {
+            Some(&dbi) => Ok(crate::Table::new_from_ptr(dbi)),
+            None => self.inner.open_table(Some(T::NAME)),
+        }
+    }
+
     pub fn table_stat<T>(&self) -> crate::Result<Stat>
     where
         T: Table,
     {
-        self.inner
-            .table_stat(&self.inner.open_table(Some(T::NAME))?)
+        self.inner.table_stat(&self.table::<T>()?)
     }
 
     pub fn cursor<'tx, T>(&'tx self) -> crate::Result<Cursor<'tx, K, T>>
@@ -50,7 +59,7 @@ where
         T: Table,
     {
         Ok(Cursor {
-            inner: self.inner.cursor(&self.inner.open_table(Some(T::NAME))?)?,
+            inner: self.inner.cursor(&self.table::<T>()?)?,
             _marker: PhantomData,
         })
     }
@@ -66,7 +75,7 @@ where
         let key = key.encode()?;
         Ok(self
             .inner
-            .get::<DecodableWrapper<_>>(&self.inner.open_table(Some(T::NAME))?, key.as_ref())?
+            .get::<DecodableWrapper<_>>(&self.table::<T>()?, key.as_ref())?
             .map(|v| v.0))
     }
 }
@@ -82,7 +91,7 @@ impl<E: DatabaseKind> Transaction<'_, RW, E> {
         T: Table,
     {
         self.inner.put(
-            &self.inner.open_table(Some(T::NAME))?,
+            &self.table::<T>()?,
             key.encode()?,
             value.encode()?,
             WriteFlags::UPSERT,
@@ -99,16 +108,14 @@ impl<E: DatabaseKind> Transaction<'_, RW, E> {
         if let Some(v) = &value {
             vref = Some(v.as_ref());
         };
-        self.inner
-            .del(&self.inner.open_table(Some(T::NAME))?, key.encode()?, vref)
+        self.inner.del(&self.table::<T>()?, key.encode()?, vref)
     }
 
     pub fn clear_table<T>(&self) -> crate::Result<()>
     where
         T: Table,
     {
-        self.inner
-            .clear_table(&self.inner.open_table(Some(T::NAME))?)?;
+        self.inner.clear_table(&self.table::<T>()?)?;
 
         Ok(())
     }

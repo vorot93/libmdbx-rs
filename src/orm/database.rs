@@ -1,7 +1,7 @@
 use super::{traits::*, transaction::Transaction};
 use crate::{DatabaseKind, DatabaseOptions, Mode, RO, RW, TableFlags, WriteMap};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::DirBuilder,
     ops::Deref,
     path::{Path, PathBuf},
@@ -34,19 +34,19 @@ impl DbFolder {
 #[derive(Debug)]
 pub struct Database<E: DatabaseKind = WriteMap> {
     inner: crate::Database<E>,
+    /// Handles of the chart's tables, opened once: reopening a table by name
+    /// on every operation takes libmdbx's handle mutex and searches by name.
+    tables: TableHandles,
+    /// Declared after `inner` so a temporary directory outlives the environment.
     folder: DbFolder,
 }
+
+/// Table handles by table name.
+pub(crate) type TableHandles = HashMap<&'static str, ffi::MDBX_dbi>;
 
 impl<E: DatabaseKind> Database<E> {
     pub fn path(&self) -> &Path {
         self.folder.path()
-    }
-
-    fn open_db(folder: DbFolder, options: DatabaseOptions) -> crate::Result<Self> {
-        Ok(Self {
-            inner: crate::Database::open_with_options(folder.path(), options)?,
-            folder,
-        })
     }
 
     fn new(
@@ -63,28 +63,49 @@ impl<E: DatabaseKind> Database<E> {
                 .max(1) as u64,
         );
 
-        if let Mode::ReadOnly = options.mode {
-            Self::open_db(folder, options)
-        } else {
-            let _ = DirBuilder::new().recursive(true).create(folder.path());
+        let read_only = matches!(options.mode, Mode::ReadOnly);
+        if !read_only {
+            DirBuilder::new().recursive(true).create(folder.path())?;
+        }
+        let inner = crate::Database::open_with_options(folder.path(), options)?;
 
-            let this = Self::open_db(folder, options)?;
-
-            let tx = this.inner.begin_rw_txn()?;
-            for (table, settings) in chart {
-                tx.create_table(
-                    Some(table),
-                    if settings.dup_sort {
-                        TableFlags::DUP_SORT
-                    } else {
-                        TableFlags::default()
-                    },
-                )?;
+        // Handles opened by a committed transaction stay open for the
+        // environment's lifetime.
+        let tables = if read_only {
+            let tx = inner.begin_ro_txn()?;
+            let mut tables = TableHandles::new();
+            for &name in chart.keys() {
+                match tx.open_table(Some(name)) {
+                    Ok(table) => {
+                        tables.insert(name, table.dbi());
+                    }
+                    // Absent from the file: operations on it report the error.
+                    Err(crate::Error::NotFound) => {}
+                    Err(error) => return Err(error),
+                }
             }
             tx.commit()?;
+            tables
+        } else {
+            let tx = inner.begin_rw_txn()?;
+            let mut tables = TableHandles::new();
+            for (&name, settings) in chart {
+                let flags = if settings.dup_sort {
+                    TableFlags::DUP_SORT
+                } else {
+                    TableFlags::default()
+                };
+                tables.insert(name, tx.create_table(Some(name), flags)?.dbi());
+            }
+            tx.commit()?;
+            tables
+        };
 
-            Ok(this)
-        }
+        Ok(Self {
+            inner,
+            tables,
+            folder,
+        })
     }
 
     pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> crate::Result<Self> {
@@ -141,12 +162,14 @@ impl<E: DatabaseKind> Database<E> {
     pub fn begin_read(&self) -> crate::Result<Transaction<'_, RO, E>> {
         Ok(Transaction {
             inner: self.inner.begin_ro_txn()?,
+            tables: &self.tables,
         })
     }
 
     pub fn begin_readwrite(&self) -> crate::Result<Transaction<'_, RW, E>> {
         Ok(Transaction {
             inner: self.inner.begin_rw_txn()?,
+            tables: &self.tables,
         })
     }
 }

@@ -104,6 +104,11 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
   kinds; all ORM errors are the crate's typed `Error` (anyhow was dropped:
   callers could not match error kinds without downcasting). `Encodable::encode`
   is fallible because CBOR serialization of user types can fail.
+- `orm::Database` opens the chart's table handles once, in a committed
+  transaction (handles then stay open environment-wide), and ORM transactions
+  reuse them; only off-chart tables are opened by name per operation.
+  Read-only opens skip chart tables missing from the file, so operations on
+  them fail individually rather than failing the open.
 - `CutStart<T>` encodes fixed-width big-endian values with *trailing* zeros
   removed: the result is a byte prefix that compares `<=` the full encoding,
   so `SET_RANGE`/`seek_closest` never skips the value. The previous
