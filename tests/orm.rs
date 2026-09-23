@@ -278,3 +278,25 @@ fn test_database_defaults_to_writemap() {
     let tx = db.begin_read().unwrap();
     assert_eq!(tx.get::<Numbers>(1).unwrap(), Some(1));
 }
+
+/// `table_sizes` must not close table handles: they are shared by every
+/// transaction in the environment, so closing one invalidates handles other
+/// transactions (possibly on other threads) are using.
+#[test]
+fn test_table_sizes_keeps_shared_handles_open() {
+    let db: libmdbx::orm::Database = libmdbx::orm::Database::create(None, &chart()).unwrap();
+    let tx = db.begin_readwrite().unwrap();
+    tx.upsert::<Numbers>(1, 1).unwrap();
+    tx.commit().unwrap();
+
+    let raw = db.begin_ro_txn().unwrap();
+    let table = raw.open_table(Some("Numbers")).unwrap();
+
+    let sizes = db.begin_read().unwrap().table_sizes().unwrap();
+    assert!(sizes.contains_key("Numbers"));
+
+    assert_eq!(
+        raw.get::<Vec<u8>>(&table, 1u64.to_be_bytes()).unwrap(),
+        Some(1u64.to_be_bytes().to_vec())
+    );
+}

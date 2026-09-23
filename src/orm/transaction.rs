@@ -21,11 +21,10 @@ impl<E: DatabaseKind> Transaction<'_, RO, E> {
             let db = self.inner.open_table(Some(&table))?;
             let stats = self.inner.table_stat(&db)?;
 
+            // Never close `db`: table handles are shared by every transaction
+            // in the environment, so closing one here would invalidate it
+            // under other transactions (see `close_table`'s safety contract).
             out.insert(table, stats.total_size());
-
-            unsafe {
-                self.inner.close_table(db)?;
-            }
         }
 
         Ok(out)
