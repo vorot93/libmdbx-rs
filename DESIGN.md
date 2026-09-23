@@ -122,6 +122,16 @@ has a named variant; anything else is preserved in `Other(c_int)`.
 (`mdbx_strerror` is documented non-thread-safe, and locale output is not
 guaranteed UTF-8).
 
+## Logging
+
+libmdbx logs to stderr by default (level NOTICE, in release builds too), which
+is unacceptable for a library. `logging::install` (called once per process
+before the first `mdbx_env_create`) swaps in `mdbx_setup_debug_nofmt` with a
+forwarder to the `log` crate, leaving libmdbx's level unchanged so `log`
+filters decide. The `nofmt` variant avoids C varargs; libmdbx formats into a
+leaked 1 KiB buffer under its own debug lock, and reports the *untruncated*
+`vsnprintf` length, so the forwarder clamps it to the buffer.
+
 ## mdbx-sys
 
 - Bindings are generated at build time into `OUT_DIR` (no pregenerated

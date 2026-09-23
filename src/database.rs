@@ -229,6 +229,7 @@ where
         path: impl AsRef<Path>,
         options: DatabaseOptions,
     ) -> Result<Database<E>> {
+        crate::logging::install();
         let mut db: *mut ffi::MDBX_env = ptr::null_mut();
         unsafe {
             mdbx_result(ffi::mdbx_env_create(&mut db))?;

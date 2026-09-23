@@ -19,6 +19,7 @@ mod cursor;
 mod database;
 mod error;
 mod flags;
+mod logging;
 mod table;
 mod transaction;
 

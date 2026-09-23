@@ -77,6 +77,13 @@ may relocate pages on a later write.
 - [`WriteMap`] — writes go through the memory map (typically faster). The ORM
   defaults to this.
 
+## Logging
+
+libmdbx's own diagnostics are forwarded to the [`log`](https://docs.rs/log)
+crate under the `libmdbx` target (they are never printed to stderr). Install
+any `log` backend to see them, e.g. with `RUST_LOG=libmdbx=info` for
+`env_logger`.
+
 ## ORM
 
 Enable the `orm` feature and see `libmdbx::orm`.
