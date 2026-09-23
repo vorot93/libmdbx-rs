@@ -5,10 +5,14 @@
 ### Breaking changes
 
 - `Cursor` and the cursor iterators are now covariant in `'txn` (they were contravariant). Code that kept a cursor or iterator alive past its transaction's commit/abort no longer compiles; that code was unsound.
+- `WriteFlags::RESERVE` and `WriteFlags::MULTIPLE` are removed, and undeclared bits passed via `from_bits_retain` are ignored. Use `Transaction::put_with` to reserve, and the new `Transaction::put_multiple` / `Cursor::put_multiple` for `DUP_FIXED` bulk inserts.
+- New `Error::InvalidArgument` variant for arguments rejected before reaching libmdbx.
 
 ### Fixes
 
 - Soundness: a cursor, a cursor iterator, or a zero-copy value decoded through them could outlive its transaction in safe code, observing freed/reused pages.
+- Soundness: `put`/`Cursor::put` with `WriteFlags::MULTIPLE` made libmdbx read and write past the single data value (stack out-of-bounds access); with `RESERVE` they stored uninitialized bytes.
+- ORM `Cursor::delete_current_key` uses `MDBX_ALLDUPS` (`NO_DUP_DATA` is only a compatibility alias for cursor deletes).
 
 ## 0.8.0 - 2026-09-03
 

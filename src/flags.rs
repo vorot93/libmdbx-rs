@@ -104,18 +104,40 @@ bitflags! {
 }
 
 bitflags! {
-    #[doc="Write options."]
+    /// Write options for put and delete operations.
+    ///
+    /// `MDBX_RESERVE` and `MDBX_MULTIPLE` are deliberately absent: they change
+    /// the meaning of the data argument (an uninitialized reservation, or an
+    /// array of two `MDBX_val`s), so they are only reachable through
+    /// [Transaction::put_with](crate::Transaction::put_with) and the
+    /// `put_multiple` methods, which set up the data accordingly.
     #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
     pub struct WriteFlags: c_uint {
+        /// Insert or replace (the default; no bits set).
         const UPSERT = MDBX_UPSERT as u32;
+        /// Fail with [Error::KeyExist](crate::Error::KeyExist) if the key already exists.
         const NO_OVERWRITE = MDBX_NOOVERWRITE as u32;
+        /// [TableFlags::DUP_SORT]-only: fail if the key/data pair already exists.
         const NO_DUP_DATA = MDBX_NODUPDATA as u32;
+        /// Replace the item at the current cursor position (the key must match).
         const CURRENT = MDBX_CURRENT as u32;
+        /// [TableFlags::DUP_SORT]-only: replace or delete all duplicates of the key.
         const ALLDUPS = MDBX_ALLDUPS as u32;
-        const RESERVE = MDBX_RESERVE as u32;
+        /// Append at the end of the table; keys must be supplied in order.
         const APPEND = MDBX_APPEND as u32;
+        /// [TableFlags::DUP_SORT]-only: append a duplicate; data must be supplied in order.
         const APPEND_DUP = MDBX_APPENDDUP as u32;
-        const MULTIPLE = MDBX_MULTIPLE as u32;
+    }
+}
+
+impl WriteFlags {
+    /// The flag bits to pass to libmdbx.
+    ///
+    /// Bits outside the declared flags (e.g. smuggled in via
+    /// [WriteFlags::from_bits_retain]) are dropped: `MDBX_RESERVE` or
+    /// `MDBX_MULTIPLE` would make libmdbx misread the data argument.
+    pub(crate) fn ffi_bits(self) -> c_uint {
+        self.intersection(Self::all()).bits()
     }
 }
 

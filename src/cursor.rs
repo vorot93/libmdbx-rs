@@ -5,7 +5,7 @@ use crate::{
     flags::*,
     mdbx_try_optional,
     table::Table,
-    transaction::{RW, TransactionKind, txn_execute},
+    transaction::{RW, TransactionKind, put_multiple_with, txn_execute},
 };
 use ffi::{
     MDBX_FIRST, MDBX_FIRST_DUP, MDBX_GET_BOTH, MDBX_GET_BOTH_RANGE, MDBX_GET_CURRENT,
@@ -625,23 +625,58 @@ impl Cursor<'_, RW> {
         };
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
-                ffi::mdbx_cursor_put(self.cursor.0, &key_val, &mut data_val, c_enum(flags.bits()))
+                ffi::mdbx_cursor_put(
+                    self.cursor.0,
+                    &key_val,
+                    &mut data_val,
+                    c_enum(flags.ffi_bits()),
+                )
             })
         })?;
 
         Ok(())
     }
 
+    /// [TableFlags::DUP_FIXED]-only: stores `values`, a concatenation of
+    /// `value_len`-byte elements, as duplicates of `key` in one operation
+    /// (MDBX's `MDBX_MULTIPLE`). The cursor is left at the last stored item.
+    ///
+    /// Returns the number of elements stored. Fails with
+    /// [Error::InvalidArgument] if `value_len` is zero or does not divide
+    /// `values.len()`.
+    pub fn put_multiple(
+        &mut self,
+        key: &[u8],
+        values: &[u8],
+        value_len: usize,
+        flags: WriteFlags,
+    ) -> Result<usize> {
+        let key_val = ffi::MDBX_val {
+            iov_len: key.len(),
+            iov_base: key.as_ptr() as *mut c_void,
+        };
+        put_multiple_with(values, value_len, |data| {
+            txn_execute(&self.txn, |_| unsafe {
+                ffi::mdbx_cursor_put(
+                    self.cursor.0,
+                    &key_val,
+                    data.as_mut_ptr(),
+                    c_enum(flags.ffi_bits() | ffi::MDBX_MULTIPLE as u32),
+                )
+            })
+        })
+    }
+
     /// Deletes the current key/data pair.
     ///
     /// ### Flags
     ///
-    /// [WriteFlags::NO_DUP_DATA] may be used to delete all data items for the
-    /// current key, if the table was opened with [TableFlags::DUP_SORT].
+    /// [WriteFlags::ALLDUPS] deletes all data items for the current key, if
+    /// the table was opened with [TableFlags::DUP_SORT].
     pub fn del(&mut self, flags: WriteFlags) -> Result<()> {
         mdbx_result(unsafe {
             txn_execute(&self.txn, |_| {
-                ffi::mdbx_cursor_del(self.cursor.0, c_enum(flags.bits()))
+                ffi::mdbx_cursor_del(self.cursor.0, c_enum(flags.ffi_bits()))
             })
         })?;
 

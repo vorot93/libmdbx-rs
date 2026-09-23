@@ -755,3 +755,112 @@ fn test_put_del() {
         )
     );
 }
+
+/// `MDBX_MULTIPLE` (0x80000) makes libmdbx treat `data` as an array of two
+/// `MDBX_val`s and `MDBX_RESERVE` (0x10000) leaves the value uninitialized;
+/// neither may be reachable through the plain put flags.
+#[test]
+fn test_write_flags_exclude_multiple_and_reserve() {
+    assert_eq!(WriteFlags::from_bits(0x80000), None);
+    assert_eq!(WriteFlags::from_bits(0x10000), None);
+}
+
+#[test]
+fn test_put_ignores_unknown_flag_bits() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn
+        .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
+        .unwrap();
+    let smuggled = WriteFlags::from_bits_retain(0x80000 | 0x10000);
+    txn.put(&table, b"key", b"val1", smuggled).unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
+    cursor.put(b"key", b"val2", smuggled).unwrap();
+
+    assert_eq!(cursor.first().unwrap(), Some((*b"key", *b"val1")));
+    assert_eq!(cursor.get_multiple().unwrap(), Some(*b"val1val2"));
+}
+
+#[test]
+fn test_put_multiple() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn
+        .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
+        .unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
+    assert_eq!(
+        cursor
+            .put_multiple(b"key", b"val3val1val2", 4, WriteFlags::empty())
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        txn.put_multiple(&table, b"key2", b"abcd", 4, WriteFlags::empty())
+            .unwrap(),
+        1
+    );
+    assert_eq!(cursor.first().unwrap(), Some((*b"key", *b"val1")));
+    assert_eq!(cursor.get_multiple().unwrap(), Some(*b"val1val2val3"));
+    assert_eq!(
+        cursor
+            .put_multiple(b"key", b"", 4, WriteFlags::empty())
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn test_put_multiple_integer_dup_misaligned() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn
+        .create_table(
+            None,
+            TableFlags::DUP_SORT | TableFlags::DUP_FIXED | TableFlags::INTEGER_DUP,
+        )
+        .unwrap();
+    // Offset by one byte so the u64 elements are misaligned.
+    let mut bytes = vec![0u8];
+    for v in [3u64, 1, 2] {
+        bytes.extend_from_slice(&v.to_ne_bytes());
+    }
+    let mut cursor = txn.cursor(&table).unwrap();
+    assert_eq!(
+        cursor
+            .put_multiple(b"key", &bytes[1..], 8, WriteFlags::empty())
+            .unwrap(),
+        3
+    );
+    let values: Vec<u64> = cursor
+        .iter_dup_of::<(), [u8; 8]>(b"key")
+        .map(|r| u64::from_ne_bytes(r.unwrap().1))
+        .collect();
+    assert_eq!(values, [1, 2, 3]);
+}
+
+#[test]
+fn test_put_multiple_rejects_bad_lengths() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn
+        .create_table(None, TableFlags::DUP_SORT | TableFlags::DUP_FIXED)
+        .unwrap();
+    let mut cursor = txn.cursor(&table).unwrap();
+    assert!(matches!(
+        cursor.put_multiple(b"key", b"abc", 0, WriteFlags::empty()),
+        Err(Error::InvalidArgument(_))
+    ));
+    assert!(matches!(
+        cursor.put_multiple(b"key", b"abcde", 2, WriteFlags::empty()),
+        Err(Error::InvalidArgument(_))
+    ));
+}

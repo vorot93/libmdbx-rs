@@ -7,7 +7,7 @@ use crate::{
 };
 use ffi::{MDBX_TXN_RDONLY, MDBX_TXN_READWRITE, MDBX_txn_flags_t};
 use indexmap::IndexSet;
-use libc::{c_uint, c_void};
+use libc::{c_int, c_uint, c_void};
 use parking_lot::Mutex;
 use sealed::sealed;
 use std::{
@@ -256,6 +256,55 @@ pub(crate) fn txn_execute<F: FnOnce(*mut ffi::MDBX_txn) -> T, T>(txn: &Mutex<Txn
     (f)(lck.0)
 }
 
+/// Validates a `put_multiple` request and runs `put` with the two-element
+/// `MDBX_val` array that `MDBX_MULTIPLE` requires: `[0]` spans the first
+/// element, `[1].iov_len` holds the element count in and the stored count out.
+pub(crate) fn put_multiple_with(
+    values: &[u8],
+    value_len: usize,
+    put: impl FnOnce(&mut [ffi::MDBX_val; 2]) -> c_int,
+) -> Result<usize> {
+    if value_len == 0 {
+        return Err(Error::InvalidArgument(
+            "put_multiple: value_len must be non-zero",
+        ));
+    }
+    if !values.len().is_multiple_of(value_len) {
+        return Err(Error::InvalidArgument(
+            "put_multiple: values.len() must be a multiple of value_len",
+        ));
+    }
+    if values.is_empty() {
+        return Ok(0);
+    }
+    // libmdbx requires INTEGER_DUP elements to be naturally aligned; copy
+    // misaligned input into an 8-aligned buffer rather than make every
+    // caller get this right.
+    let aligned: Vec<u64>;
+    let base = if values.as_ptr().align_offset(8) == 0 {
+        values.as_ptr()
+    } else {
+        let mut buf = vec![0u64; values.len().div_ceil(8)];
+        // SAFETY: `buf` spans at least `values.len()` bytes and cannot
+        // overlap the borrowed `values`.
+        unsafe { ptr::copy_nonoverlapping(values.as_ptr(), buf.as_mut_ptr().cast(), values.len()) };
+        aligned = buf;
+        aligned.as_ptr().cast()
+    };
+    let mut data = [
+        ffi::MDBX_val {
+            iov_len: value_len,
+            iov_base: base as *mut c_void,
+        },
+        ffi::MDBX_val {
+            iov_len: values.len() / value_len,
+            iov_base: ptr::null_mut(),
+        },
+    ];
+    mdbx_result(put(&mut data))?;
+    Ok(data[1].iov_len)
+}
+
 impl<E> Transaction<'_, RW, E>
 where
     E: DatabaseKind,
@@ -310,11 +359,44 @@ where
                 table.dbi(),
                 &key_val,
                 &mut data_val,
-                c_enum(flags.bits()),
+                c_enum(flags.ffi_bits()),
             )
         }))?;
 
         Ok(())
+    }
+
+    /// [TableFlags::DUP_FIXED]-only: stores `values`, a concatenation of
+    /// `value_len`-byte elements, as duplicates of `key` in one operation
+    /// (MDBX's `MDBX_MULTIPLE`).
+    ///
+    /// Returns the number of elements stored. Fails with
+    /// [Error::InvalidArgument] if `value_len` is zero or does not divide
+    /// `values.len()`.
+    pub fn put_multiple<'txn>(
+        &'txn self,
+        table: &Table<'txn>,
+        key: impl AsRef<[u8]>,
+        values: &[u8],
+        value_len: usize,
+        flags: WriteFlags,
+    ) -> Result<usize> {
+        let key = key.as_ref();
+        let key_val = ffi::MDBX_val {
+            iov_len: key.len(),
+            iov_base: key.as_ptr() as *mut c_void,
+        };
+        put_multiple_with(values, value_len, |data| {
+            txn_execute(&self.txn, |txn| unsafe {
+                ffi::mdbx_put(
+                    txn,
+                    table.dbi(),
+                    &key_val,
+                    data.as_mut_ptr(),
+                    c_enum(flags.ffi_bits() | ffi::MDBX_MULTIPLE as u32),
+                )
+            })
+        })
     }
 
     /// Puts a value of `len` bytes at `key`, filling the reserved buffer
@@ -358,7 +440,7 @@ where
                     table.dbi(),
                     &key_val,
                     &mut data_val,
-                    c_enum(flags.bits() | ffi::MDBX_RESERVE as u32),
+                    c_enum(flags.ffi_bits() | ffi::MDBX_RESERVE as u32),
                 )
             })
             .map(|_| {

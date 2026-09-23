@@ -35,6 +35,14 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
   `Table<'txn>` borrows the transaction, so `&mut self` + `&Table<'txn>`
   cannot be called (E0502). The closure must not use the same transaction —
   deadlock, not UB.
+- **Write flags**: `MDBX_RESERVE` and `MDBX_MULTIPLE` change what libmdbx
+  does with the data argument (`MULTIPLE` reads *and writes* `data[1]`, i.e.
+  past a single `MDBX_val`), so they are not `WriteFlags` members, and every
+  put/del path masks to the declared flags (`WriteFlags::ffi_bits`) because
+  `from_bits_retain` can still smuggle raw bits in. They are only set by
+  `put_with` and `put_multiple`, which build the matching data argument;
+  `put_multiple` copies misaligned input into an 8-aligned buffer because
+  libmdbx requires aligned `INTEGER_DUP` elements.
 - **Empty values**: every `MDBX_val` → slice conversion guards
   `iov_len == 0` before `slice::from_raw_parts`; a NULL base with length 0 is
   instant UB by Rust's rules regardless of what libmdbx happens to return.

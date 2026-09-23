@@ -297,7 +297,7 @@ where
     T: DupSort,
 {
     pub fn delete_current_key(&mut self) -> crate::Result<()> {
-        self.inner.del(WriteFlags::NO_DUP_DATA)
+        self.inner.del(WriteFlags::ALLDUPS)
     }
     pub fn append_value(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
         self.inner.put(
