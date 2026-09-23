@@ -31,5 +31,21 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo hack clippy --workspace --feature-powerset --depth 2 -- -D warnings
+      # --all-targets: tests and benches are linted (and benches compiled) too.
+      - run: cargo hack clippy --workspace --feature-powerset --depth 2 --all-targets -- -D warnings
       - run: cargo hack test --workspace --feature-powerset --depth 2
+      # Depth 2 never enables every feature at once (docs.rs builds that way).
+      - run: cargo test --workspace --all-features
+
+  musl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - uses: actions/checkout@main
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-musl
+      # mdbx-sys has a musl-specific build path (no __cpu_model).
+      - run: cargo test --workspace --all-features --target x86_64-unknown-linux-musl

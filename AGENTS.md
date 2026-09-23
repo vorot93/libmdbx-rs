@@ -12,11 +12,22 @@ Working conventions for libmdbx-rs.
   (edition 2024 implies a compiler >= 1.85 regardless).
 
 CI (`.github/workflows/main.yml`) runs the fmt check above plus
-`cargo hack clippy --workspace --feature-powerset --depth 2 -- -D warnings` and
-`cargo hack test --workspace --feature-powerset --depth 2` on Linux, macOS, and
-Windows. Any change must hold under feature-powerset depth 2, not just
+`cargo hack clippy --workspace --feature-powerset --depth 2 --all-targets -- -D warnings`,
+`cargo hack test --workspace --feature-powerset --depth 2` and
+`cargo test --workspace --all-features` on Linux, macOS, and Windows, and
+`cargo test --workspace --all-features --target x86_64-unknown-linux-musl` (needs
+`musl-tools`). Any change must hold under feature-powerset depth 2, not just
 all-features — feature-gated code paths can break in single-feature builds that
-all-features hides.
+all-features hides (e.g. a helper only the ORM uses is dead code, hence a
+clippy error, without `orm`). Run both `cargo hack` commands locally before
+pushing feature-gated changes.
+
+Benches: `autobenches = false` because `benches/utils.rs` is a module shared by
+the declared benches; auto-discovery made it a bogus `utils` bench target.
+
+To check which defines reach the vendored C build (e.g. `NDEBUG` vs
+`MDBX_FORCE_ASSERTIONS`), run `CC_ENABLE_DEBUG_OUTPUT=1 cargo build -vv -p mdbx-sys`
+after touching `mdbx-sys/build.rs`; the `cc` crate hides compiler commands otherwise.
 
 ## Gotchas
 

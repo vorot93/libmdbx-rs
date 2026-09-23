@@ -11,6 +11,8 @@ documentation = "https://docs.rs/libmdbx"
 readme = "README.md"
 keywords = ["MDBX", "database", "storage-engine", "bindings"]
 categories = ["database"]
+# benches/utils.rs is a shared module, not a bench target.
+autobenches = false
 
 [lib]
 name = "libmdbx"
