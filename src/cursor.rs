@@ -16,7 +16,13 @@ use ffi::{
 use libc::c_void;
 use parking_lot::Mutex;
 use std::{
-    borrow::Cow, fmt, iter::FusedIterator, marker::PhantomData, mem, ptr, result, slice, sync::Arc,
+    borrow::{Borrow, Cow},
+    cmp::Ordering,
+    fmt,
+    iter::FusedIterator,
+    marker::PhantomData,
+    mem, ptr, result,
+    sync::Arc,
 };
 
 #[derive(Copy, Clone, Debug)]
@@ -71,20 +77,27 @@ where
         })
     }
 
-    fn new_at_position(other: &Self) -> Result<Self> {
-        unsafe {
+    /// Returns a new cursor on the same table, at the same position.
+    pub fn try_clone(&self) -> Result<Self> {
+        let cursor = txn_execute(&self.txn, |_| unsafe {
             let cursor = ffi::mdbx_cursor_create(ptr::null_mut());
             if cursor.is_null() {
-                return Err(Error::Other(libc::ENOMEM));
+                return Err(Error::from_err_code(ffi::MDBX_ENOMEM));
             }
-            let s = Self {
-                txn: other.txn.clone(),
-                cursor: CursorPtr(cursor),
-                _marker: PhantomData,
-            };
-            mdbx_result(ffi::mdbx_cursor_copy(other.cursor().0, cursor))?;
-            Ok(s)
-        }
+            let rc = ffi::mdbx_cursor_copy(self.cursor.0, cursor);
+            if rc != ffi::MDBX_SUCCESS {
+                // Close the raw handle here: dropping a `Cursor` would
+                // re-lock the (non-reentrant) transaction mutex we hold.
+                ffi::mdbx_cursor_close(cursor);
+                return Err(Error::from_err_code(rc));
+            }
+            Ok(cursor)
+        })?;
+        Ok(Self {
+            txn: self.txn.clone(),
+            cursor: CursorPtr(cursor),
+            _marker: PhantomData,
+        })
     }
 
     /// Returns a raw pointer to the underlying MDBX cursor.
@@ -354,9 +367,9 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let (k, v, found) = mdbx_try_optional!(self.get(Some(key), value, MDBX_SET_LOWERBOUND));
+        let (k, v, inexact) = mdbx_try_optional!(self.get(Some(key), value, MDBX_SET_LOWERBOUND));
 
-        Ok(Some((found, k, v)))
+        Ok(Some((inexact, k, v)))
     }
 
     /// Iterate over table items. The iterator will begin with item next
@@ -368,11 +381,10 @@ where
     /// the next key.
     pub fn iter<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
     where
-        Self: Sized,
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        Iter::new(self, ffi::MDBX_NEXT, ffi::MDBX_NEXT, MDBX_LAST, MDBX_PREV)
+        Iter::new(Range::new(self, EndState::Unstarted, Ops::ASCENDING))
     }
 
     /// Iterate over table items starting from the beginning of the table.
@@ -382,11 +394,14 @@ where
     /// the next key.
     pub fn iter_start<Key, Value>(&mut self) -> Iter<'txn, '_, K, Key, Value>
     where
-        Self: Sized,
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        Iter::new(self, ffi::MDBX_FIRST, ffi::MDBX_NEXT, MDBX_LAST, MDBX_PREV)
+        Iter::new(Range::new(
+            self,
+            EndState::Unstarted,
+            Ops::ASCENDING.starting_with(MDBX_FIRST),
+        ))
     }
 
     /// Iterate over table items starting from the beginning of the table.
@@ -399,14 +414,11 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        IntoIter::new(
+        IntoIter::new(Range::new(
             self,
-            ffi::MDBX_FIRST,
-            ffi::MDBX_NEXT,
-            MDBX_LAST,
-            MDBX_PREV,
-            None,
-        )
+            EndState::Unstarted,
+            Ops::ASCENDING.starting_with(MDBX_FIRST),
+        ))
     }
 
     /// Iterate over table items starting from the given key.
@@ -419,17 +431,8 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let res: Result<Option<((), ())>> = self.set_range(key);
-        if let Err(error) = res {
-            return Iter::Err(Some(error));
-        };
-        Iter::new(
-            self,
-            ffi::MDBX_GET_CURRENT,
-            ffi::MDBX_NEXT,
-            MDBX_LAST,
-            MDBX_PREV,
-        )
+        let found = self.seek(key, MDBX_SET_RANGE);
+        Iter::new(Range::seeked(self, found, Ops::ASCENDING))
     }
 
     /// Iterate over table items starting from the given key.
@@ -437,23 +440,13 @@ where
     /// For tables with duplicate data items ([TableFlags::DUP_SORT]), the
     /// duplicate data items of each key will be returned before moving on to
     /// the next key.
-    pub fn into_iter_from<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
+    pub fn into_iter_from<Key, Value>(self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
     where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let res: Result<Option<((), ())>> = self.set_range(key);
-        if let Err(error) = res {
-            return IntoIter::Err(Some(error));
-        };
-        IntoIter::new(
-            self,
-            ffi::MDBX_GET_CURRENT,
-            ffi::MDBX_NEXT,
-            MDBX_LAST,
-            MDBX_PREV,
-            None,
-        )
+        let found = self.seek(key, MDBX_SET_RANGE);
+        IntoIter::new(Range::seeked(self, found, Ops::ASCENDING))
     }
 
     /// Iterate over table items backwards, starting from the largest key
@@ -463,41 +456,15 @@ where
     /// duplicate data items of each key will be returned before moving on to
     /// the previous key.
     ///
-    /// The iteration domain is bounded by the given key, so reversing the
-    /// iterator (e.g. via [.rev()](Iterator::rev)) yields an
-    /// ascending iteration over the keys less than or equal to it.
-    pub fn into_iter_back_from<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
+    /// Reversing the iterator (e.g. via [.rev()](Iterator::rev)) yields the
+    /// same items in ascending order, i.e. the keys up to the given one.
+    pub fn into_iter_back_from<Key, Value>(self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
     where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let res: Result<Option<((), ())>> = self.set_upperbound(key);
-        match res {
-            Err(error) => return IntoIter::Err(Some(error)),
-            // No key <= `key`: the iteration domain is empty. The failed seek
-            // may leave the cursor on a valid item, so park it on the last
-            // item where MDBX_NEXT is a stable NOTFOUND.
-            Ok(None) => {
-                let _: Result<Option<((), ())>> = self.last();
-                return IntoIter::new(
-                    self,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    None,
-                );
-            }
-            Ok(Some(_)) => (),
-        };
-        IntoIter::new(
-            self,
-            ffi::MDBX_GET_CURRENT,
-            ffi::MDBX_PREV,
-            MDBX_FIRST,
-            MDBX_NEXT,
-            Some(key),
-        )
+        let found = self.seek(key, MDBX_TO_KEY_LESSER_OR_EQUAL);
+        IntoIter::new(Range::seeked(self, found, Ops::DESCENDING))
     }
 
     /// Iterate over table items backwards, starting from the last key.
@@ -510,7 +477,7 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        IntoIter::new(self, MDBX_LAST, MDBX_PREV, MDBX_FIRST, MDBX_NEXT, None)
+        IntoIter::new(Range::new(self, EndState::Unstarted, Ops::DESCENDING))
     }
 
     /// Iterate over duplicate table items. The iterator will begin with the
@@ -521,7 +488,7 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_NEXT)
+        IterDup::new(self, MDBX_NEXT, Ok(true))
     }
 
     /// Iterate over duplicate table items starting from the beginning of the
@@ -531,7 +498,7 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        IterDup::new(self, ffi::MDBX_FIRST)
+        IterDup::new(self, MDBX_FIRST, Ok(true))
     }
 
     /// Iterate over duplicate items in the table starting from the given
@@ -541,11 +508,8 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let res: Result<Option<((), ())>> = self.set_range(key);
-        if let Err(error) = res {
-            return IterDup::Err(Some(error));
-        };
-        IterDup::new(self, ffi::MDBX_GET_CURRENT)
+        let found = self.seek(key, MDBX_SET_RANGE);
+        IterDup::new(self, MDBX_GET_CURRENT, found)
     }
 
     /// Iterate over the duplicates of the item in the table with the given key.
@@ -554,60 +518,28 @@ where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let res: Result<Option<()>> = self.set(key);
-        match res {
-            Ok(Some(_)) => (),
-            Ok(None) => {
-                let _: Result<Option<((), ())>> = self.last();
-                return Iter::new(
-                    self,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                );
-            }
-            Err(error) => return Iter::Err(Some(error)),
-        };
-        Iter::new(
-            self,
-            ffi::MDBX_GET_CURRENT,
-            ffi::MDBX_NEXT_DUP,
-            MDBX_LAST_DUP,
-            ffi::MDBX_PREV_DUP,
-        )
+        let found = self.seek(key, MDBX_SET);
+        Iter::new(Range::seeked(self, found, Ops::DUPS))
     }
 
     /// Iterate over the duplicates of the item in the table with the given key.
-    pub fn into_iter_dup_of<Key, Value>(mut self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
+    pub fn into_iter_dup_of<Key, Value>(self, key: &[u8]) -> IntoIter<'txn, K, Key, Value>
     where
         Key: Decodable<'txn>,
         Value: Decodable<'txn>,
     {
-        let res: Result<Option<()>> = self.set(key);
-        match res {
-            Ok(Some(_)) => (),
-            Ok(None) => {
-                let _: Result<Option<((), ())>> = self.last();
-                return IntoIter::new(
-                    self,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    ffi::MDBX_NEXT,
-                    None,
-                );
-            }
-            Err(error) => return IntoIter::Err(Some(error)),
-        };
-        IntoIter::new(
-            self,
-            ffi::MDBX_GET_CURRENT,
-            ffi::MDBX_NEXT_DUP,
-            MDBX_LAST_DUP,
-            ffi::MDBX_PREV_DUP,
-            None,
-        )
+        let found = self.seek(key, MDBX_SET);
+        IntoIter::new(Range::seeked(self, found, Ops::DUPS))
+    }
+
+    /// Positions the cursor with a key-seeking `op`, without decoding.
+    /// `Ok(false)` means no item matched.
+    fn seek(&self, key: &[u8], op: MDBX_cursor_op) -> Result<bool> {
+        let mut key_val = unsafe { slice_to_val(Some(key)) };
+        let mut data_val = unsafe { slice_to_val(None) };
+        txn_execute(&self.txn, |_| unsafe {
+            cursor_get_raw(self.cursor.0, &mut key_val, &mut data_val, op)
+        })
     }
 }
 
@@ -688,8 +620,14 @@ impl<K> Clone for Cursor<'_, K>
 where
     K: TransactionKind,
 {
+    /// Clones the cursor at its current position.
+    ///
+    /// # Panics
+    ///
+    /// If libmdbx fails to copy the cursor (out of memory); see
+    /// [Cursor::try_clone] for the fallible version.
     fn clone(&self) -> Self {
-        txn_execute(&self.txn, |_| Self::new_at_position(self).unwrap())
+        self.try_clone().expect("failed to copy MDBX cursor")
     }
 }
 
@@ -726,114 +664,303 @@ unsafe fn slice_to_val(slice: Option<&[u8]>) -> ffi::MDBX_val {
     }
 }
 
-/// Borrows the raw bytes of an `MDBX_val` filled in by libmdbx.
-unsafe fn val_to_slice(val: &ffi::MDBX_val) -> &[u8] {
-    if val.iov_base.is_null() {
-        &[]
+/// Runs a cursor get `op`, leaving the result in `key`/`data`.
+///
+/// Returns `Ok(false)` at the end of the data (`MDBX_NOTFOUND`, or
+/// `MDBX_ENODATA` after a failed seek). Must run under the transaction lock.
+unsafe fn cursor_get_raw(
+    cursor: *mut ffi::MDBX_cursor,
+    key: &mut ffi::MDBX_val,
+    data: &mut ffi::MDBX_val,
+    op: MDBX_cursor_op,
+) -> Result<bool> {
+    match unsafe { ffi::mdbx_cursor_get(cursor, key, data, op) } {
+        ffi::MDBX_SUCCESS | ffi::MDBX_RESULT_TRUE => Ok(true),
+        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => Ok(false),
+        error => Err(Error::from_err_code(error)),
+    }
+}
+
+/// Compares the positions of two positioned cursors on the same table, in
+/// iteration order. Must run under the transaction lock.
+fn position_cmp<K: TransactionKind>(
+    a: &Cursor<'_, K>,
+    b: &Cursor<'_, K>,
+    descending: bool,
+) -> Ordering {
+    let table_order = unsafe { ffi::mdbx_cursor_compare(a.cursor.0, b.cursor.0, false) }.cmp(&0);
+    if descending {
+        table_order.reverse()
     } else {
-        unsafe { slice::from_raw_parts(val.iov_base as *const u8, val.iov_len) }
+        table_order
     }
 }
 
-/// Outcome of one cursor fetch driving an iterator step.
-///
-/// `PastBound` is only produced when a `bound` was given and the fetched key
-/// lies beyond it: the cursor is then parked outside the iterator's domain,
-/// so the whole iterator must hard-stop rather than let either direction
-/// fetch from the parked position.
-enum Fetched<T> {
-    /// Yield this item (possibly an error item).
-    Item(T),
-    /// End of iteration (`MDBX_NOTFOUND`/`MDBX_ENODATA`).
-    Exhausted,
-    /// The fetched key is beyond the inclusive bound.
-    PastBound,
+/// How one fetch in an iteration ended.
+enum Step<T> {
+    /// Yield this item; `true` if it was the last one left in the domain.
+    Item(T, bool),
+    /// The domain is exhausted.
+    End,
+    /// libmdbx failed; iteration stops after yielding the error.
+    Failed(Error),
 }
 
-impl<T> Fetched<T> {
-    /// The yielded item, if this step produced one. Both end states end
-    /// iteration for the caller.
-    fn item(self) -> Option<T> {
-        match self {
-            Fetched::Item(item) => Some(item),
-            _ => None,
-        }
-    }
-}
-
-/// Runs a cursor get op and decodes the pair at the resulting position.
-///
-/// Maps `MDBX_NOTFOUND`/`MDBX_ENODATA` to [Fetched::Exhausted] (end of
-/// iteration), any other failure to an error item, and, when `bound` is
-/// given, a successfully fetched key strictly greater than `bound` to
-/// [Fetched::PastBound], so the reversed element order of a bounded
-/// iterator stays within its domain when driven from the back.
-fn fetch_op<'txn, K, Key, Value>(
+/// Runs `op` on `cursor` and decodes the item it lands on, unless `admit`
+/// rejects the new position (`None`: the domain is exhausted; `Some(last)`:
+/// yield it). Fetch, comparison and decoding share one transaction lock
+/// hold, so a concurrent writer cannot move the page in between.
+fn fetch<'txn, K, Key, Value>(
     cursor: &Cursor<'txn, K>,
     op: MDBX_cursor_op,
-    bound: Option<&[u8]>,
-) -> Fetched<Result<(Key, Value)>>
+    admit: impl FnOnce(&Cursor<'txn, K>) -> Option<bool>,
+) -> Step<Result<(Key, Value)>>
 where
     K: TransactionKind,
     Key: Decodable<'txn>,
     Value: Decodable<'txn>,
 {
-    let mut key = ffi::MDBX_val {
-        iov_len: 0,
-        iov_base: ptr::null_mut(),
+    let mut key = unsafe { slice_to_val(None) };
+    let mut data = unsafe { slice_to_val(None) };
+    txn_execute(&cursor.txn, |txn| unsafe {
+        match cursor_get_raw(cursor.cursor.0, &mut key, &mut data, op) {
+            Ok(true) => {}
+            Ok(false) => return Step::End,
+            Err(error) => return Step::Failed(error),
+        }
+        let Some(last) = admit(cursor) else {
+            return Step::End;
+        };
+        let item = Key::decode_val::<K>(txn, &key)
+            .and_then(|key| Ok((key, Value::decode_val::<K>(txn, &data)?)));
+        Step::Item(item, last)
+    })
+}
+
+/// Progress of the front end of a [Range].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EndState {
+    /// Not positioned yet: the first fetch runs [Ops::front_first].
+    Unstarted,
+    /// Positioned at an item that has not been yielded yet.
+    Pending,
+    /// Positioned at the item it yielded last.
+    Yielded,
+}
+
+/// The cursor ops that walk one iteration domain from both ends.
+#[derive(Clone, Copy, Debug)]
+struct Ops {
+    /// Positions an [EndState::Unstarted] front at the domain's first item.
+    front_first: MDBX_cursor_op,
+    /// Advances the front.
+    front_next: MDBX_cursor_op,
+    /// Positions the back at the domain's last item, starting from a copy of
+    /// the positioned front (so relative ops such as `MDBX_LAST_DUP` work).
+    back_first: MDBX_cursor_op,
+    /// Advances the back.
+    back_next: MDBX_cursor_op,
+    /// Whether the front walks in descending table order.
+    descending: bool,
+}
+
+impl Ops {
+    /// Ascending from the item after the cursor to the last item.
+    const ASCENDING: Self = Self {
+        front_first: MDBX_NEXT,
+        front_next: MDBX_NEXT,
+        back_first: MDBX_LAST,
+        back_next: MDBX_PREV,
+        descending: false,
     };
-    let mut data = ffi::MDBX_val {
-        iov_len: 0,
-        iov_base: ptr::null_mut(),
+
+    /// Descending from the last item to the first.
+    const DESCENDING: Self = Self {
+        front_first: MDBX_LAST,
+        front_next: MDBX_PREV,
+        back_first: MDBX_FIRST,
+        back_next: MDBX_NEXT,
+        descending: true,
     };
-    unsafe {
-        txn_execute(&cursor.txn, |txn| {
-            match ffi::mdbx_cursor_get(cursor.cursor.0, &mut key, &mut data, op) {
-                ffi::MDBX_SUCCESS => {
-                    if bound.is_some_and(|b| val_to_slice(&key) > b) {
-                        return Fetched::PastBound;
-                    }
-                    let key = match Key::decode_val::<K>(txn, &key) {
-                        Ok(v) => v,
-                        Err(e) => return Fetched::Item(Err(e)),
-                    };
-                    let data = match Value::decode_val::<K>(txn, &data) {
-                        Ok(v) => v,
-                        Err(e) => return Fetched::Item(Err(e)),
-                    };
-                    Fetched::Item(Ok((key, data)))
-                }
-                // MDBX_ENODATA can occur when the cursor was previously seeked to a non-existent value,
-                // e.g. iter_from with a key greater than all values in the table.
-                ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => Fetched::Exhausted,
-                error => Fetched::Item(Err(Error::from_err_code(error))),
-            }
-        })
+
+    /// The duplicates of the key the front is positioned at.
+    const DUPS: Self = Self {
+        front_first: MDBX_FIRST_DUP,
+        front_next: MDBX_NEXT_DUP,
+        back_first: MDBX_LAST_DUP,
+        back_next: MDBX_PREV_DUP,
+        descending: false,
+    };
+
+    const fn starting_with(self, front_first: MDBX_cursor_op) -> Self {
+        Self {
+            front_first,
+            ..self
+        }
     }
 }
 
-impl<'txn, K> IntoIterator for Cursor<'txn, K>
+/// Double-ended iteration over a contiguous domain of a table.
+///
+/// The front cursor walks the domain in [Ops] order. The back cursor is a
+/// copy of the front, created on the first `next_back`, that walks it in
+/// reverse. Each end stops as soon as it reaches a position the other end has
+/// already yielded. Positions are compared with `mdbx_cursor_compare`, i.e.
+/// in the table's own key and duplicate order (so `INTEGER_KEY`,
+/// `REVERSE_KEY` and friends work), which makes every item come out exactly
+/// once however `next` and `next_back` are interleaved.
+struct Range<'txn, K, C>
 where
     K: TransactionKind,
 {
-    type Item = Result<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>;
-    type IntoIter = IntoIter<'txn, K, Cow<'txn, [u8]>, Cow<'txn, [u8]>>;
+    front: C,
+    /// Created by the first `next_back`. While the range is not done it is
+    /// positioned at the item it yielded last.
+    back: Option<Cursor<'txn, K>>,
+    front_state: EndState,
+    ops: Ops,
+    /// An error from setting up the iterator, yielded once.
+    error: Option<Error>,
+    done: bool,
+}
 
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter::new(self, MDBX_NEXT, MDBX_NEXT, MDBX_LAST, MDBX_PREV, None)
+impl<'txn, K, C> Range<'txn, K, C>
+where
+    K: TransactionKind,
+    C: Borrow<Cursor<'txn, K>>,
+{
+    fn new(front: C, front_state: EndState, ops: Ops) -> Self {
+        Self {
+            front,
+            back: None,
+            front_state,
+            ops,
+            error: None,
+            done: false,
+        }
+    }
+
+    /// A range whose front was positioned by a seek with outcome `found`.
+    fn seeked(front: C, found: Result<bool>, ops: Ops) -> Self {
+        let mut range = Self::new(front, EndState::Pending, ops);
+        match found {
+            Ok(true) => {}
+            Ok(false) => range.done = true,
+            Err(error) => range.error = Some(error),
+        }
+        range
+    }
+
+    /// Yields the setup error once, then reports whether iteration is over.
+    fn take_error(&mut self) -> Option<Error> {
+        let error = self.error.take();
+        self.done |= error.is_some();
+        error
+    }
+
+    /// Applies the outcome of a fetch to the iteration state.
+    fn settle<T>(&mut self, step: Step<Result<T>>) -> Option<Result<T>> {
+        match step {
+            Step::Item(item, last) => {
+                self.done |= last;
+                Some(item)
+            }
+            Step::End => {
+                self.done = true;
+                None
+            }
+            Step::Failed(error) => {
+                self.done = true;
+                Some(Err(error))
+            }
+        }
+    }
+
+    fn next<Key, Value>(&mut self) -> Option<Result<(Key, Value)>>
+    where
+        Key: Decodable<'txn>,
+        Value: Decodable<'txn>,
+    {
+        if let Some(error) = self.take_error() {
+            return Some(Err(error));
+        }
+        if self.done {
+            return None;
+        }
+        let op = match self.front_state {
+            EndState::Unstarted => self.ops.front_first,
+            EndState::Pending => MDBX_GET_CURRENT,
+            EndState::Yielded => self.ops.front_next,
+        };
+        let back = self.back.as_ref();
+        let descending = self.ops.descending;
+        let step = fetch(self.front.borrow(), op, |front| match back {
+            // The back has yielded its position and everything beyond it.
+            Some(back) => position_cmp(front, back, descending)
+                .is_lt()
+                .then_some(false),
+            None => Some(false),
+        });
+        if let Step::Item(..) = step {
+            self.front_state = EndState::Yielded;
+        }
+        self.settle(step)
+    }
+
+    fn next_back<Key, Value>(&mut self) -> Option<Result<(Key, Value)>>
+    where
+        Key: Decodable<'txn>,
+        Value: Decodable<'txn>,
+    {
+        if let Some(error) = self.take_error() {
+            return Some(Err(error));
+        }
+        if self.done {
+            return None;
+        }
+        // The back is bounded by the front, so the front must be positioned.
+        if self.front_state == EndState::Unstarted {
+            match fetch::<K, (), ()>(self.front.borrow(), self.ops.front_first, |_| Some(false)) {
+                Step::Item(..) => self.front_state = EndState::Pending,
+                Step::End => {
+                    self.done = true;
+                    return None;
+                }
+                Step::Failed(error) => return self.settle(Step::Failed(error)),
+            }
+        }
+        let op = if self.back.is_some() {
+            self.ops.back_next
+        } else {
+            match self.front.borrow().try_clone() {
+                Ok(back) => self.back = Some(back),
+                Err(error) => return self.settle(Step::Failed(error)),
+            }
+            self.ops.back_first
+        };
+        let front = self.front.borrow();
+        let front_pending = self.front_state == EndState::Pending;
+        let descending = self.ops.descending;
+        let back = self.back.as_ref().expect("the back cursor exists by now");
+        let step = fetch(back, op, |back| {
+            match position_cmp(back, front, descending) {
+                // Stay strictly beyond what the front has yielded; the front's
+                // pending item may be taken, as the last one left.
+                Ordering::Greater => Some(false),
+                Ordering::Equal if front_pending => Some(true),
+                _ => None,
+            }
+        });
+        self.settle(step)
     }
 }
 
-/// An iterator over the key/value pairs in an MDBX table.
+/// An iterator over the key/value pairs in an MDBX table, owning its cursor.
 ///
-/// This iterator implements [DoubleEndedIterator], with both directions
-/// backed by a single MDBX cursor. Exhausting either direction is stable
-/// (MDBX cursor ops don't wrap), but interleaving [Iterator::next()] and
-/// [DoubleEndedIterator::next_back()] past the point where the two
-/// directions meet can yield the middle items twice. Bounded iterators
-/// (see [Cursor::into_iter_back_from()]) are the exception: once the back
-/// direction hits the bound, the whole iterator stops, so keys beyond the
-/// bound are never yielded from either direction.
+/// Double-ended: [DoubleEndedIterator::next_back()] walks the same items from
+/// the other end (on a second cursor), and however the two ends are
+/// interleaved, every item is yielded exactly once. Iteration stops after a
+/// libmdbx error; a decoding error is yielded and iteration continues.
 ///
 /// Like its cursor, the iterator cannot outlive its transaction:
 ///
@@ -848,82 +975,28 @@ where
 /// }
 /// drop(iter);
 /// ```
-#[derive(Debug)]
-pub enum IntoIter<'txn, K, Key, Value>
+pub struct IntoIter<'txn, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
-    /// An iterator that yields a single error item on the first call to
-    /// [IntoIter::next()], then ends. Created when the initial seek (e.g.
-    /// `into_iter_from`) failed; yields the error once.
-    Err(Option<Error>),
-
-    /// An iterator that returns an Item on calls to [IntoIter::next()].
-    /// The Item is a [Result], so this variant
-    /// might still return an error, if retrieval of the key/value pair
-    /// fails for some reason.
-    Ok {
-        /// The MDBX cursor with which to iterate.
-        cursor: Cursor<'txn, K>,
-
-        /// The first operation to perform when the consumer calls [Iter::next()].
-        op: ffi::MDBX_cursor_op,
-
-        /// The next and subsequent operations to perform.
-        next_op: ffi::MDBX_cursor_op,
-
-        /// The first operation to perform when the consumer calls
-        /// [DoubleEndedIterator::next_back()]. Subsequent calls use
-        /// `back_next_op`.
-        back_op: ffi::MDBX_cursor_op,
-
-        /// The second and subsequent operations to perform when the consumer
-        /// calls [DoubleEndedIterator::next_back()].
-        back_next_op: ffi::MDBX_cursor_op,
-
-        /// Inclusive upper bound on the iterated keys, enforced in the back
-        /// direction. Only set by [Cursor::into_iter_back_from()].
-        bound: Option<Vec<u8>>,
-
-        /// Set when a fetch crossed `bound`: the cursor is then parked
-        /// outside the iteration domain, so both directions stop yielding.
-        done: bool,
-
-        _marker: PhantomData<fn() -> (&'txn (), K, Key, Value)>,
-    },
+    range: Range<'txn, K, Cursor<'txn, K>>,
+    _marker: PhantomData<fn() -> (Key, Value)>,
 }
 
 impl<'txn, K, Key, Value> IntoIter<'txn, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
-    /// Creates a new iterator backed by the given cursor.
-    ///
-    /// `op`/`next_op` drive [Iterator::next()] and `back_op`/`back_next_op`
-    /// drive [DoubleEndedIterator::next_back()]. `bound`, when set, keeps
-    /// keys fetched from the back direction within `keys <= bound`.
-    fn new(
-        cursor: Cursor<'txn, K>,
-        op: ffi::MDBX_cursor_op,
-        next_op: ffi::MDBX_cursor_op,
-        back_op: ffi::MDBX_cursor_op,
-        back_next_op: ffi::MDBX_cursor_op,
-        bound: Option<&[u8]>,
-    ) -> Self {
-        IntoIter::Ok {
-            cursor,
-            op,
-            next_op,
-            back_op,
-            back_next_op,
-            bound: bound.map(|b| b.to_vec()),
-            done: false,
+    fn new(range: Range<'txn, K, Cursor<'txn, K>>) -> Self {
+        Self {
+            range,
             _marker: PhantomData,
         }
+    }
+
+    /// An iterator that yields `error` once.
+    pub(crate) fn failed(cursor: Cursor<'txn, K>, error: Error) -> Self {
+        Self::new(Range::seeked(cursor, Err(error), Ops::ASCENDING))
     }
 }
 
@@ -936,30 +1009,7 @@ where
     type Item = Result<(Key, Value)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Ok {
-                cursor,
-                op,
-                next_op,
-                done,
-                ..
-            } => {
-                if *done {
-                    return None;
-                }
-                match fetch_op(cursor, mem::replace(op, *next_op), None) {
-                    Fetched::Item(item) => Some(item),
-                    // Unreachable in the front direction (no bound is
-                    // passed), but stop hard if it ever happens.
-                    Fetched::PastBound => {
-                        *done = true;
-                        None
-                    }
-                    Fetched::Exhausted => None,
-                }
-            }
-            Self::Err(err) => err.take().map(Err),
-        }
+        self.range.next()
     }
 }
 
@@ -970,35 +1020,7 @@ where
     Value: Decodable<'txn>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        match self {
-            Self::Ok {
-                cursor,
-                back_op,
-                back_next_op,
-                bound,
-                done,
-                ..
-            } => {
-                if *done {
-                    return None;
-                }
-                match fetch_op(
-                    cursor,
-                    mem::replace(back_op, *back_next_op),
-                    bound.as_deref(),
-                ) {
-                    Fetched::Item(item) => Some(item),
-                    // The cursor is parked beyond the bound; fetching from it
-                    // in either direction could leak out-of-domain keys.
-                    Fetched::PastBound => {
-                        *done = true;
-                        None
-                    }
-                    Fetched::Exhausted => None,
-                }
-            }
-            Self::Err(err) => err.take().map(Err),
-        }
+        self.range.next_back()
     }
 }
 
@@ -1010,75 +1032,47 @@ where
 {
 }
 
-/// An iterator over the key/value pairs in an MDBX table.
-///
-/// This iterator implements [DoubleEndedIterator], with both directions
-/// backed by a single MDBX cursor. Exhausting either direction is stable
-/// (MDBX cursor ops don't wrap), but interleaving [Iterator::next()] and
-/// [DoubleEndedIterator::next_back()] past the point where the two
-/// directions meet can yield the middle items twice.
-#[derive(Debug)]
-pub enum Iter<'txn, 'cur, K, Key, Value>
+impl<K, Key, Value> fmt::Debug for IntoIter<'_, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
-    /// An iterator that yields a single error item on the first call to
-    /// [Iter::next()], then ends. Created when the initial seek (e.g.
-    /// `iter_from`) failed; yields the error once.
-    Err(Option<Error>),
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        f.debug_struct("IntoIter").finish_non_exhaustive()
+    }
+}
 
-    /// An iterator that returns an Item on calls to [Iter::next()].
-    /// The Item is a [Result], so this variant
-    /// might still return an error, if retrieval of the key/value pair
-    /// fails for some reason.
-    Ok {
-        /// The MDBX cursor with which to iterate.
-        cursor: &'cur mut Cursor<'txn, K>,
+impl<'txn, K> IntoIterator for Cursor<'txn, K>
+where
+    K: TransactionKind,
+{
+    type Item = Result<(Cow<'txn, [u8]>, Cow<'txn, [u8]>)>;
+    type IntoIter = IntoIter<'txn, K, Cow<'txn, [u8]>, Cow<'txn, [u8]>>;
 
-        /// The first operation to perform when the consumer calls [Iter::next()].
-        op: ffi::MDBX_cursor_op,
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter::new(Range::new(self, EndState::Unstarted, Ops::ASCENDING))
+    }
+}
 
-        /// The next and subsequent operations to perform.
-        next_op: ffi::MDBX_cursor_op,
-
-        /// The first operation to perform when the consumer calls
-        /// [DoubleEndedIterator::next_back()]. Subsequent calls use
-        /// `back_next_op`.
-        back_op: ffi::MDBX_cursor_op,
-
-        /// The second and subsequent operations to perform when the consumer
-        /// calls [DoubleEndedIterator::next_back()].
-        back_next_op: ffi::MDBX_cursor_op,
-
-        _marker: PhantomData<fn() -> (&'txn (), Key, Value)>,
-    },
+/// An iterator over the key/value pairs in an MDBX table, borrowing its
+/// cursor.
+///
+/// Double-ended with the same guarantees as [IntoIter]. The borrowed cursor
+/// is left wherever the front end stopped.
+pub struct Iter<'txn, 'cur, K, Key, Value>
+where
+    K: TransactionKind,
+{
+    range: Range<'txn, K, &'cur mut Cursor<'txn, K>>,
+    _marker: PhantomData<fn() -> (Key, Value)>,
 }
 
 impl<'txn, 'cur, K, Key, Value> Iter<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
-    /// Creates a new iterator backed by the given cursor.
-    ///
-    /// `op`/`next_op` drive [Iterator::next()] and `back_op`/`back_next_op`
-    /// drive [DoubleEndedIterator::next_back()].
-    fn new(
-        cursor: &'cur mut Cursor<'txn, K>,
-        op: ffi::MDBX_cursor_op,
-        next_op: ffi::MDBX_cursor_op,
-        back_op: ffi::MDBX_cursor_op,
-        back_next_op: ffi::MDBX_cursor_op,
-    ) -> Self {
-        Iter::Ok {
-            cursor,
-            op,
-            next_op,
-            back_op,
-            back_next_op,
+    fn new(range: Range<'txn, K, &'cur mut Cursor<'txn, K>>) -> Self {
+        Self {
+            range,
             _marker: PhantomData,
         }
     }
@@ -1093,15 +1087,7 @@ where
     type Item = Result<(Key, Value)>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            Iter::Ok {
-                cursor,
-                op,
-                next_op,
-                ..
-            } => fetch_op(cursor, mem::replace(op, *next_op), None).item(),
-            Iter::Err(err) => err.take().map(Err),
-        }
+        self.range.next()
     }
 }
 
@@ -1112,15 +1098,7 @@ where
     Value: Decodable<'txn>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        match self {
-            Iter::Ok {
-                cursor,
-                back_op,
-                back_next_op,
-                ..
-            } => fetch_op(cursor, mem::replace(back_op, *back_next_op), None).item(),
-            Iter::Err(err) => err.take().map(Err),
-        }
+        self.range.next_back()
     }
 }
 
@@ -1132,59 +1110,59 @@ where
 {
 }
 
-/// An iterator over the keys and duplicate values in an MDBX table.
-///
-/// The yielded items of the iterator are themselves iterators over the duplicate values for a
-/// specific key.
-pub enum IterDup<'txn, 'cur, K, Key, Value>
+impl<K, Key, Value> fmt::Debug for Iter<'_, '_, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
-    /// An iterator that yields a single error item on the first call to
-    /// Iter.next(), then ends. Created when the initial seek (e.g.
-    /// `iter_dup_from`) failed; yields the error once.
-    Err(Option<Error>),
+    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+        f.debug_struct("Iter").finish_non_exhaustive()
+    }
+}
 
-    /// An iterator that yields a [Result] on each call to Iter.next(): an
-    /// [IntoIter] over the duplicates of the next key, or an error if the
-    /// retrieval failed.
-    Ok {
-        /// The MDBX cursor with which to iterate.
-        cursor: &'cur mut Cursor<'txn, K>,
-
-        /// The first operation to perform when the consumer calls Iter.next().
-        op: ffi::MDBX_cursor_op,
-
-        _marker: PhantomData<fn() -> (&'txn (), Key, Value)>,
-    },
+/// An iterator over the keys and duplicate values in an MDBX table.
+///
+/// The yielded items of the iterator are themselves iterators over the
+/// duplicate values for a specific key. Iteration stops after an error.
+pub struct IterDup<'txn, 'cur, K, Key, Value>
+where
+    K: TransactionKind,
+{
+    cursor: &'cur mut Cursor<'txn, K>,
+    /// The op that moves to the next key's first duplicate.
+    op: MDBX_cursor_op,
+    /// An error from setting up the iterator, yielded once.
+    error: Option<Error>,
+    done: bool,
+    _marker: PhantomData<fn() -> (Key, Value)>,
 }
 
 impl<'txn, 'cur, K, Key, Value> IterDup<'txn, 'cur, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
-    /// Creates a new iterator backed by the given cursor.
-    fn new(cursor: &'cur mut Cursor<'txn, K>, op: ffi::MDBX_cursor_op) -> Self {
-        IterDup::Ok {
+    /// Iterates from the key `op` moves to; `found` is the outcome of any
+    /// seek that positioned the cursor first.
+    fn new(cursor: &'cur mut Cursor<'txn, K>, op: MDBX_cursor_op, found: Result<bool>) -> Self {
+        let (done, error) = match found {
+            Ok(found) => (!found, None),
+            Err(error) => (false, Some(error)),
+        };
+        Self {
             cursor,
             op,
+            error,
+            done,
             _marker: PhantomData,
         }
     }
 }
 
-impl<'txn, K, Key, Value> fmt::Debug for IterDup<'txn, '_, K, Key, Value>
+impl<K, Key, Value> fmt::Debug for IterDup<'_, '_, K, Key, Value>
 where
     K: TransactionKind,
-    Key: Decodable<'txn>,
-    Value: Decodable<'txn>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
-        f.debug_struct("IterDup").finish()
+        f.debug_struct("IterDup").finish_non_exhaustive()
     }
 }
 
@@ -1197,37 +1175,35 @@ where
     type Item = Result<IntoIter<'txn, K, Key, Value>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            IterDup::Ok { cursor, op, .. } => {
-                let mut key = ffi::MDBX_val {
-                    iov_len: 0,
-                    iov_base: ptr::null_mut(),
-                };
-                let mut data = ffi::MDBX_val {
-                    iov_len: 0,
-                    iov_base: ptr::null_mut(),
-                };
-                let op = mem::replace(op, ffi::MDBX_NEXT_NODUP);
-                txn_execute(&cursor.txn, |_| {
-                    let err_code =
-                        unsafe { ffi::mdbx_cursor_get(cursor.cursor().0, &mut key, &mut data, op) };
-                    match err_code {
-                        ffi::MDBX_SUCCESS => Some(Cursor::new_at_position(&**cursor).map(|c| {
-                            IntoIter::new(
-                                c,
-                                ffi::MDBX_GET_CURRENT,
-                                ffi::MDBX_NEXT_DUP,
-                                ffi::MDBX_LAST_DUP,
-                                ffi::MDBX_PREV_DUP,
-                                None,
-                            )
-                        })),
-                        ffi::MDBX_NOTFOUND | ffi::MDBX_ENODATA => None,
-                        error => Some(Err(Error::from_err_code(error))),
-                    }
-                })
-            }
-            IterDup::Err(err) => err.take().map(Err),
+        if let Some(error) = self.error.take() {
+            self.done = true;
+            return Some(Err(error));
         }
+        if self.done {
+            return None;
+        }
+        let op = mem::replace(&mut self.op, MDBX_NEXT_NODUP);
+        match fetch::<K, (), ()>(self.cursor, op, |_| Some(false)) {
+            Step::Item(..) => {}
+            Step::End => {
+                self.done = true;
+                return None;
+            }
+            Step::Failed(error) => {
+                self.done = true;
+                return Some(Err(error));
+            }
+        }
+        let dups = self.cursor.try_clone();
+        self.done = dups.is_err();
+        Some(dups.map(|dups| IntoIter::new(Range::new(dups, EndState::Pending, Ops::DUPS))))
     }
+}
+
+impl<'txn, K, Key, Value> FusedIterator for IterDup<'txn, '_, K, Key, Value>
+where
+    K: TransactionKind,
+    Key: Decodable<'txn>,
+    Value: Decodable<'txn>,
+{
 }

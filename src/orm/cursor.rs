@@ -109,7 +109,7 @@ where
                     .into_iter_from::<DecodableWrapper<T::Key>, DecodableWrapper<T::Value>>(
                         k.as_ref(),
                     ),
-                Err(e) => crate::IntoIter::Err(Some(e)),
+                Err(e) => crate::IntoIter::failed(self.inner, e),
             },
             None => self.inner.into_iter_start(),
         };
@@ -136,7 +136,7 @@ where
                     .into_iter_back_from::<DecodableWrapper<T::Key>, DecodableWrapper<T::Value>>(
                         k.as_ref(),
                     ),
-                Err(e) => crate::IntoIter::Err(Some(e)),
+                Err(e) => crate::IntoIter::failed(self.inner, e),
             },
             None => self.inner.into_iter_back_start(),
         };

@@ -864,3 +864,236 @@ fn test_put_multiple_rejects_bad_lengths() {
         Err(Error::InvalidArgument(_))
     ));
 }
+
+/// A `(key, value)` table where every key is also its value.
+fn db_with_keys(dir: &tempfile::TempDir, flags: TableFlags, kv: &[(&[u8], &[u8])]) -> Database {
+    let db = Database::open(dir).unwrap();
+    let txn = db.begin_rw_txn().unwrap();
+    let table = txn.create_table(None, flags).unwrap();
+    for (k, v) in kv {
+        txn.put(&table, k, v, WriteFlags::empty()).unwrap();
+    }
+    txn.commit().unwrap();
+    db
+}
+
+fn abcde(dir: &tempfile::TempDir) -> Database {
+    db_with_keys(
+        dir,
+        TableFlags::empty(),
+        &[
+            (b"a", b"a"),
+            (b"b", b"b"),
+            (b"c", b"c"),
+            (b"d", b"d"),
+            (b"e", b"e"),
+        ],
+    )
+}
+
+fn key_str(item: Result<(Vec<u8>, Vec<u8>)>) -> String {
+    String::from_utf8(item.unwrap().0).unwrap()
+}
+
+#[test]
+fn test_iter_from_rev_stays_in_domain() {
+    let dir = tempdir().unwrap();
+    let db = abcde(&dir);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let owned: Vec<_> = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_from::<Vec<u8>, Vec<u8>>(b"c")
+        .rev()
+        .map(key_str)
+        .collect();
+    assert_eq!(owned, ["e", "d", "c"]);
+
+    let mut cursor = txn.cursor(&table).unwrap();
+    let borrowed: Vec<_> = cursor
+        .iter_from::<Vec<u8>, Vec<u8>>(b"c")
+        .rev()
+        .map(key_str)
+        .collect();
+    assert_eq!(borrowed, ["e", "d", "c"]);
+}
+
+#[test]
+fn test_iter_after_position_rev_stays_in_domain() {
+    let dir = tempdir().unwrap();
+    let db = abcde(&dir);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let mut cursor = txn.cursor(&table).unwrap();
+    cursor.set::<()>(b"b").unwrap().unwrap();
+    let items: Vec<_> = cursor
+        .iter::<Vec<u8>, Vec<u8>>()
+        .rev()
+        .map(key_str)
+        .collect();
+    assert_eq!(items, ["e", "d", "c"]);
+}
+
+#[test]
+fn test_iter_both_ends_meet_exactly_once() {
+    let dir = tempdir().unwrap();
+    let db = abcde(&dir);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let mut it = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_start::<Vec<u8>, Vec<u8>>();
+    let mut seen = vec![];
+    for i in 0..8 {
+        let item = if i % 2 == 0 {
+            it.next()
+        } else {
+            it.next_back()
+        };
+        seen.push(item.map(key_str));
+    }
+    let expected: Vec<Option<String>> = ["a", "e", "b", "d", "c"]
+        .into_iter()
+        .map(|s| Some(s.to_string()))
+        .chain([None, None, None])
+        .collect();
+    assert_eq!(seen, expected);
+}
+
+#[test]
+fn test_iter_back_first_then_front() {
+    let dir = tempdir().unwrap();
+    let db = abcde(&dir);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let mut it = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_from::<Vec<u8>, Vec<u8>>(b"b");
+    assert_eq!(it.next_back().map(key_str).as_deref(), Some("e"));
+    assert_eq!(it.next_back().map(key_str).as_deref(), Some("d"));
+    let rest: Vec<_> = it.by_ref().map(key_str).collect();
+    assert_eq!(rest, ["b", "c"]);
+    assert!(it.next_back().is_none());
+}
+
+#[test]
+fn test_back_iteration_respects_integer_key_order() {
+    let dir = tempdir().unwrap();
+    let keys = [1u64, 2, 256, 1000].map(u64::to_ne_bytes);
+    let kv: Vec<(&[u8], &[u8])> = keys.iter().map(|k| (&k[..], &b"v"[..])).collect();
+    let db = db_with_keys(&dir, TableFlags::INTEGER_KEY, &kv);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let dec = |r: Result<([u8; 8], ())>| u64::from_ne_bytes(r.unwrap().0);
+    let bound = 256u64.to_ne_bytes();
+    let down: Vec<u64> = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_back_from(&bound)
+        .map(dec)
+        .collect();
+    assert_eq!(down, [256, 2, 1]);
+    let up: Vec<u64> = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_back_from(&bound)
+        .rev()
+        .map(dec)
+        .collect();
+    assert_eq!(up, [1, 2, 256]);
+}
+
+#[test]
+fn test_dup_iteration_both_ends() {
+    let dir = tempdir().unwrap();
+    let db = db_with_keys(
+        &dir,
+        TableFlags::DUP_SORT,
+        &[
+            (b"a", b"1"),
+            (b"b", b"1"),
+            (b"b", b"2"),
+            (b"b", b"3"),
+            (b"c", b"1"),
+        ],
+    );
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+    let val = |r: Result<((), Vec<u8>)>| String::from_utf8(r.unwrap().1).unwrap();
+
+    let mut cursor = txn.cursor(&table).unwrap();
+    let rev: Vec<_> = cursor
+        .iter_dup_of::<(), Vec<u8>>(b"b")
+        .rev()
+        .map(val)
+        .collect();
+    assert_eq!(rev, ["3", "2", "1"]);
+
+    let mut it = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_dup_of::<(), Vec<u8>>(b"b");
+    assert_eq!(it.next().map(val).as_deref(), Some("1"));
+    assert_eq!(it.next_back().map(val).as_deref(), Some("3"));
+    assert_eq!(it.next().map(val).as_deref(), Some("2"));
+    assert!(it.next_back().is_none());
+    assert!(it.next().is_none());
+
+    // Whole-table iteration distinguishes duplicates of the same key.
+    let pairs = |r: Result<(Vec<u8>, Vec<u8>)>| {
+        let (k, v) = r.unwrap();
+        format!("{}{}", k[0] as char, v[0] as char)
+    };
+    let mut it = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_start::<Vec<u8>, Vec<u8>>();
+    let mut seen = vec![];
+    while let Some(x) = it.next() {
+        seen.push(pairs(x));
+        if let Some(y) = it.next_back() {
+            seen.push(pairs(y));
+        }
+    }
+    assert_eq!(seen, ["a1", "c1", "b1", "b3", "b2"]);
+}
+
+#[test]
+fn test_iter_missing_start_is_empty_both_ways() {
+    let dir = tempdir().unwrap();
+    let db = abcde(&dir);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let mut it = txn
+        .cursor(&table)
+        .unwrap()
+        .into_iter_from::<Vec<u8>, Vec<u8>>(b"f");
+    assert!(it.next_back().is_none());
+    assert!(it.next().is_none());
+
+    let mut cursor = txn.cursor(&table).unwrap();
+    assert_eq!(cursor.iter_dup_of::<(), ()>(b"zz").rev().count(), 0);
+}
+
+#[test]
+fn test_iter_dup_is_fused() {
+    let dir = tempdir().unwrap();
+    let db = abcde(&dir);
+    let txn = db.begin_ro_txn().unwrap();
+    let table = txn.open_table(None).unwrap();
+
+    let mut cursor = txn.cursor(&table).unwrap();
+    let mut it = cursor.iter_dup_start::<(), ()>();
+    assert_eq!(it.by_ref().count(), 5);
+    assert!(it.next().is_none());
+    assert!(it.next().is_none());
+}

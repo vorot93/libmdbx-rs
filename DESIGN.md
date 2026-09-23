@@ -60,15 +60,29 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
 
 ## Iterator semantics
 
-- `Iter`/`IntoIter` are backed by a single MDBX cursor. Mixed
-  `next()`/`next_back()` past the point where the two directions meet can yield
-  middle items twice — an accepted property of single-cursor DEI (documented on
-  the types), not fixable without key-comparison machinery.
-- `into_iter_back_from(bound)` stores the bound and stops both directions once
-  the back direction crosses it (a `done` flag); without this, out-of-domain
-  keys leaked from the front direction after back exhaustion.
+- `Iter`/`IntoIter` share one engine, `Range` (`src/cursor.rs`): a front
+  cursor plus a back cursor copied from the front on the first `next_back`.
+  Each end stops when it reaches a position the other end already yielded,
+  compared with `mdbx_cursor_compare` — the table's own key *and duplicate*
+  order. This gives the full `DoubleEndedIterator` + `FusedIterator`
+  contract under any interleaving. Rejected alternatives: a single shared
+  cursor (the ends trample each other's position: items skipped, repeated,
+  or yielded after `None`), and byte-wise key bounds (wrong for
+  `INTEGER_KEY`/`REVERSE_KEY` tables and blind to duplicates).
+- The back end is bounded by the *front's position*, never by a stored key:
+  before the front has yielded anything it is positioned (state `Pending`),
+  so `iter_from(k).rev()` stops at `k` and `into_iter_back_from(k).rev()`
+  stops at the largest key `<= k`. Seek-based constructors seek eagerly; a
+  seek that finds nothing yields an empty iterator.
+- Fetch, position comparison and decoding happen under one transaction-lock
+  hold, so a writer sharing the transaction cannot move the page between them.
+  A libmdbx error ends iteration; a decode error is yielded and iteration
+  continues.
 - `IterDup` yields `Result<IntoIter, Error>` per key: anything except
   `MDBX_NOTFOUND | MDBX_ENODATA` is an error, never a silent end-of-iteration.
+- `Cursor::try_clone` closes a half-built raw cursor directly: dropping a
+  `Cursor` while holding the transaction mutex self-deadlocks (the mutex is
+  not reentrant).
 - libmdbx op trap: `MDBX_SET_UPPERBOUND` is an *exclusive* range-end op
   (positions at the first key strictly greater). `Cursor::set_upperbound`
   wraps `MDBX_TO_KEY_LESSER_OR_EQUAL` to deliver its documented
