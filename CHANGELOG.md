@@ -9,6 +9,7 @@
 - New `Error::InvalidArgument` variant for arguments rejected before reaching libmdbx.
 - `Iter`, `IntoIter` and `IterDup` are opaque structs (were enums with public `Err`/`Ok` variants). Iteration stops after a libmdbx error (decode errors are still yielded and iteration continues).
 - New `Cursor::try_clone`; `Clone for Cursor` panics only if libmdbx cannot copy the cursor.
+- `mdbx_try_optional!` is no longer exported (it was an internal helper).
 
 ### Fixes
 
@@ -19,6 +20,7 @@
 - Double-ended iteration is correct: interleaving `next`/`next_back` yields every item exactly once and stays `None` after the ends meet (previously items were skipped, repeated, or returned after `None`, breaking `FusedIterator`); reversing `iter_from`/`into_iter_from`/`iter()` on a positioned cursor no longer yields keys before the start; `into_iter_back_from` honors the table's key order (`INTEGER_KEY`, `REVERSE_KEY`) instead of comparing bytes. Iterators whose seek finds nothing are empty in both directions.
 - `Clone for Cursor` and `IterDup` no longer self-deadlock when libmdbx fails to copy a cursor.
 - `IterDup` implements `FusedIterator`.
+- `table!`/`dupsort!` work when invoked by path (`libmdbx::dupsort!(..)`) without importing the other macros; generated code uses `::core` paths.
 - ORM `Cursor::delete_current_key` uses `MDBX_ALLDUPS` (`NO_DUP_DATA` is only a compatibility alias for cursor deletes).
 
 ## 0.8.0 - 2026-09-03

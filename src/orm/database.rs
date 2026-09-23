@@ -218,14 +218,14 @@ macro_rules! table {
             }
         }
 
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", <Self as $crate::orm::Table>::NAME)
+        impl ::core::fmt::Display for $name {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                ::core::write!(f, "{}", <Self as $crate::orm::Table>::NAME)
             }
         }
     };
     ($(#[$docs:meta])* ( $name:ident ) $key:ty => $value:ty) => {
-        table!(
+        $crate::table!(
             $(#[$docs])*
             ( $name ) $key [ $key ] => $value
         );
@@ -235,7 +235,7 @@ macro_rules! table {
 #[macro_export]
 macro_rules! dupsort {
     ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty [$seek_value:ty] ) => {
-        table!(
+        $crate::table!(
             $(#[$docs])*
             ///
             #[doc = concat!("`DUPSORT` table with seek value type being: [`", stringify!($seek_value), "`].")]
@@ -247,21 +247,21 @@ macro_rules! dupsort {
     };
 
     ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty ) => {
-        dupsort!(
+        $crate::dupsort!(
             $(#[$docs])*
             ( $table_name ) $key [$seek_key] => $value [$value]
         );
     };
 
     ($(#[$docs:meta])* ( $table_name:ident ) $key:ty => $value:ty [$seek_value:ty] ) => {
-        dupsort!(
+        $crate::dupsort!(
             $(#[$docs])*
             ( $table_name ) $key [$key] => $value [$seek_value]
         );
     };
 
     ($(#[$docs:meta])* ( $table_name:ident ) $key:ty => $value:ty ) => {
-        dupsort!(
+        $crate::dupsort!(
             $(#[$docs])*
             ( $table_name ) $key [$key] => $value [$value]
         );

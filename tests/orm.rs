@@ -300,3 +300,18 @@ fn test_table_sizes_keeps_shared_handles_open() {
         Some(1u64.to_be_bytes().to_vec())
     );
 }
+
+/// The table macros must work when invoked by path, with nothing imported.
+mod qualified_macros {
+    libmdbx::table!((QualifiedTable) u64 => u64);
+    libmdbx::dupsort!((QualifiedDups) u64 => u64);
+    libmdbx::dupsort!((QualifiedDupsSeek) u64 [u64] => u64 [u64]);
+
+    #[test]
+    fn test_qualified_macros_define_tables() {
+        use libmdbx::orm::Table;
+        assert_eq!(QualifiedTable::NAME, "QualifiedTable");
+        assert_eq!(QualifiedDups::NAME, "QualifiedDups");
+        assert_eq!(QualifiedDupsSeek.to_string(), "QualifiedDupsSeek");
+    }
+}

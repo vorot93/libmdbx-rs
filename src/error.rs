@@ -184,16 +184,18 @@ pub fn mdbx_result(err_code: c_int) -> Result<bool> {
     }
 }
 
-#[macro_export]
+/// Evaluates a `Result`, returning `Ok(None)` from the enclosing function on
+/// `NotFound`/`NoData` and propagating any other error.
 macro_rules! mdbx_try_optional {
     ($expr:expr) => {{
         match $expr {
-            Err(Error::NotFound | Error::NoData) => return Ok(None),
+            Err($crate::Error::NotFound | $crate::Error::NoData) => return Ok(None),
             Err(e) => return Err(e),
             Ok(v) => v,
         }
     }};
 }
+pub(crate) use mdbx_try_optional;
 
 #[cfg(test)]
 mod test {

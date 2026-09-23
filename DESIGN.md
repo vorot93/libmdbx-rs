@@ -103,7 +103,9 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
   removed: the result is a byte prefix that compares `<=` the full encoding,
   so `SET_RANGE`/`seek_closest` never skips the value. The previous
   leading-zero cut produced seek keys greater than their values.
-- `table!`/`dupsort!` accept doc-less declarations (the doc matcher is `*`,
+- `table!`/`dupsort!` call each other as `$crate::table!`/`$crate::dupsort!`
+  (unqualified calls resolve at the call site and break path invocation) and
+  accept doc-less declarations (the doc matcher is `*`,
   not `+`).
 
 ## Error taxonomy

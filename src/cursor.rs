@@ -1,9 +1,8 @@
 use crate::{
     DatabaseKind, Decodable, Transaction,
     database::TxnPtr,
-    error::{Error, Result, mdbx_result},
+    error::{Error, Result, mdbx_result, mdbx_try_optional},
     flags::*,
-    mdbx_try_optional,
     table::Table,
     transaction::{RW, TransactionKind, put_multiple_with, txn_execute},
 };
