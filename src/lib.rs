@@ -1,12 +1,14 @@
+#![warn(missing_docs)]
 #![allow(clippy::type_complexity, clippy::unnecessary_cast)]
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub use crate::{
     codec::*,
-    cursor::{Cursor, IntoIter, Iter, IterDup},
+    cursor::{Cursor, CursorPtr, IntoIter, Iter, IterDup},
     database::{
-        Database, DatabaseKind, DatabaseOptions, Info, NoWriteMap, PageSize, Stat, WriteMap,
+        Database, DatabaseKind, DatabaseOptions, DbPtr, GeometryInfo, Info, NoWriteMap, PageSize,
+        Stat, TxnPtr, WriteMap,
     },
     error::{Error, Result},
     flags::*,

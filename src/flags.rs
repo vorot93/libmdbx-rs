@@ -50,13 +50,13 @@ pub enum SyncMode {
     /// This optimization means a system crash can corrupt the database, if buffers are not yet flushed to disk.
     /// Depending on the platform and hardware, with [SyncMode::UtterlyNoSync] you may get a multiple increase of write performance, even 100 times or more.
     ///
-    /// If the filesystem preserves write order (which is rare and never provided unless explicitly noted) and the [WriteMap](crate::WriteMap) and [DatabaseFlags::liforeclaim] flags are not used,
+    /// If the filesystem preserves write order (which is rare and never provided unless explicitly noted) and the [WriteMap](crate::WriteMap) and [DatabaseOptions::liforeclaim](crate::DatabaseOptions::liforeclaim) flags are not used,
     /// then a system crash can't corrupt the database, but you can lose the last transactions, if at least one buffer is not yet flushed to disk.
     /// The risk is governed by how often the system flushes dirty buffers to disk and how often [Database::sync()](crate::Database::sync) is called.
     /// So, transactions exhibit ACI (atomicity, consistency, isolation) properties and only lose D (durability).
     /// I.e. database integrity is maintained, but a system crash may undo the final transactions.
     ///
-    /// Otherwise, if the filesystem not preserves write order (which is typically) or [WriteMap](crate::WriteMap) or [DatabaseFlags::liforeclaim] flags are used, you should expect the corrupted database after a system crash.
+    /// Otherwise, if the filesystem not preserves write order (which is typically) or [WriteMap](crate::WriteMap) or [DatabaseOptions::liforeclaim](crate::DatabaseOptions::liforeclaim) flags are used, you should expect the corrupted database after a system crash.
     ///
     /// So, most important thing about [SyncMode::UtterlyNoSync]:
     ///
@@ -69,9 +69,12 @@ pub enum SyncMode {
     UtterlyNoSync,
 }
 
+/// Whether a database is opened read-only or read-write.
 #[derive(Clone, Copy, Debug)]
 pub enum Mode {
+    /// Read-only (`MDBX_RDONLY`): only read transactions can be started.
     ReadOnly,
+    /// Read-write, with durability and file-geometry settings (the default).
     ReadWrite(ReadWriteOptions),
 }
 
@@ -81,24 +84,40 @@ impl Default for Mode {
     }
 }
 
+/// Settings of a read-write database. File sizes are in bytes; `None` keeps
+/// the current value (or libmdbx's default for a new database).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReadWriteOptions {
+    /// Durability of commits.
     pub sync_mode: SyncMode,
+    /// Lower bound of the database file size.
     pub min_size: Option<isize>,
+    /// Upper bound of the database file size; writes beyond it fail with
+    /// [Error::MapFull](crate::Error::MapFull).
     pub max_size: Option<isize>,
+    /// Step by which the file grows.
     pub growth_step: Option<isize>,
+    /// Free space at the end of the file above which it is shrunk.
     pub shrink_threshold: Option<isize>,
 }
 
 bitflags! {
-    #[doc="Table options."]
+    /// Table options, fixed when a table is created.
     #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Clone, Copy)]
     pub struct TableFlags: c_uint {
+        /// Compare keys back to front.
         const REVERSE_KEY = MDBX_REVERSEKEY as u32;
+        /// Allow several sorted values (duplicates) per key.
         const DUP_SORT = MDBX_DUPSORT as u32;
+        /// Keys are native-endian `u32` or `u64` integers, compared numerically.
         const INTEGER_KEY = MDBX_INTEGERKEY as u32;
+        /// [TableFlags::DUP_SORT] with all values of one size (enables
+        /// `get_multiple` and `put_multiple`).
         const DUP_FIXED = MDBX_DUPFIXED as u32;
+        /// [TableFlags::DUP_FIXED] with native-endian integer values, compared
+        /// numerically.
         const INTEGER_DUP = MDBX_INTEGERDUP as u32;
+        /// [TableFlags::DUP_SORT] with values compared back to front.
         const REVERSE_DUP = MDBX_REVERSEDUP as u32;
     }
 }
@@ -149,12 +168,12 @@ impl WriteFlags {
 /// See https://github.com/rust-lang/rust-bindgen/issues/1907
 #[cfg(windows)]
 #[inline(always)]
-pub const fn c_enum(rust_value: u32) -> i32 {
+pub(crate) const fn c_enum(rust_value: u32) -> i32 {
     rust_value as i32
 }
 
 #[cfg(not(windows))]
 #[inline(always)]
-pub const fn c_enum(rust_value: u32) -> u32 {
+pub(crate) const fn c_enum(rust_value: u32) -> u32 {
     rust_value
 }

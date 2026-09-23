@@ -51,13 +51,19 @@ unsafe fn env_open(
     mdbx_result(rc).map(drop)
 }
 
+/// How a [Database] writes: through the memory map ([WriteMap]) or through
+/// file I/O ([NoWriteMap]). Sealed.
 #[sealed]
 pub trait DatabaseKind: Debug + 'static {
+    #[doc(hidden)]
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t;
 }
 
+/// [DatabaseKind] that buffers modified pages and writes them with file I/O.
 #[derive(Debug)]
 pub struct NoWriteMap;
+/// [DatabaseKind] that writes directly through the memory map (`MDBX_WRITEMAP`);
+/// typically faster, but nested transactions are unavailable.
 #[derive(Debug)]
 pub struct WriteMap;
 
@@ -70,10 +76,13 @@ impl DatabaseKind for WriteMap {
     const EXTRA_FLAGS: ffi::MDBX_env_flags_t = ffi::MDBX_WRITEMAP;
 }
 
+/// A raw libmdbx transaction handle, for direct FFI use; see
+/// [Transaction::txn](crate::Transaction::txn).
 #[derive(Copy, Clone, Debug)]
 pub struct TxnPtr(pub *mut ffi::MDBX_txn);
 unsafe impl Send for TxnPtr {}
 
+/// A raw libmdbx environment handle, for direct FFI use; see [Database::ptr].
 #[derive(Copy, Clone, Debug)]
 pub struct DbPtr(pub *mut ffi::MDBX_env);
 unsafe impl Send for DbPtr {}
@@ -141,27 +150,57 @@ impl Drop for WriteSlot<'_> {
     }
 }
 
+/// Options for [Database::open_with_options]. `None` and `false` keep
+/// libmdbx's defaults.
 #[derive(Clone, Default)]
 pub struct DatabaseOptions {
+    /// Unix permission bits for newly created files (default `0o644`).
     pub permissions: Option<ffi::mdbx_mode_t>,
+    /// Maximum number of simultaneous read transactions (reader slots).
     pub max_readers: Option<c_uint>,
+    /// Maximum number of named tables. The default is 0: named tables
+    /// cannot be opened unless this is set.
     pub max_tables: Option<u64>,
+    /// Limit on GC records read to find contiguous free pages
+    /// (`MDBX_opt_rp_augment_limit`).
     pub rp_augment_limit: Option<u64>,
+    /// Maximum number of loose pages a write transaction keeps for reuse
+    /// (`MDBX_opt_loose_limit`).
     pub loose_limit: Option<u64>,
+    /// Maximum number of freed dirty-page buffers kept for reuse
+    /// (`MDBX_opt_dp_reserve_limit`).
     pub dp_reserve_limit: Option<u64>,
+    /// Maximum number of dirty pages a write transaction holds before
+    /// spilling (`MDBX_opt_txn_dp_limit`).
     pub txn_dp_limit: Option<u64>,
+    /// Largest fraction (1/N) of dirty pages spilled at once
+    /// (`MDBX_opt_spill_max_denominator`).
     pub spill_max_denominator: Option<u64>,
+    /// Smallest fraction (1/N) of dirty pages spilled at once
+    /// (`MDBX_opt_spill_min_denominator`).
     pub spill_min_denominator: Option<u64>,
+    /// Page size for a newly created database; ignored in [Mode::ReadOnly].
     pub page_size: Option<PageSize>,
+    /// The path names the data file itself (the lock file gets a `-lck`
+    /// suffix) instead of a directory (`MDBX_NOSUBDIR`).
     pub no_sub_dir: bool,
+    /// Open exclusively: no other process may use the database
+    /// (`MDBX_EXCLUSIVE`).
     pub exclusive: bool,
+    /// Adopt the mode flags of an environment already open in another
+    /// process instead of failing on a mismatch (`MDBX_ACCEDE`).
     pub accede: bool,
     /// Open mode. When this is [Mode::ReadOnly], the geometry settings of
     /// [ReadWriteOptions] are ignored: MDBX only allows setting geometry for
     /// read-write environments.
     pub mode: Mode,
+    /// Disable OS readahead on the memory map (`MDBX_NORDAHEAD`).
     pub no_rdahead: bool,
+    /// Skip zero-initializing page buffers before writing them
+    /// (`MDBX_NOMEMINIT`): faster, but unused page space may hold stale
+    /// memory contents.
     pub no_meminit: bool,
+    /// Reuse freed pages last-in first-out (`MDBX_LIFORECLAIM`).
     pub liforeclaim: bool,
 }
 
@@ -225,6 +264,8 @@ where
         Self::open_with_options(path, Default::default())
     }
 
+    /// Open a database with the given options, creating it if needed (unless
+    /// [Mode::ReadOnly]).
     pub fn open_with_options(
         path: impl AsRef<Path>,
         options: DatabaseOptions,
@@ -352,10 +393,9 @@ where
         Ok(db)
     }
 
-    /// Returns a raw pointer to the underlying MDBX database.
+    /// Returns the raw libmdbx environment handle.
     ///
-    /// The caller **must** ensure that the pointer is not dereferenced after the lifetime of the
-    /// database.
+    /// The caller must not use it after the database is dropped.
     pub fn ptr(&self) -> DbPtr {
         self.inner
     }
@@ -531,12 +571,35 @@ impl Stat {
     }
 }
 
+/// The database file's size limits and growth policy, in bytes; see
+/// [ReadWriteOptions](crate::ReadWriteOptions).
 #[repr(transparent)]
 pub struct GeometryInfo(ffi::MDBX_envinfo__bindgen_ty_1);
 
 impl GeometryInfo {
-    pub fn min(&self) -> u64 {
+    /// Lower bound of the file size.
+    pub fn min_size(&self) -> u64 {
         self.0.lower
+    }
+
+    /// Upper bound of the file size.
+    pub fn max_size(&self) -> u64 {
+        self.0.upper
+    }
+
+    /// Current file size.
+    pub fn current_size(&self) -> u64 {
+        self.0.current
+    }
+
+    /// Step by which the file grows.
+    pub fn growth_step(&self) -> u64 {
+        self.0.grow
+    }
+
+    /// Free space at the end of the file above which it is shrunk.
+    pub fn shrink_threshold(&self) -> u64 {
+        self.0.shrink
     }
 }
 
@@ -547,6 +610,7 @@ impl GeometryInfo {
 pub struct Info(ffi::MDBX_envinfo);
 
 impl Info {
+    /// Size limits and growth policy of the database file.
     pub fn geometry(&self) -> GeometryInfo {
         GeometryInfo(self.0.mi_geo)
     }
@@ -565,8 +629,8 @@ impl Info {
 
     /// Last transaction ID
     #[inline]
-    pub fn last_txnid(&self) -> usize {
-        self.0.mi_recent_txnid as usize
+    pub fn last_txnid(&self) -> u64 {
+        self.0.mi_recent_txnid
     }
 
     /// Max reader slots in the database
@@ -575,7 +639,7 @@ impl Info {
         self.0.mi_maxreaders as usize
     }
 
-    /// Max reader slots used in the database
+    /// Reader slots currently in use
     #[inline]
     pub fn num_readers(&self) -> usize {
         self.0.mi_numreaders as usize
@@ -602,8 +666,11 @@ where
     }
 }
 
+/// Page size of a newly created database; see [DatabaseOptions::page_size].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PageSize {
+    /// The smallest page size libmdbx accepts.
     MinimalAcceptable,
+    /// This size in bytes: a power of two in libmdbx's supported range.
     Set(usize),
 }

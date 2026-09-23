@@ -4,7 +4,6 @@ version = "0.8.0"
 edition = "2024"
 license.workspace = true
 authors.workspace = true
-homepage.workspace = true
 repository.workspace = true
 description = "Idiomatic and safe MDBX wrapper."
 documentation = "https://docs.rs/libmdbx"
@@ -23,7 +22,6 @@ members = ["mdbx-sys"]
 [workspace.package]
 license = "Apache-2.0"
 authors = ["Artem Vorotnikov <artem@vorotnikov.me>"]
-homepage = "https://github.com/vorot93/libmdbx-rs"
 repository = "https://github.com/vorot93/libmdbx-rs"
 
 [dependencies]

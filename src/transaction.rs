@@ -19,6 +19,7 @@ use std::{
     sync::{Arc, mpsc::sync_channel},
 };
 
+/// Whether a [Transaction] is read-only ([RO]) or read-write ([RW]). Sealed.
 #[sealed]
 pub trait TransactionKind: Debug + 'static {
     #[doc(hidden)]
@@ -28,8 +29,10 @@ pub trait TransactionKind: Debug + 'static {
     const OPEN_FLAGS: MDBX_txn_flags_t;
 }
 
+/// [TransactionKind] of read-only transactions: MVCC snapshots with zero-copy reads.
 #[derive(Debug)]
 pub struct RO;
+/// [TransactionKind] of read-write transactions; one at a time per database.
 #[derive(Debug)]
 pub struct RW;
 
@@ -96,19 +99,21 @@ where
         }
     }
 
-    /// Returns a raw pointer to the underlying MDBX transaction.
-    ///
-    /// The caller **must** ensure that the pointer is not used after the
-    /// lifetime of the transaction.
+    /// The lock that serializes every libmdbx call on this transaction.
     pub(crate) fn txn_mutex(&self) -> Arc<Mutex<TxnPtr>> {
         self.txn.clone()
     }
 
+    /// Returns the raw libmdbx transaction handle.
+    ///
+    /// Using it bypasses this crate's synchronization: the caller must not use
+    /// it after the transaction ends, nor concurrently with any other use of
+    /// the transaction (e.g. from another thread sharing it).
     pub fn txn(&self) -> TxnPtr {
         *self.txn.lock()
     }
 
-    /// Returns a raw pointer to the MDBX database.
+    /// The database this transaction belongs to.
     pub fn db(&self) -> &Database<E> {
         self.db
     }
@@ -168,6 +173,9 @@ where
         self.commit_and_rebind_open_dbs().map(|v| v.0)
     }
 
+    /// Marks `table` to be returned by
+    /// [commit_and_rebind_open_dbs](Transaction::commit_and_rebind_open_dbs)
+    /// as a handle that stays valid for the database's lifetime.
     pub fn prime_for_permaopen(&self, table: Table<'_>) {
         self.primed_dbis.lock().insert(table.dbi());
     }
@@ -327,9 +335,6 @@ where
     /// case the database must be configured to allow named tables through
     /// [DatabaseOptions::max_tables](crate::DatabaseOptions::max_tables) when opening the database
     /// with [Database::open_with_options](crate::Database::open_with_options).
-    ///
-    /// This function will fail with [Error::BadRslot](crate::error::Error::BadRslot) if called by a thread with an open
-    /// transaction.
     pub fn create_table<'txn>(
         &'txn self,
         name: Option<&str>,

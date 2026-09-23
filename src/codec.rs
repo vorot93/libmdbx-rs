@@ -19,6 +19,7 @@ use thiserror::Error;
 ///   [`Cow`] impl does) unless they override `decode_val` and take full
 ///   responsibility for invalidation.
 pub trait Decodable<'tx> {
+    /// Decodes a stored key or value. `data_val` is only valid for the call.
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where
         Self: Sized;
@@ -133,6 +134,7 @@ impl<const LEN: usize> Decodable<'_> for [u8; LEN] {
         Self: Sized,
     {
         #[derive(Clone, Debug, Display, Error)]
+        #[display("expected {LEN} bytes, got {got}")]
         struct InvalidSize<const LEN: usize> {
             got: usize,
         }
@@ -145,5 +147,17 @@ impl<const LEN: usize> Decodable<'_> for [u8; LEN] {
         let mut a = [0; LEN];
         a[..].copy_from_slice(data_val);
         Ok(a)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_array_size_mismatch_message() {
+        let error = <[u8; 4] as Decodable>::decode(b"12345").unwrap_err();
+        let cause = std::error::Error::source(&error).unwrap();
+        assert_eq!(cause.to_string(), "expected 4 bytes, got 5");
     }
 }

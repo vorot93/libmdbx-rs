@@ -22,6 +22,8 @@ pub(crate) fn dec<E: std::error::Error + Send + Sync + 'static>(e: E) -> crate::
     Ord,
     Hash,
 )]
+/// A fixed-width key encoded without its trailing zero bytes: a seek key
+/// that sorts no later than the full encoding.
 pub struct CutStart<T>(pub T);
 
 impl Encodable for () {
@@ -122,8 +124,10 @@ impl<const LEN: usize> Decodable for [u8; LEN] {
     }
 }
 
+/// A decoded value did not have the expected length.
 #[derive(Clone, Debug)]
 pub struct BadLength<const EXPECTED: usize> {
+    /// The length received.
     pub received: usize,
 }
 
@@ -135,8 +139,10 @@ impl<const EXPECTED: usize> Display for BadLength<EXPECTED> {
 
 impl<const EXPECTED: usize> std::error::Error for BadLength<EXPECTED> {}
 
+/// A decoded value was longer than the maximum.
 #[derive(Clone, Debug)]
 pub struct TooLong<const MAXIMUM: usize> {
+    /// The length received.
     pub received: usize,
 }
 impl<const MAXIMUM: usize> Display for TooLong<MAXIMUM> {
@@ -166,6 +172,9 @@ impl Display for TupleBadLength {
 
 impl std::error::Error for TupleBadLength {}
 
+/// Implements [Encodable](crate::orm::Encodable) and
+/// [Decodable](crate::orm::Decodable) for an integer newtype `ty` wrapping
+/// `real_ty`, as big-endian bytes (so keys sort numerically).
 #[macro_export]
 macro_rules! table_integer {
     ($ty:ident => $real_ty:ident) => {

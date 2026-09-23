@@ -10,9 +10,12 @@
 - `Iter`, `IntoIter` and `IterDup` are opaque structs (were enums with public `Err`/`Ok` variants). Iteration stops after a libmdbx error (decode errors are still yielded and iteration continues).
 - New `Cursor::try_clone`; `Clone for Cursor` panics only if libmdbx cannot copy the cursor.
 - `mdbx_try_optional!` is no longer exported (it was an internal helper).
+- `GeometryInfo` is exported and its `min()` is replaced by `min_size()`, `max_size()`, `current_size()`, `growth_step()` and `shrink_threshold()`. `Info::last_txnid` returns `u64` (it truncated to `usize`).
+- `TxnPtr`, `DbPtr` and `CursorPtr` (returned by `Transaction::txn`, `Database::ptr`, `Cursor::cursor`) are exported and their contracts documented; `c_enum` is no longer public.
 - `DecodeError`, `EncodeError` and `IoError` return their cause from `Error::source()`; their `Display` is now a short description without the cause (print the chain to see it).
 - New variants for the errno aliases libmdbx names: `OutOfMemory`, `ReadOnlyFilesystem`, `NotSupported`, `Io`, `PermissionDenied`, `Interrupted`, `AlreadyExists`, `FileNotFound`, `RemoteFilesystem`, `Deadlock` (previously `Error::Other(code)`).
 - The `bytes` feature now also lets core reads decode into `bytes::Bytes` (it previously did nothing without `orm`).
+- Every public item is documented (`missing_docs` is enforced); the `[u8; N]` decoder's size-mismatch error reads "expected N bytes, got M"; stale docs fixed (`create_table`, `Transaction::db`, `SyncMode` links).
 - `DatabaseOptions::max_readers` is applied (it was silently ignored).
 - ORM operations reuse table handles opened once with the database instead of reopening each table by name per call; `orm::Database::create` reports a failure to create the directory instead of ignoring it.
 - Interior NUL bytes in table names or database paths now fail with `Error::InvalidArgument` instead of `Error::Invalid` (whose message reads "File is not an MDBX file").

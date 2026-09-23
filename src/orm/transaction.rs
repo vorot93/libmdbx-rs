@@ -2,6 +2,7 @@ use super::{cursor::*, database::TableHandles, impls::dec, traits::*};
 use crate::{DatabaseKind, RO, RW, Stat, TransactionKind, WriteFlags, WriteMap};
 use std::{collections::HashMap, marker::PhantomData};
 
+/// A typed transaction on an ORM [Database](crate::orm::Database).
 #[derive(Debug)]
 pub struct Transaction<'db, K, E = WriteMap>
 where
@@ -13,6 +14,7 @@ where
 }
 
 impl<E: DatabaseKind> Transaction<'_, RO, E> {
+    /// The total size in bytes of every named table.
     pub fn table_sizes(&self) -> crate::Result<HashMap<String, u64>> {
         let mut out = HashMap::new();
         let main_table = self.inner.open_table(None)?;
@@ -46,6 +48,7 @@ where
         }
     }
 
+    /// Statistics of table `T`.
     pub fn table_stat<T>(&self) -> crate::Result<Stat>
     where
         T: Table,
@@ -53,6 +56,7 @@ where
         self.inner.table_stat(&self.table::<T>()?)
     }
 
+    /// Opens a cursor on table `T`.
     pub fn cursor<'tx, T>(&'tx self) -> crate::Result<Cursor<'tx, K, T>>
     where
         'db: 'tx,
@@ -98,6 +102,8 @@ impl<E: DatabaseKind> Transaction<'_, RW, E> {
         )
     }
 
+    /// Deletes `key` (only its `value` duplicate, if given); returns whether
+    /// anything was deleted.
     pub fn delete<T>(&self, key: T::Key, value: Option<T::Value>) -> crate::Result<bool>
     where
         T: Table,
@@ -111,6 +117,7 @@ impl<E: DatabaseKind> Transaction<'_, RW, E> {
         self.inner.del(&self.table::<T>()?, key.encode()?, vref)
     }
 
+    /// Removes every item from table `T`.
     pub fn clear_table<T>(&self) -> crate::Result<()>
     where
         T: Table,
@@ -120,6 +127,7 @@ impl<E: DatabaseKind> Transaction<'_, RW, E> {
         Ok(())
     }
 
+    /// Commits the transaction.
     pub fn commit(self) -> crate::Result<()> {
         self.inner.commit()?;
 

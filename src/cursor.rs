@@ -24,6 +24,7 @@ use std::{
     sync::Arc,
 };
 
+/// A raw libmdbx cursor handle, for direct FFI use; see [Cursor::cursor].
 #[derive(Copy, Clone, Debug)]
 pub struct CursorPtr(pub *mut ffi::MDBX_cursor);
 unsafe impl Send for CursorPtr {}
@@ -99,10 +100,11 @@ where
         })
     }
 
-    /// Returns a raw pointer to the underlying MDBX cursor.
+    /// Returns the raw libmdbx cursor handle.
     ///
-    /// The caller **must** ensure that the pointer is not used after the
-    /// lifetime of the cursor.
+    /// Using it bypasses this crate's synchronization: the caller must not use
+    /// it after the cursor is dropped, nor concurrently with any other use of
+    /// the cursor or its transaction.
     pub fn cursor(&self) -> CursorPtr {
         self.cursor
     }

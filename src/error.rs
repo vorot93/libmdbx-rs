@@ -1,45 +1,82 @@
 use libc::c_int;
 use std::{ffi::CStr, fmt, result};
 
-/// An MDBX error kind.
+/// An error from libmdbx or from this wrapper.
 #[derive(Debug)]
 pub enum Error {
+    /// The key/data pair already exists (`MDBX_KEYEXIST`).
     KeyExist,
+    /// The key/data pair was not found (`MDBX_NOTFOUND`).
     NotFound,
+    /// No data at the cursor position, e.g. after a failed seek (`MDBX_ENODATA`).
     NoData,
+    /// A requested page was not found, which usually indicates corruption (`MDBX_PAGE_NOTFOUND`).
     PageNotFound,
+    /// The database is corrupted (`MDBX_CORRUPTED`).
     Corrupted,
+    /// The environment hit a fatal error (`MDBX_PANIC`). Also returned when the transaction manager thread is gone.
     Panic,
+    /// The database file version does not match libmdbx (`MDBX_VERSION_MISMATCH`).
     VersionMismatch,
+    /// The file is not a valid MDBX file (`MDBX_INVALID`).
     Invalid,
+    /// The environment's maximum map size was reached (`MDBX_MAP_FULL`).
     MapFull,
+    /// The environment's maximum number of named tables was reached (`MDBX_DBS_FULL`); see [DatabaseOptions::max_tables](crate::DatabaseOptions::max_tables).
     DbsFull,
+    /// The environment's maximum number of readers was reached (`MDBX_READERS_FULL`).
     ReadersFull,
+    /// The transaction has too many dirty pages (`MDBX_TXN_FULL`).
     TxnFull,
+    /// The cursor stack is too deep, which usually indicates corruption (`MDBX_CURSOR_FULL`).
     CursorFull,
+    /// A page has not enough space; an internal error (`MDBX_PAGE_FULL`).
     PageFull,
+    /// The memory map could not be extended (`MDBX_UNABLE_EXTEND_MAPSIZE`).
     UnableExtendMapsize,
+    /// The environment or table is incompatible with the operation or flags (`MDBX_INCOMPATIBLE`).
     Incompatible,
+    /// A reader lock-table slot was reused or cleared unexpectedly (`MDBX_BAD_RSLOT`).
     BadRslot,
+    /// The transaction is not valid for the operation (`MDBX_BAD_TXN`).
     BadTxn,
+    /// Invalid key or data size or alignment for the table, or an invalid table name (`MDBX_BAD_VALSIZE`).
     BadValSize,
+    /// The table handle is invalid or was changed by another transaction (`MDBX_BAD_DBI`).
     BadDbi,
+    /// An unexpected internal error; the transaction should be aborted (`MDBX_PROBLEM`).
     Problem,
+    /// Another write transaction is running, or the environment is in use while opening it exclusively (`MDBX_BUSY`).
     Busy,
+    /// The key has more than one associated value (`MDBX_EMULTIVAL`).
     Multival,
+    /// The database needs recovery, which is impossible in read-only mode (`MDBX_WANNA_RECOVERY`).
     WannaRecovery,
+    /// The key does not match the current cursor position (`MDBX_EKEYMISMATCH`).
     KeyMismatch,
+    /// An invalid argument reached libmdbx (`MDBX_EINVAL`).
     InvalidValue,
+    /// Access denied (`MDBX_EACCESS`).
     Access,
+    /// The database is too large for the current system (`MDBX_TOO_LARGE`).
     TooLarge,
+    /// A runtime object has a bad signature: memory corruption, double free, or ABI mismatch (`MDBX_EBADSIGN`).
     BadSign,
+    /// An object was used from a thread that does not own it (`MDBX_THREAD_MISMATCH`).
     ThreadMismatch,
+    /// Read and write transactions overlap on the current thread (`MDBX_TXN_OVERLAPPING`).
     TxnOverlapping,
+    /// The GC ran out of pages while being updated; an internal error (`MDBX_BACKLOG_DEPLETED`).
     BacklogDepleted,
+    /// An alternative lock file exists and must be removed manually (`MDBX_DUPLICATED_LCK`).
     DuplicatedLck,
+    /// Cursors or other resources must be closed before the table handle can be reused or closed (`MDBX_DANGLING_DBI`).
     DanglingDbi,
+    /// A parked read transaction was ousted to recycle old MVCC snapshots (`MDBX_OUSTED`).
     Ousted,
+    /// The MVCC snapshot of a parked transaction is gone (`MDBX_MVCC_RETARDED`).
     MvccRetarded,
+    /// A lagging reader prevents reclaiming old MVCC snapshots (`MDBX_LAGGARD_READER`).
     LaggardReader,
     /// Out of memory (`MDBX_ENOMEM`).
     OutOfMemory,
@@ -70,6 +107,7 @@ pub enum Error {
     /// An I/O error outside libmdbx (e.g. creating a directory); the cause is
     /// the [source](std::error::Error::source).
     IoError(std::io::Error),
+    /// Any other error code, as returned by libmdbx.
     Other(c_int),
 }
 

@@ -13,6 +13,10 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
 - `MDBX_NOSTICKYTHREADS` is forced on at env open and this is load-bearing:
   without it libmdbx pins transactions to OS threads and every cross-thread
   use above is a `MDBX_THREAD_MISMATCH`. Do not remove the flag.
+- mdbx-sys builds libmdbx with `MDBX_TXN_CHECKOWNER=0`, which skips the
+  owner-thread check on transaction use. Keep it paired with
+  `MDBX_NOSTICKYTHREADS`: transactions move between the caller's threads and
+  the manager thread by design, and `txn_execute` is what serializes access.
 - If the manager thread is gone (environment dropped while a transaction was
   still live), commit paths return `Error::Panic` and `Drop` deliberately leaks
   the handle instead of panicking — the environment is being destroyed either

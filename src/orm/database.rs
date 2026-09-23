@@ -45,6 +45,7 @@ pub struct Database<E: DatabaseKind = WriteMap> {
 pub(crate) type TableHandles = HashMap<&'static str, ffi::MDBX_dbi>;
 
 impl<E: DatabaseKind> Database<E> {
+    /// The directory holding the database files.
     pub fn path(&self) -> &Path {
         self.folder.path()
     }
@@ -108,10 +109,14 @@ impl<E: DatabaseKind> Database<E> {
         })
     }
 
+    /// Opens the database at `path` for reading and writing, creating it and
+    /// the chart's tables if needed. `None` uses a temporary directory that is
+    /// deleted with the database.
     pub fn create(path: Option<PathBuf>, chart: &DatabaseChart) -> crate::Result<Self> {
         Self::create_with_options(path, DatabaseOptions::default(), chart)
     }
 
+    /// [Database::create] with custom options.
     pub fn create_with_options(
         path: Option<PathBuf>,
         options: DatabaseOptions,
@@ -127,6 +132,7 @@ impl<E: DatabaseKind> Database<E> {
         Self::new(folder, options, chart)
     }
 
+    /// Opens an existing database read-only; see [Database::open_with_options].
     pub fn open(path: impl AsRef<Path>, chart: &DatabaseChart) -> crate::Result<Self> {
         Self::open_with_options(path, DatabaseOptions::default(), chart)
     }
@@ -159,6 +165,7 @@ impl<E: DatabaseKind> Deref for Database<E> {
 }
 
 impl<E: DatabaseKind> Database<E> {
+    /// Starts a read-only transaction.
     pub fn begin_read(&self) -> crate::Result<Transaction<'_, RO, E>> {
         Ok(Transaction {
             inner: self.inner.begin_ro_txn()?,
@@ -166,6 +173,7 @@ impl<E: DatabaseKind> Database<E> {
         })
     }
 
+    /// Starts a read-write transaction, waiting for any other one to finish.
     pub fn begin_readwrite(&self) -> crate::Result<Transaction<'_, RW, E>> {
         Ok(Transaction {
             inner: self.inner.begin_rw_txn()?,
@@ -174,6 +182,7 @@ impl<E: DatabaseKind> Database<E> {
     }
 }
 
+/// Table `T` accessed with raw byte keys and values.
 #[derive(Debug)]
 pub struct UntypedTable<T>(pub T)
 where
@@ -194,10 +203,12 @@ impl<T> UntypedTable<T>
 where
     T: Table,
 {
+    /// Encodes a key of `T`.
     pub fn encode_key(key: T::Key) -> crate::Result<<T::Key as Encodable>::Encoded> {
         key.encode()
     }
 
+    /// Decodes a key of `T`.
     pub fn decode_key(encoded: &[u8]) -> crate::Result<T::Key>
     where
         T::Key: Decodable,
@@ -205,19 +216,24 @@ where
         <T::Key as Decodable>::decode(encoded)
     }
 
+    /// Encodes a value of `T`.
     pub fn encode_value(value: T::Value) -> crate::Result<<T::Value as Encodable>::Encoded> {
         value.encode()
     }
 
+    /// Decodes a value of `T`.
     pub fn decode_value(encoded: &[u8]) -> crate::Result<T::Value> {
         <T::Value as Decodable>::decode(encoded)
     }
 
+    /// Encodes a seek key of `T`.
     pub fn encode_seek_key(value: T::SeekKey) -> crate::Result<<T::SeekKey as Encodable>::Encoded> {
         value.encode()
     }
 }
 
+/// Declares a table type: `table!((Name) Key => Value)`, or
+/// `table!((Name) Key [SeekKey] => Value)` with a distinct seek-key type.
 #[macro_export]
 macro_rules! table {
     ($(#[$docs:meta])* ( $name:ident ) $key:ty [ $seek_key:ty ] => $value:ty) => {
@@ -255,6 +271,8 @@ macro_rules! table {
     };
 }
 
+/// Declares a `DUP_SORT` table type, like [table!] plus an optional
+/// `[SeekValue]` after the value type.
 #[macro_export]
 macro_rules! dupsort {
     ($(#[$docs:meta])* ( $table_name:ident ) $key:ty [$seek_key:ty] => $value:ty [$seek_value:ty] ) => {
@@ -291,14 +309,17 @@ macro_rules! dupsort {
     };
 }
 
+/// How a table in a [DatabaseChart] is created.
 #[derive(Clone, Debug, Default)]
 pub struct TableSettings {
+    /// Whether the table is `DUP_SORT`.
     pub dup_sort: bool,
 }
 
 /// Contains settings for each table in the database to be created or opened.
 pub type DatabaseChart = BTreeMap<&'static str, TableSettings>;
 
+/// The [DatabaseChart] entry of a table type: `table_info!(Name)`.
 #[macro_export]
 macro_rules! table_info {
     ($t:ty) => {

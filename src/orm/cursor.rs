@@ -17,6 +17,7 @@ where
     }
 }
 
+/// A cursor over a typed table `T`.
 #[derive(Debug)]
 pub struct Cursor<'tx, K, T>
 where
@@ -41,6 +42,7 @@ where
     K: TransactionKind,
     T: Table,
 {
+    /// Positions at the first item and returns it.
     pub fn first(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -48,6 +50,7 @@ where
         map_res_inner::<T>(self.inner.first())
     }
 
+    /// Positions at the first key `>= key` and returns the item there.
     pub fn seek_closest(&mut self, key: T::SeekKey) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -55,6 +58,7 @@ where
         map_res_inner::<T>(self.inner.set_range(key.encode()?.as_ref()))
     }
 
+    /// Positions at `key` and returns its item, or `None` if the key is absent.
     pub fn seek_exact(&mut self, key: T::Key) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -62,6 +66,7 @@ where
         map_res_inner::<T>(self.inner.set_key(key.encode()?.as_ref()))
     }
 
+    /// Moves to the next item (the next duplicate on `DUP_SORT` tables) and returns it.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
@@ -70,6 +75,7 @@ where
         map_res_inner::<T>(self.inner.next())
     }
 
+    /// Moves to the previous item and returns it.
     pub fn prev(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -77,6 +83,7 @@ where
         map_res_inner::<T>(self.inner.prev())
     }
 
+    /// Positions at the last item and returns it.
     pub fn last(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -84,6 +91,7 @@ where
         map_res_inner::<T>(self.inner.last())
     }
 
+    /// Returns the item at the current position.
     pub fn current(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -158,6 +166,7 @@ where
     K: TransactionKind,
     T: DupSort,
 {
+    /// Positions at `key` and its first duplicate `>= seek_value`, and returns that duplicate.
     pub fn seek_value(
         &mut self,
         key: T::Key,
@@ -185,6 +194,7 @@ where
             .map(|v| v.0))
     }
 
+    /// Moves to the first duplicate of the next key and returns it.
     pub fn next_key(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -192,6 +202,7 @@ where
         map_res_inner::<T>(self.inner.next_nodup())
     }
 
+    /// Moves to the next duplicate of the current key and returns it; `None` after the last one.
     pub fn next_value(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -199,6 +210,7 @@ where
         map_res_inner::<T>(self.inner.next_dup())
     }
 
+    /// Moves to the last duplicate of the previous key and returns it.
     pub fn prev_key(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -206,6 +218,7 @@ where
         map_res_inner::<T>(self.inner.prev_nodup())
     }
 
+    /// Moves to the previous duplicate of the current key and returns it; `None` before the first one.
     pub fn prev_value(&mut self) -> crate::Result<Option<(T::Key, T::Value)>>
     where
         T::Key: Decodable,
@@ -213,6 +226,7 @@ where
         map_res_inner::<T>(self.inner.prev_dup())
     }
 
+    /// Walks the duplicates of `start`, beginning at the first one `>= seek_value` if given.
     pub fn walk_key(
         self,
         start: T::Key,
@@ -269,6 +283,7 @@ impl<T> Cursor<'_, RW, T>
 where
     T: Table,
 {
+    /// Inserts or replaces the value at `key` (adds a duplicate on `DUP_SORT` tables).
     pub fn upsert(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
         self.inner.put(
             key.encode()?.as_ref(),
@@ -277,6 +292,7 @@ where
         )
     }
 
+    /// Appends an item at the end of the table; `key` must sort after every existing key.
     pub fn append(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
         self.inner.put(
             key.encode()?.as_ref(),
@@ -285,6 +301,7 @@ where
         )
     }
 
+    /// Deletes the item at the current position.
     pub fn delete_current(&mut self) -> crate::Result<()> {
         self.inner.del(WriteFlags::CURRENT)?;
 
@@ -296,9 +313,11 @@ impl<T> Cursor<'_, RW, T>
 where
     T: DupSort,
 {
+    /// Deletes all duplicates of the current key.
     pub fn delete_current_key(&mut self) -> crate::Result<()> {
         self.inner.del(WriteFlags::ALLDUPS)
     }
+    /// Appends a duplicate to `key`; `value` must sort after its existing duplicates.
     pub fn append_value(&mut self, key: T::Key, value: T::Value) -> crate::Result<()> {
         self.inner.put(
             key.encode()?.as_ref(),
