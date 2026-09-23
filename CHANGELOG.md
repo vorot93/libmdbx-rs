@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 - 2026-09-03
+
+No API or behavior changes.
+
+- Relicensed from MPL-2.0 to Apache-2.0 (both `libmdbx` and `mdbx-sys`); `NOTICE` and `CITATION.cff` added.
+- Package metadata (license, authors, homepage, repository) is inherited from the workspace.
+
 ## 0.7.0 - 2026-08-28
 
 ### Breaking changes
