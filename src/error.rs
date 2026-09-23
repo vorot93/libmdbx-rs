@@ -41,10 +41,34 @@ pub enum Error {
     Ousted,
     MvccRetarded,
     LaggardReader,
+    /// Out of memory (`MDBX_ENOMEM`).
+    OutOfMemory,
+    /// The database is on a read-only filesystem (`MDBX_EROFS`).
+    ReadOnlyFilesystem,
+    /// The operation is not supported (`MDBX_ENOSYS`).
+    NotSupported,
+    /// libmdbx hit an I/O error (`MDBX_EIO`); compare [Error::IoError].
+    Io,
+    /// Operation not permitted (`MDBX_EPERM`).
+    PermissionDenied,
+    /// Interrupted (`MDBX_EINTR`).
+    Interrupted,
+    /// The file already exists (`MDBX_EEXIST`).
+    AlreadyExists,
+    /// The file does not exist (`MDBX_ENOFILE`).
+    FileNotFound,
+    /// The database is on a remote or network filesystem (`MDBX_EREMOTE`).
+    RemoteFilesystem,
+    /// A deadlock was detected (`MDBX_EDEADLK`).
+    Deadlock,
     /// An argument was rejected by this crate before reaching libmdbx.
     InvalidArgument(&'static str),
+    /// Decoding a stored value failed; the cause is the [source](std::error::Error::source).
     DecodeError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    /// Encoding a value failed; the cause is the [source](std::error::Error::source).
     EncodeError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    /// An I/O error outside libmdbx (e.g. creating a directory); the cause is
+    /// the [source](std::error::Error::source).
     IoError(std::io::Error),
     Other(c_int),
 }
@@ -96,6 +120,16 @@ impl Error {
             ffi::MDBX_OUSTED => Error::Ousted,
             ffi::MDBX_MVCC_RETARDED => Error::MvccRetarded,
             ffi::MDBX_LAGGARD_READER => Error::LaggardReader,
+            ffi::MDBX_ENOMEM => Error::OutOfMemory,
+            ffi::MDBX_EROFS => Error::ReadOnlyFilesystem,
+            ffi::MDBX_ENOSYS => Error::NotSupported,
+            ffi::MDBX_EIO => Error::Io,
+            ffi::MDBX_EPERM => Error::PermissionDenied,
+            ffi::MDBX_EINTR => Error::Interrupted,
+            ffi::MDBX_EEXIST => Error::AlreadyExists,
+            ffi::MDBX_ENOFILE => Error::FileNotFound,
+            ffi::MDBX_EREMOTE => Error::RemoteFilesystem,
+            ffi::MDBX_EDEADLK => Error::Deadlock,
             other => Error::Other(other),
         }
     }
@@ -141,6 +175,16 @@ impl Error {
             Error::Ousted => Some(ffi::MDBX_OUSTED),
             Error::MvccRetarded => Some(ffi::MDBX_MVCC_RETARDED),
             Error::LaggardReader => Some(ffi::MDBX_LAGGARD_READER),
+            Error::OutOfMemory => Some(ffi::MDBX_ENOMEM),
+            Error::ReadOnlyFilesystem => Some(ffi::MDBX_EROFS),
+            Error::NotSupported => Some(ffi::MDBX_ENOSYS),
+            Error::Io => Some(ffi::MDBX_EIO),
+            Error::PermissionDenied => Some(ffi::MDBX_EPERM),
+            Error::Interrupted => Some(ffi::MDBX_EINTR),
+            Error::AlreadyExists => Some(ffi::MDBX_EEXIST),
+            Error::FileNotFound => Some(ffi::MDBX_ENOFILE),
+            Error::RemoteFilesystem => Some(ffi::MDBX_EREMOTE),
+            Error::Deadlock => Some(ffi::MDBX_EDEADLK),
             Error::Other(err_code) => Some(*err_code),
             Error::InvalidArgument(_)
             | Error::DecodeError(_)
@@ -153,8 +197,9 @@ impl Error {
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::DecodeError(reason) | Error::EncodeError(reason) => write!(fmt, "{reason}"),
-            Error::IoError(reason) => write!(fmt, "{reason}"),
+            Error::DecodeError(_) => write!(fmt, "failed to decode value"),
+            Error::EncodeError(_) => write!(fmt, "failed to encode value"),
+            Error::IoError(_) => write!(fmt, "I/O error"),
             Error::InvalidArgument(what) => write!(fmt, "invalid argument: {what}"),
             other => match other.mdbx_err_code() {
                 Some(code) => {
@@ -171,7 +216,15 @@ impl fmt::Display for Error {
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Error::DecodeError(source) | Error::EncodeError(source) => Some(source.as_ref()),
+            Error::IoError(source) => Some(source),
+            _ => None,
+        }
+    }
+}
 
 /// An MDBX result.
 pub type Result<T> = result::Result<T, Error>;
@@ -258,6 +311,44 @@ mod test {
         let s = Error::Other(13).to_string();
         assert!(!s.is_empty());
         let s = Error::EncodeError("boom".into()).to_string();
-        assert_eq!(s, "boom");
+        assert_eq!(s, "failed to encode value");
+    }
+
+    #[test]
+    fn test_wrapped_errors_are_sources() {
+        use std::error::Error as _;
+
+        for (error, message) in [
+            (Error::DecodeError("bad".into()), "failed to decode value"),
+            (Error::EncodeError("bad".into()), "failed to encode value"),
+            (Error::IoError(std::io::Error::other("bad")), "I/O error"),
+        ] {
+            assert_eq!(error.to_string(), message);
+            assert_eq!(error.source().unwrap().to_string(), "bad");
+        }
+        assert!(Error::NotFound.source().is_none());
+    }
+
+    #[test]
+    fn test_errno_aliases_are_typed() {
+        for (code, error) in [
+            (ffi::MDBX_ENOMEM, Error::OutOfMemory),
+            (ffi::MDBX_EROFS, Error::ReadOnlyFilesystem),
+            (ffi::MDBX_ENOSYS, Error::NotSupported),
+            (ffi::MDBX_EIO, Error::Io),
+            (ffi::MDBX_EPERM, Error::PermissionDenied),
+            (ffi::MDBX_EINTR, Error::Interrupted),
+            (ffi::MDBX_EEXIST, Error::AlreadyExists),
+            (ffi::MDBX_ENOFILE, Error::FileNotFound),
+            (ffi::MDBX_EREMOTE, Error::RemoteFilesystem),
+            (ffi::MDBX_EDEADLK, Error::Deadlock),
+        ] {
+            let mapped = Error::from_err_code(code);
+            assert_eq!(mapped.mdbx_err_code(), Some(code));
+            assert_eq!(
+                std::mem::discriminant(&mapped),
+                std::mem::discriminant(&error)
+            );
+        }
     }
 }

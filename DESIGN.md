@@ -116,8 +116,12 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
 ## Error taxonomy
 
 One `Error` enum for the whole crate (core and ORM): every MDBX-specific code
-has a named variant; anything else is preserved in `Other(c_int)`.
-`DecodeError`/`EncodeError`/`IoError` carry boxed `std::error::Error` sources.
+and every errno alias libmdbx names (`MDBX_ENOMEM`, `MDBX_EIO`, ...) has a
+named variant; anything else is preserved in `Other(c_int)`. Arguments the
+wrapper rejects itself are `InvalidArgument`, never an MDBX code.
+`DecodeError`/`EncodeError`/`IoError` expose their cause via `source()` and
+keep it out of `Display` (a cause is reported by one or the other, never both,
+so error-chain printers don't duplicate it).
 `Display` formats via thread-safe `mdbx_strerror_r` with lossy UTF-8
 (`mdbx_strerror` is documented non-thread-safe, and locale output is not
 guaranteed UTF-8).
