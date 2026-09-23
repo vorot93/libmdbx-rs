@@ -21,6 +21,7 @@
 - Double-ended iteration is correct: interleaving `next`/`next_back` yields every item exactly once and stays `None` after the ends meet (previously items were skipped, repeated, or returned after `None`, breaking `FusedIterator`); reversing `iter_from`/`into_iter_from`/`iter()` on a positioned cursor no longer yields keys before the start; `into_iter_back_from` honors the table's key order (`INTEGER_KEY`, `REVERSE_KEY`) instead of comparing bytes. Iterators whose seek finds nothing are empty in both directions.
 - `Clone for Cursor` and `IterDup` no longer self-deadlock when libmdbx fails to copy a cursor.
 - `IterDup` implements `FusedIterator`.
+- A writer waiting in `begin_rw_txn` starts as soon as the current write transaction ends (it used to poll with backoff up to 800 ms); a dead transaction manager surfaces as `Error::Panic` instead of a panic.
 - Windows: non-ASCII database paths open the right file. Paths go to `mdbx_env_openW` as UTF-16 (`mdbx_env_open` decodes its argument with the ANSI code page, so the previous UTF-8 conversion broke non-ASCII paths).
 - `table!`/`dupsort!` work when invoked by path (`libmdbx::dupsort!(..)`) without importing the other macros; generated code uses `::core` paths.
 - ORM `Cursor::delete_current_key` uses `MDBX_ALLDUPS` (`NO_DUP_DATA` is only a compatibility alias for cursor deletes).

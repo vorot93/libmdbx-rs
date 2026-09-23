@@ -731,3 +731,27 @@ fn test_put_with_buffer_is_zeroed() {
         assert!(all_zero, "reserved buffer for {key:?} was not zeroed");
     }
 }
+
+/// A writer blocked in `begin_rw_txn` starts as soon as the current write
+/// transaction ends, rather than on a polling timer.
+#[test]
+fn test_rw_txn_handoff_is_prompt() {
+    let dir = tempdir().unwrap();
+    let db = Database::open(&dir).unwrap();
+
+    thread::scope(|s| {
+        let txn = db.begin_rw_txn().unwrap();
+        let waiter = s.spawn(|| {
+            let _txn = db.begin_rw_txn().unwrap();
+            Instant::now()
+        });
+        thread::sleep(Duration::from_millis(400));
+        let released = Instant::now();
+        txn.commit().unwrap();
+        let handoff = waiter.join().unwrap() - released;
+        assert!(
+            handoff < Duration::from_millis(100),
+            "waiting writer started {handoff:?} after the commit"
+        );
+    });
+}

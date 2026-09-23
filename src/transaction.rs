@@ -1,6 +1,6 @@
 use crate::{
     Cursor, Decodable, Error, Stat,
-    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr},
+    database::{Database, DatabaseKind, NoWriteMap, TxnManagerMessage, TxnPtr, WriteSlot},
     error::{Result, mdbx_result},
     flags::{TableFlags, WriteFlags, c_enum},
     table::Table,
@@ -56,6 +56,9 @@ where
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
     db: &'db Database<E>,
+    /// Held by top-level write transactions. Declared last so it is released
+    /// only after `Drop` has aborted (or `commit` has committed) the handle.
+    _write_slot: Option<WriteSlot<'db>>,
     _marker: PhantomData<fn() -> K>,
 }
 
@@ -74,16 +77,21 @@ where
                 &mut txn,
                 ptr::null_mut(),
             ))?;
-            Ok(Self::new_from_ptr(db, txn))
+            Ok(Self::new_from_ptr(db, txn, None))
         }
     }
 
-    pub(crate) fn new_from_ptr(db: &'db Database<E>, txn: *mut ffi::MDBX_txn) -> Self {
+    pub(crate) fn new_from_ptr(
+        db: &'db Database<E>,
+        txn: *mut ffi::MDBX_txn,
+        write_slot: Option<WriteSlot<'db>>,
+    ) -> Self {
         Self {
             txn: Arc::new(Mutex::new(TxnPtr(txn))),
             primed_dbis: Mutex::new(IndexSet::new()),
             committed: false,
             db,
+            _write_slot: write_slot,
             _marker: PhantomData,
         }
     }
@@ -563,7 +571,7 @@ impl Transaction<'_, RW, NoWriteMap> {
 
             rx.recv()
                 .unwrap_or_else(|_| Err(Error::Panic))
-                .map(|ptr| Transaction::new_from_ptr(self.db, ptr.0))
+                .map(|ptr| Transaction::new_from_ptr(self.db, ptr.0, None))
         })
     }
 }

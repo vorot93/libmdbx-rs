@@ -6,6 +6,7 @@ use crate::{
 };
 use libc::c_uint;
 use mem::size_of;
+use parking_lot::{Condvar, Mutex};
 use sealed::sealed;
 use std::{
     ffi::CString,
@@ -17,8 +18,6 @@ use std::{
     path::Path,
     ptr, result,
     sync::mpsc::{SyncSender, sync_channel},
-    thread::sleep,
-    time::Duration,
 };
 
 /// Opens `env` at `path`, handing libmdbx the path in the platform's native
@@ -103,7 +102,43 @@ where
 {
     inner: DbPtr,
     pub(crate) txn_manager: Option<SyncSender<TxnManagerMessage>>,
+    writer_gate: WriterGate,
     _marker: PhantomData<E>,
+}
+
+/// Admits one write transaction at a time within this process.
+///
+/// Every write transaction is begun by the manager thread, so libmdbx sees the
+/// writer lock as already held by the calling thread and fails a second
+/// in-process begin with `MDBX_BUSY` instead of blocking. Waiting here rather
+/// than retrying wakes the next writer as soon as the current one ends.
+#[derive(Default)]
+struct WriterGate {
+    busy: Mutex<bool>,
+    freed: Condvar,
+}
+
+impl WriterGate {
+    fn acquire(&self) -> WriteSlot<'_> {
+        let mut busy = self.busy.lock();
+        while *busy {
+            self.freed.wait(&mut busy);
+        }
+        *busy = true;
+        WriteSlot(self)
+    }
+}
+
+/// The right to run the environment's write transaction, released on drop.
+///
+/// A top-level write [Transaction] holds it until after its commit or abort.
+pub(crate) struct WriteSlot<'db>(&'db WriterGate);
+
+impl Drop for WriteSlot<'_> {
+    fn drop(&mut self) {
+        *self.0.busy.lock() = false;
+        self.0.freed.notify_one();
+    }
 }
 
 #[derive(Clone, Default)]
@@ -258,6 +293,7 @@ where
         let mut db = Database {
             inner: DbPtr(db),
             txn_manager: None,
+            writer_gate: WriterGate::default(),
             _marker: PhantomData,
         };
 
@@ -324,30 +360,25 @@ where
         Transaction::new(self)
     }
 
-    /// Create a read-write transaction for use with the database. This method will block while
-    /// there are any other read-write transactions open on the database.
+    /// Create a read-write transaction for use with the database.
+    ///
+    /// Blocks while another read-write transaction is open on the database,
+    /// in this process or another; waiting in-process writers start as soon as
+    /// the current one commits or aborts. Calling this while the same thread
+    /// holds a write transaction on this database therefore never returns.
     pub fn begin_rw_txn(&self) -> Result<Transaction<'_, RW, E>> {
-        let sender = self.txn_manager.as_ref().ok_or(Error::Access)?;
-        let mut delay = Duration::from_millis(25);
-        let txn = loop {
-            let (tx, rx) = sync_channel(0);
-            sender
-                .send(TxnManagerMessage::Begin {
-                    parent: TxnPtr(ptr::null_mut()),
-                    flags: RW::OPEN_FLAGS,
-                    sender: tx,
-                })
-                .unwrap();
-            let res = rx.recv().unwrap();
-            if let Err(Error::Busy) = &res {
-                sleep(delay);
-                delay = (delay * 2).min(Duration::from_millis(800));
-                continue;
-            }
-
-            break res;
-        }?;
-        Ok(Transaction::new_from_ptr(self, txn.0))
+        let manager = self.txn_manager.as_ref().ok_or(Error::Access)?;
+        let slot = self.writer_gate.acquire();
+        let (sender, rx) = sync_channel(0);
+        manager
+            .send(TxnManagerMessage::Begin {
+                parent: TxnPtr(ptr::null_mut()),
+                flags: RW::OPEN_FLAGS,
+                sender,
+            })
+            .map_err(|_| Error::Panic)?;
+        let txn = rx.recv().map_err(|_| Error::Panic)??;
+        Ok(Transaction::new_from_ptr(self, txn.0, Some(slot)))
     }
 
     /// Flush the database data buffers to disk.

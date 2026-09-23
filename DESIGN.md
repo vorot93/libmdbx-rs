@@ -17,8 +17,13 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
   still live), commit paths return `Error::Panic` and `Drop` deliberately leaks
   the handle instead of panicking — the environment is being destroyed either
   way.
-- `begin_rw_txn` retries `MDBX_BUSY` with exponential backoff (25 ms doubling,
-  capped at 800 ms).
+- In-process writers queue on `WriterGate` (a mutex + condvar in `Database`),
+  held by each top-level write `Transaction` until after its commit/abort.
+  Needed because the manager thread begins every write transaction, so
+  libmdbx sees its writer lock held by the *same* thread and fails a second
+  begin with `MDBX_BUSY` rather than blocking. The previous `MDBX_BUSY` retry
+  loop (backoff to 800 ms) delayed handoff by up to 800 ms. Cross-process
+  writers still block inside `mdbx_txn_begin` on the manager thread.
 
 ## Memory-safety policy
 
