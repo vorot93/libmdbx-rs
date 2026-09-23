@@ -85,6 +85,13 @@ impl<'tx> Decodable<'tx> for lifetimed_bytes::Bytes<'tx> {
     }
 }
 
+#[cfg(feature = "bytes")]
+impl Decodable<'_> for bytes::Bytes {
+    fn decode(data_val: &[u8]) -> Result<Self, Error> {
+        Ok(Self::copy_from_slice(data_val))
+    }
+}
+
 impl Decodable<'_> for Vec<u8> {
     fn decode(data_val: &[u8]) -> Result<Self, Error>
     where

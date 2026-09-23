@@ -96,7 +96,7 @@ typed `get` / `upsert` / cursors. `cbor` adds serde-via-CBOR table objects.
 |-------------------|------------------------------------------------------------------------------------------------------|
 | `orm`             | Typed table mapping (`libmdbx::orm`).                                                                |
 | `cbor`            | Any serde type as an ORM key/value via CBOR (`cbor_table_object!`, ciborium). Implies `orm`.         |
-| `bytes`           | ORM codec implementations for [`bytes::Bytes`](https://docs.rs/bytes).                               |
+| `bytes`           | [`bytes::Bytes`](https://docs.rs/bytes) as a decoded value for core reads (copied), and as an ORM key/value. |
 | `lifetimed-bytes` | Zero-copy lifetime-carrying `Bytes<'tx>` handles for core transaction reads.                         |
 
 ## FFI crate

@@ -994,6 +994,7 @@ where
     }
 
     /// An iterator that yields `error` once.
+    #[cfg(feature = "orm")]
     pub(crate) fn failed(cursor: Cursor<'txn, K>, error: Error) -> Self {
         Self::new(Range::seeked(cursor, Err(error), Ops::ASCENDING))
     }
