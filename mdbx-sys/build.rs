@@ -86,9 +86,10 @@ fn main() {
         .expect("Couldn't write bindings!");
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-    let debug = env::var("DEBUG")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
+    // Follow the target profile's debug assertions. `DEBUG` is not the same
+    // thing: it reflects debuginfo, so e.g. a release profile with `debug = true`
+    // would get libmdbx assertions and lose `NDEBUG`.
+    let debug_assertions = env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some();
 
     let mut cc_builder = cc::Build::new();
     cc_builder
@@ -97,7 +98,7 @@ fn main() {
         .flag_if_supported("-fvisibility=hidden")
         .flag_if_supported("-Wno-error=attributes");
 
-    if debug {
+    if debug_assertions {
         cc_builder.define("MDBX_FORCE_ASSERTIONS", "1");
     } else {
         cc_builder.define("NDEBUG", "1");

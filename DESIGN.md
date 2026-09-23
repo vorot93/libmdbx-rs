@@ -138,8 +138,10 @@ leaked 1 KiB buffer under its own debug lock, and reports the *untruncated*
   bindings to go stale); error-code macros are typed as signed `c_int` via the
   bindgen callback.
 - The build script must read the *target* from cargo's env
-  (`CARGO_CFG_TARGET_OS`, `DEBUG`) — `cfg!` in build.rs reflects the host and
-  build-script profile, breaking cross-compilation and custom profiles.
+  (`CARGO_CFG_TARGET_OS`, `CARGO_CFG_DEBUG_ASSERTIONS`) — `cfg!` in build.rs
+  reflects the host and build-script profile, breaking cross-compilation and
+  custom profiles. `DEBUG` is debuginfo, not debug assertions: keying libmdbx
+  assertions off it turned them on for release profiles with `debug = true`.
 - `-Werror` is deliberately not passed to the vendored C sources: a future
   compiler warning in frozen upstream code would otherwise break every
   consumer's build.

@@ -27,6 +27,10 @@
 - `table!`/`dupsort!` work when invoked by path (`libmdbx::dupsort!(..)`) without importing the other macros; generated code uses `::core` paths.
 - ORM `Cursor::delete_current_key` uses `MDBX_ALLDUPS` (`NO_DUP_DATA` is only a compatibility alias for cursor deletes).
 
+### mdbx-sys
+
+- libmdbx assertions (`MDBX_FORCE_ASSERTIONS` vs `NDEBUG`) follow the target's debug assertions instead of `DEBUG` (debuginfo), so release profiles with debug info no longer build libmdbx with assertions.
+
 ## 0.8.0 - 2026-09-03
 
 No API or behavior changes.
