@@ -1,6 +1,6 @@
 [package]
 name = "mdbx-sys"
-version = "14.3.1"
+version = "14.4.0"
 edition = "2024"
 links = "mdbx"
 license.workspace = true
