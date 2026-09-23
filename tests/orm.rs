@@ -59,6 +59,7 @@ fn test_user_max_tables_respected() {
     let tx = db.begin_readwrite().unwrap();
     let mut cur = tx.cursor::<Extra>().unwrap();
     cur.upsert("k".to_string(), b"v".to_vec()).unwrap();
+    drop(cur);
     tx.commit().unwrap();
 
     let tx = db.begin_read().unwrap();

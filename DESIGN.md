@@ -38,9 +38,14 @@ any single file cannot reconstruct. Working conventions are in `AGENTS.md`.
 - **Empty values**: every `MDBX_val` → slice conversion guards
   `iov_len == 0` before `slice::from_raw_parts`; a NULL base with length 0 is
   instant UB by Rust's rules regardless of what libmdbx happens to return.
-- **Cursor lifetimes**: `PhantomData<fn(&'txn (), K)>` makes cursors covariant
-  in `'txn` so borrow checking orders cursor-drop before commit/abort, matching
-  libmdbx's requirement.
+- **Cursor lifetimes**: cursors and iterators carry
+  `PhantomData<fn() -> (&'txn (), ..)>`, which is *covariant* in `'txn`: the
+  lifetime can only shrink, so borrow checking orders cursor-drop (and the end
+  of every zero-copy borrow) before commit/abort. Never put `'txn` in argument
+  position (`fn(&'txn ())`): that is contravariant, lets `'txn` be *extended*
+  to `'static`, and lets a cursor or a borrowed value outlive its snapshot —
+  this was a real use-after-free. `compile_fail` doctests on `Cursor` and
+  `IntoIter` guard it.
 
 ## Iterator semantics
 

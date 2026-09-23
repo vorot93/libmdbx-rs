@@ -24,13 +24,28 @@ pub struct CursorPtr(pub *mut ffi::MDBX_cursor);
 unsafe impl Send for CursorPtr {}
 
 /// A cursor for navigating the items within a table.
+///
+/// A cursor, and any value it decodes without copying, cannot outlive the
+/// transaction it was opened in:
+///
+/// ```compile_fail,E0597
+/// # use libmdbx::{Database, NoWriteMap};
+/// let db = Database::<NoWriteMap>::open("db").unwrap();
+/// let cursor;
+/// {
+///     let txn = db.begin_ro_txn().unwrap();
+///     let table = txn.open_table(None).unwrap();
+///     cursor = txn.cursor(&table).unwrap();
+/// }
+/// drop(cursor);
+/// ```
 pub struct Cursor<'txn, K>
 where
     K: TransactionKind,
 {
     txn: Arc<Mutex<TxnPtr>>,
     cursor: CursorPtr,
-    _marker: PhantomData<fn(&'txn (), K)>,
+    _marker: PhantomData<fn() -> (&'txn (), K)>,
 }
 
 impl<'txn, K> Cursor<'txn, K>
@@ -784,6 +799,20 @@ where
 /// (see [Cursor::into_iter_back_from()]) are the exception: once the back
 /// direction hits the bound, the whole iterator stops, so keys beyond the
 /// bound are never yielded from either direction.
+///
+/// Like its cursor, the iterator cannot outlive its transaction:
+///
+/// ```compile_fail,E0597
+/// # use libmdbx::{Database, NoWriteMap};
+/// let db = Database::<NoWriteMap>::open("db").unwrap();
+/// let iter;
+/// {
+///     let txn = db.begin_ro_txn().unwrap();
+///     let table = txn.open_table(None).unwrap();
+///     iter = txn.cursor(&table).unwrap().into_iter();
+/// }
+/// drop(iter);
+/// ```
 #[derive(Debug)]
 pub enum IntoIter<'txn, K, Key, Value>
 where
@@ -827,7 +856,7 @@ where
         /// outside the iteration domain, so both directions stop yielding.
         done: bool,
 
-        _marker: PhantomData<fn(&'txn (), K, Key, Value)>,
+        _marker: PhantomData<fn() -> (&'txn (), K, Key, Value)>,
     },
 }
 
@@ -988,7 +1017,7 @@ where
         /// calls [DoubleEndedIterator::next_back()].
         back_next_op: ffi::MDBX_cursor_op,
 
-        _marker: PhantomData<fn(&'txn (Key, Value))>,
+        _marker: PhantomData<fn() -> (&'txn (), Key, Value)>,
     },
 }
 
@@ -1093,7 +1122,7 @@ where
         /// The first operation to perform when the consumer calls Iter.next().
         op: ffi::MDBX_cursor_op,
 
-        _marker: PhantomData<fn(&'txn (Key, Value))>,
+        _marker: PhantomData<fn() -> (&'txn (), Key, Value)>,
     },
 }
 

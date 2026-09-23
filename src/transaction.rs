@@ -56,7 +56,7 @@ where
     primed_dbis: Mutex<IndexSet<ffi::MDBX_dbi>>,
     committed: bool,
     db: &'db Database<E>,
-    _marker: PhantomData<fn(K)>,
+    _marker: PhantomData<fn() -> K>,
 }
 
 impl<'db, K, E> Transaction<'db, K, E>
