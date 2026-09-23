@@ -589,12 +589,12 @@ fn test_table_interior_nul_name() {
     let txn = db.begin_rw_txn().unwrap();
     assert!(matches!(
         txn.open_table(Some("a\0b")).unwrap_err(),
-        Error::Invalid
+        Error::InvalidArgument(_)
     ));
     assert!(matches!(
         txn.create_table(Some("a\0b"), TableFlags::empty())
             .unwrap_err(),
-        Error::Invalid
+        Error::InvalidArgument(_)
     ));
     txn.commit().unwrap();
 }

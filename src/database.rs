@@ -29,10 +29,10 @@ fn path_to_cstring(path: &Path) -> Result<CString> {
         use std::os::windows::ffi::OsStrExt;
         let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
         String::from_utf16(&wide)
-            .map_err(|_| Error::Invalid)?
+            .map_err(|_| Error::InvalidArgument("database path is not valid Unicode"))?
             .into_bytes()
     };
-    CString::new(bytes).map_err(|_| Error::Invalid)
+    CString::new(bytes).map_err(|_| Error::InvalidArgument("database path contains a NUL byte"))
 }
 
 #[sealed]

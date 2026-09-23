@@ -10,6 +10,7 @@
 - `Iter`, `IntoIter` and `IterDup` are opaque structs (were enums with public `Err`/`Ok` variants). Iteration stops after a libmdbx error (decode errors are still yielded and iteration continues).
 - New `Cursor::try_clone`; `Clone for Cursor` panics only if libmdbx cannot copy the cursor.
 - `mdbx_try_optional!` is no longer exported (it was an internal helper).
+- Interior NUL bytes in table names or database paths now fail with `Error::InvalidArgument` instead of `Error::Invalid` (whose message reads "File is not an MDBX file").
 
 ### Fixes
 

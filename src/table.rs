@@ -24,7 +24,10 @@ impl<'txn> Table<'txn> {
         flags: c_uint,
     ) -> Result<Self> {
         let c_name = name
-            .map(|n| CString::new(n).map_err(|_| Error::Invalid))
+            .map(|n| {
+                CString::new(n)
+                    .map_err(|_| Error::InvalidArgument("table name contains a NUL byte"))
+            })
             .transpose()?;
         let name_ptr = if let Some(c_name) = &c_name {
             c_name.as_ptr()
