@@ -21,18 +21,35 @@ use std::{
     time::Duration,
 };
 
-fn path_to_cstring(path: &Path) -> Result<CString> {
+/// Opens `env` at `path`, handing libmdbx the path in the platform's native
+/// encoding.
+///
+/// On Windows this must be `mdbx_env_openW` with UTF-16: `mdbx_env_open`
+/// decodes its `char*` with the ANSI code page, not UTF-8.
+unsafe fn env_open(
+    env: *mut ffi::MDBX_env,
+    path: &Path,
+    flags: ffi::MDBX_env_flags_t,
+    mode: ffi::mdbx_mode_t,
+) -> Result<()> {
+    const NUL_IN_PATH: Error = Error::InvalidArgument("database path contains a NUL byte");
     #[cfg(unix)]
-    let bytes = std::os::unix::ffi::OsStrExt::as_bytes(path.as_os_str()).to_vec();
-    #[cfg(windows)]
-    let bytes = {
-        use std::os::windows::ffi::OsStrExt;
-        let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
-        String::from_utf16(&wide)
-            .map_err(|_| Error::InvalidArgument("database path is not valid Unicode"))?
-            .into_bytes()
+    let rc = {
+        use std::os::unix::ffi::OsStrExt;
+        let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| NUL_IN_PATH)?;
+        unsafe { ffi::mdbx_env_open(env, path.as_ptr(), flags, mode) }
     };
-    CString::new(bytes).map_err(|_| Error::InvalidArgument("database path contains a NUL byte"))
+    #[cfg(windows)]
+    let rc = {
+        use std::os::windows::ffi::OsStrExt;
+        let mut path: Vec<u16> = path.as_os_str().encode_wide().collect();
+        if path.contains(&0) {
+            return Err(NUL_IN_PATH);
+        }
+        path.push(0);
+        unsafe { ffi::mdbx_env_openW(env, path.as_ptr().cast(), flags, mode) }
+    };
+    mdbx_result(rc).map(drop)
 }
 
 #[sealed]
@@ -223,13 +240,12 @@ where
                     }
                 }
 
-                let path = path_to_cstring(path.as_ref())?;
-                mdbx_result(ffi::mdbx_env_open(
+                env_open(
                     db,
-                    path.as_ptr(),
+                    path.as_ref(),
                     options.make_flags() | E::EXTRA_FLAGS,
                     options.permissions.unwrap_or(0o644),
-                ))?;
+                )?;
 
                 Ok(())
             })() {

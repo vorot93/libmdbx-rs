@@ -221,3 +221,14 @@ fn test_open_interior_nul_path() {
         Err(Error::InvalidArgument(_))
     ));
 }
+
+/// Paths reach libmdbx in the platform's native encoding. On Windows this
+/// requires `mdbx_env_openW`: `mdbx_env_open` decodes with the ANSI code
+/// page, so a UTF-8 path would open (or fail to open) the wrong file.
+#[test]
+fn test_open_non_ascii_path() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("dätaбаза数据");
+    drop(Database::open(&path).unwrap());
+    assert!(path.join("mdbx.dat").is_file());
+}
