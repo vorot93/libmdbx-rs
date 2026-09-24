@@ -9,7 +9,6 @@ use mem::size_of;
 use parking_lot::{Condvar, Mutex};
 use sealed::sealed;
 use std::{
-    ffi::CString,
     fmt,
     fmt::Debug,
     marker::PhantomData,
@@ -34,7 +33,7 @@ unsafe fn env_open(
     const NUL_IN_PATH: Error = Error::InvalidArgument("database path contains a NUL byte");
     #[cfg(unix)]
     let rc = {
-        use std::os::unix::ffi::OsStrExt;
+        use std::{ffi::CString, os::unix::ffi::OsStrExt};
         let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| NUL_IN_PATH)?;
         unsafe { ffi::mdbx_env_open(env, path.as_ptr(), flags, mode) }
     };

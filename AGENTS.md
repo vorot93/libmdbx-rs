@@ -31,6 +31,10 @@ after touching `mdbx-sys/build.rs`; the `cc` crate hides compiler commands other
 
 ## Gotchas
 
+- Platform-gated code (`#[cfg(unix)]` / `#[cfg(windows)]`) is only linted on that
+  platform, and a Windows clippy run can't be done from Linux without a MinGW
+  toolchain (the C builds need `x86_64-w64-mingw32-gcc`). Keep imports used only by one
+  platform inside its cfg'd block, or Windows CI fails with `unused_imports`.
 - Named tables need slots reserved at open: `DatabaseOptions { max_tables: Some(n), .. }`.
   The default is 0, and `open_table`/`create_table` on a named table then fails with `DbsFull`.
 - `README.md` is `include_str!`-ed as the crate-level doc (`src/lib.rs`), so its code
