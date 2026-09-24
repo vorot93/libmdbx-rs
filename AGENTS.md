@@ -50,7 +50,7 @@ and fixed upstream, then re-vendored.
 ## Version coupling
 
 The root crate pins the FFI crate exactly:
-`ffi = { package = "mdbx-sys", version = "=14.3.1", path = "./mdbx-sys" }`.
+`ffi = { package = "mdbx-sys", version = "=<version>", path = "./mdbx-sys" }`.
 When releasing, bump `mdbx-sys/Cargo.toml` and the pin in the root `Cargo.toml`
 together so they always match (the `=` pin guarantees a mismatch fails to
 resolve rather than silently mixing versions).
