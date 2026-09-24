@@ -153,13 +153,18 @@ fn test_put_with_closure_holds_txn_lock() {
     let txn = db.begin_rw_txn().unwrap();
     let table = txn.open_table(None).unwrap();
 
-    let put_started = AtomicBool::new(false);
+    let buffer_held = AtomicBool::new(false);
     let put_done = AtomicBool::new(false);
     let pattern = b"reserved-payload";
 
     thread::scope(|s| {
         s.spawn(|| {
-            put_started.store(true, Ordering::SeqCst);
+            // Only race the put against a closure that already holds the
+            // buffer; starting earlier lets the put legitimately finish
+            // before `put_with` takes the lock.
+            while !buffer_held.load(Ordering::SeqCst) {
+                std::hint::spin_loop();
+            }
             txn.put(&table, b"other", b"concurrent-put", WriteFlags::empty())
                 .unwrap();
             put_done.store(true, Ordering::SeqCst);
@@ -173,11 +178,9 @@ fn test_put_with_closure_holds_txn_lock() {
                 WriteFlags::UPSERT,
                 |buf| {
                     buf.copy_from_slice(pattern);
+                    buffer_held.store(true, Ordering::SeqCst);
                     // Give the racing put every chance to (wrongly) complete
                     // while the reserved buffer is still held.
-                    while !put_started.load(Ordering::SeqCst) {
-                        std::hint::spin_loop();
-                    }
                     let deadline = Instant::now() + Duration::from_millis(100);
                     while !put_done.load(Ordering::SeqCst) && Instant::now() < deadline {
                         std::hint::spin_loop();
